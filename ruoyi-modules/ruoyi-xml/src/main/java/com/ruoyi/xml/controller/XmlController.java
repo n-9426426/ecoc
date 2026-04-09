@@ -7,6 +7,7 @@ import com.ruoyi.common.core.web.page.TableDataInfo;
 import com.ruoyi.common.log.annotation.Log;
 import com.ruoyi.common.log.enums.BusinessType;
 import com.ruoyi.common.security.annotation.RequiresPermissions;
+import com.ruoyi.xml.domain.DiffResultVO;
 import com.ruoyi.xml.domain.XmlFile;
 import com.ruoyi.xml.service.IXmlFileService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -195,7 +196,7 @@ public class XmlController extends BaseController {
     @GetMapping("/compare")
     public AjaxResult compare(@RequestParam String newVersion, @RequestParam String oldVersion) {
         try {
-            String diff = xmlFileService.compareVersions(new BigDecimal(newVersion).longValue(), new BigDecimal(oldVersion).longValue());
+            DiffResultVO diff = xmlFileService.compareVersions(new BigDecimal(newVersion).longValue(), new BigDecimal(oldVersion).longValue());
             return success(diff);
         } catch (Exception e) {
             return error("版本对比失败: " + e.getMessage());

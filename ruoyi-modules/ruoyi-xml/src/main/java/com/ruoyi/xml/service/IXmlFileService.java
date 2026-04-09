@@ -1,6 +1,7 @@
 package com.ruoyi.xml.service;
 
 import com.ruoyi.common.core.web.domain.AjaxResult;
+import com.ruoyi.xml.domain.DiffResultVO;
 import com.ruoyi.xml.domain.XmlFile;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -53,7 +54,7 @@ public interface IXmlFileService {
     /**
      * 版本对比
      */
-    String compareVersions(Long newVersionId, Long oldVersionId);
+    DiffResultVO compareVersions(Long newVersionId, Long oldVersionId);
 
     /**
      * 校验XML文件

@@ -11,6 +11,8 @@ import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.system.api.domain.SysJob;
 import com.ruoyi.system.api.domain.VehicleInfo;
 import com.ruoyi.system.api.enums.JobType;
+import com.ruoyi.xml.domain.DiffLineVO;
+import com.ruoyi.xml.domain.DiffResultVO;
 import com.ruoyi.xml.domain.XmlFile;
 import com.ruoyi.xml.domain.XmlVersion;
 import com.ruoyi.xml.mapper.XmlFileMapper;
@@ -310,7 +312,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
      * 版本对比
      */
     @Override
-    public String compareVersions(Long newVersionId, Long oldVersionId) {
+    public DiffResultVO compareVersions(Long newVersionId, Long oldVersionId) {
         try {
             XmlFile newFile = xmlFileMapper.selectXmlFileById(newVersionId);
             XmlFile oldFile = xmlFileMapper.selectXmlFileById(oldVersionId);
@@ -320,30 +322,71 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
 
             String projectPath = System.getProperty("user.dir");
-            String oldContent = new String(Files.readAllBytes(new File(projectPath + oldFile.getFilePath()).toPath()), StandardCharsets.UTF_8);
-            String newContent = new String(Files.readAllBytes(new File(projectPath + newFile.getFilePath()).toPath()), StandardCharsets.UTF_8);
+            String oldContent = new String(Files.readAllBytes(
+                    new File(projectPath + oldFile.getFilePath()).toPath()), StandardCharsets.UTF_8);
+            String newContent = new String(Files.readAllBytes(
+                    new File(projectPath + newFile.getFilePath()).toPath()), StandardCharsets.UTF_8);
 
-            String[] oldLines = oldContent.split("\n");
-            String[] newLines = newContent.split("\n");
+            // 统一换行符
+            String[] oldLines = oldContent.replace("\r\n", "\n").split("\n");
+            String[] newLines = newContent.replace("\r\n", "\n").split("\n");
 
-            StringBuilder diff = new StringBuilder();
+            List<DiffLineVO> oldResult = new ArrayList<>();
+            List<DiffLineVO> newResult = new ArrayList<>();
+
             int maxLen = Math.max(oldLines.length, newLines.length);
+            boolean isSame = true;
 
             for (int i = 0; i < maxLen; i++) {
-                String oldLine = i < oldLines.length ? oldLines[i] : "";
-                String newLine = i < newLines.length ? newLines[i] : "";
+                String oldLine = i < oldLines.length ? oldLines[i] : null;
+                String newLine = i < newLines.length ? newLines[i] : null;
 
-                if (!oldLine.equals(newLine)) {
-                    diff.append(remoteTranslateService.translate("xml.diff.line", null)).append(i + 1).append(":\n");
-                    diff.append("- ").append(oldLine).append("\n");
-                    diff.append("+ ").append(newLine).append("\n\n");
+                DiffLineVO oldVO = new DiffLineVO();
+                DiffLineVO newVO = new DiffLineVO();
+
+                boolean lineChanged = !Objects.equals(oldLine, newLine);
+                if (lineChanged) {
+                    isSame = false;
                 }
+
+                //旧版本行
+                if (oldLine != null) {
+                    oldVO.setLineNumber(i + 1);
+                    oldVO.setContent(oldLine);
+                    oldVO.setType(lineChanged ? "removed" : "normal");
+                } else {
+                    // 新版本有，旧版本没有 —— 占位空行
+                    oldVO.setLineNumber(null);
+                    oldVO.setContent("");
+                    oldVO.setType("empty");
+                }
+
+                // 新版本行
+                if (newLine != null) {
+                    newVO.setLineNumber(i + 1);
+                    newVO.setContent(newLine);
+                    newVO.setType(lineChanged ? "added" : "normal");
+                } else {
+                    //旧版本有，新版本没有 —— 占位空行
+                    newVO.setLineNumber(null);
+                    newVO.setContent("");
+                    newVO.setType("empty");
+                }
+
+                oldResult.add(oldVO);
+                newResult.add(newVO);
             }
 
-            return diff.length() > 0 ? diff.toString() : remoteTranslateService.translate("common.diff.content.same", null);
+            DiffResultVO result = new DiffResultVO();
+            result.setOldLines(oldResult);
+            result.setNewLines(newResult);
+            result.setSame(isSame);
+            return result;
+
         } catch (Exception e) {
             log.error("版本对比失败", e);
-            throw new RuntimeException(StringUtils.format(remoteTranslateService.translate("common.diff.compare.failed", null), e.getMessage()));
+            throw new RuntimeException(StringUtils.format(
+                    remoteTranslateService.translate("common.diff.compare.failed", null), e.getMessage()));
         }
     }
 
