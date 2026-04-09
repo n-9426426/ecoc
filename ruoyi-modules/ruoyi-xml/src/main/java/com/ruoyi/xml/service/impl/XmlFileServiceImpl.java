@@ -327,54 +327,59 @@ public class XmlFileServiceImpl implements IXmlFileService {
             String newContent = new String(Files.readAllBytes(
                     new File(projectPath + newFile.getFilePath()).toPath()), StandardCharsets.UTF_8);
 
-            // 统一换行符
-            String[] oldLines = oldContent.replace("\r\n", "\n").split("\n");
-            String[] newLines = newContent.replace("\r\n", "\n").split("\n");
+            String[] oldLines = oldContent.replace("\r\n", "\n").split("\n", -1);
+            String[] newLines = newContent.replace("\r\n", "\n").split("\n", -1);
 
             List<DiffLineVO> oldResult = new ArrayList<>();
             List<DiffLineVO> newResult = new ArrayList<>();
 
-            int maxLen = Math.max(oldLines.length, newLines.length);
-            boolean isSame = true;
+            // 使用 LCS diff 对齐
+            List<int[]> diffPairs = diffLines(oldLines, newLines);
 
-            for (int i = 0; i < maxLen; i++) {
-                String oldLine = i < oldLines.length ? oldLines[i] : null;
-                String newLine = i < newLines.length ? newLines[i] : null;
+            boolean isSame = true;
+            int oldLineNum = 1;
+            int newLineNum = 1;
+
+            for (int[] pair : diffPairs) {
+                int oldIdx = pair[0]; // -1 表示新增行（旧版本无对应）
+                int newIdx = pair[1]; // -1 表示删除行（新版本无对应）
 
                 DiffLineVO oldVO = new DiffLineVO();
                 DiffLineVO newVO = new DiffLineVO();
 
-                boolean lineChanged = !Objects.equals(oldLine, newLine);
-                if (lineChanged) {
+                if (oldIdx >= 0 && newIdx >= 0) {
+                    // 两侧都有，判断内容是否相同
+                    boolean changed = !oldLines[oldIdx].equals(newLines[newIdx]);
+                    if (changed) isSame = false;
+
+                    oldVO.setLineNumber(oldLineNum++);
+                    oldVO.setContent(oldLines[oldIdx]);
+                    oldVO.setType(changed ? "removed" : "normal");
+
+                    newVO.setLineNumber(newLineNum++);
+                    newVO.setContent(newLines[newIdx]);
+                    newVO.setType(changed ? "added" : "normal");
+
+                } else if (oldIdx >= 0) {
+                    // 旧版本有，新版本没有 —— 删除行
                     isSame = false;
-                }
-
-                //旧版本行
-                if (oldLine != null) {
-                    oldVO.setLineNumber(i + 1);
-                    oldVO.setContent(oldLine);
-                    oldVO.setType(lineChanged ? "removed" : "normal");
+                    oldVO.setLineNumber(oldLineNum++);
+                    oldVO.setContent(oldLines[oldIdx]);
+                    oldVO.setType("removed");
                 } else {
-                    // 新版本有，旧版本没有 —— 占位空行
-                    oldVO.setLineNumber(null);
-                    oldVO.setContent("");
-                    oldVO.setType("empty");
+                    // 新版本有，旧版本没有 —— 新增行
+                    isSame = false;
+                    newVO.setLineNumber(newLineNum++);
+                    newVO.setContent(newLines[newIdx]);
+                    newVO.setType("added");
                 }
 
-                // 新版本行
-                if (newLine != null) {
-                    newVO.setLineNumber(i + 1);
-                    newVO.setContent(newLine);
-                    newVO.setType(lineChanged ? "added" : "normal");
-                } else {
-                    //旧版本有，新版本没有 —— 占位空行
-                    newVO.setLineNumber(null);
-                    newVO.setContent("");
-                    newVO.setType("empty");
+                if (!StringUtils.isBlank(oldVO.getType())) {
+                    oldResult.add(oldVO);
                 }
-
-                oldResult.add(oldVO);
-                newResult.add(newVO);
+                if (!StringUtils.isBlank(newVO.getType())) {
+                    newResult.add(newVO);
+                }
             }
 
             DiffResultVO result = new DiffResultVO();
@@ -385,9 +390,49 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
         } catch (Exception e) {
             log.error("版本对比失败", e);
-            throw new RuntimeException(StringUtils.format(
-                    remoteTranslateService.translate("common.diff.compare.failed", null), e.getMessage()));
+            throw new RuntimeException(StringUtils.format(remoteTranslateService.translate("common.diff.compare.failed", null), e.getMessage()));
         }
+    }
+
+    /**
+     * LCS diff：返回对齐后的行索引对
+     * pair[0] = oldIndex（-1表示该行为新增）
+     * pair[1] = newIndex（-1表示该行为删除）
+     */
+    private List<int[]> diffLines(String[] oldLines, String[] newLines) {
+        int m = oldLines.length, n = newLines.length;
+
+        // 构建 LCS 表
+        int[][] dp = new int[m + 1][n + 1];
+        for (int i = 1; i <= m; i++) {
+            for (int j = 1; j <= n; j++) {
+                if (oldLines[i - 1].equals(newLines[j - 1])) {
+                    dp[i][j] = dp[i - 1][j - 1] + 1;
+                } else {
+                    dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+                }
+            }
+        }
+
+        // 回溯生成 diff 结果
+        List<int[]> result = new ArrayList<>();
+        int i = m, j = n;
+        while (i > 0 || j > 0) {
+            if (i > 0 && j > 0 && oldLines[i - 1].equals(newLines[j - 1])) {
+                result.add(new int[]{i - 1, j - 1});
+                i--;
+                j--;
+            } else if (j > 0 && (i == 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+                result.add(new int[]{-1, j - 1}); // 新增行
+                j--;
+            } else {
+                result.add(new int[]{i - 1, -1}); // 删除行
+                i--;
+            }
+        }
+
+        Collections.reverse(result);
+        return result;
     }
 
     /**
