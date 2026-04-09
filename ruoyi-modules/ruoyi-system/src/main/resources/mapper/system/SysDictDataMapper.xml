@@ -120,5 +120,17 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
  			sysdate()
  		)
 	</insert>
+
+	<!-- 检查 dict_code 是否被attr_path 引用 -->
+	<select id="countVehicleTemplateAttributeByDictCode" resultType="int">
+		SELECT COUNT(1)
+		FROM vehicle_template_attribute
+		WHERE deleted = 0
+		  AND (attr_path = #{dictCode}
+			OR attr_path LIKE CONCAT(#{dictCode}, '.%')
+			OR attr_path LIKE CONCAT('%.', #{dictCode}, '.%')
+			OR attr_path LIKE CONCAT('%.', #{dictCode})
+			)
+	</select>
 	
 </mapper> 

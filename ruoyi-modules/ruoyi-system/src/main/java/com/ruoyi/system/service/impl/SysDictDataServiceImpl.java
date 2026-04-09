@@ -1,5 +1,6 @@
 package com.ruoyi.system.service.impl;
 
+import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.security.utils.DictUtils;
 import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.system.mapper.SysDictDataMapper;
@@ -67,6 +68,12 @@ public class SysDictDataServiceImpl implements ISysDictDataService
     {
         for (Long dictCode : dictCodes)
         {
+            // 校验是否被 vehicle_template_attribute 引用
+            int refCount = dictDataMapper.countVehicleTemplateAttributeByDictCode(dictCode);
+            if (refCount > 0) {
+                SysDictData data = selectDictDataById(dictCode);
+                throw new ServiceException(String.format("字典数据【%s】已被模板属性引用，无法删除！", data != null ? data.getDictLabel() : dictCode));
+            }
             SysDictData data = selectDictDataById(dictCode);
             dictDataMapper.deleteDictDataById(dictCode);
             List<SysDictData> dictDatas = dictDataMapper.selectDictDataByType(data.getDictType());
