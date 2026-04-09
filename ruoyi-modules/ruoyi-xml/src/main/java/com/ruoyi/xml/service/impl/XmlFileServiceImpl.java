@@ -6,10 +6,8 @@ import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.security.utils.SecurityUtils;
-import com.ruoyi.system.api.RemoteFileService;
-import com.ruoyi.system.api.RemoteJobService;
-import com.ruoyi.system.api.RemoteTranslateService;
-import com.ruoyi.system.api.RemoteVehicleService;
+import com.ruoyi.system.api.*;
+import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.system.api.domain.SysJob;
 import com.ruoyi.system.api.domain.VehicleInfo;
 import com.ruoyi.system.api.enums.JobType;
@@ -68,6 +66,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     @Autowired
     private RemoteTranslateService remoteTranslateService;
+
+    @Autowired
+    private RemoteDictService remoteDictService;
 
     /**
      * 查询XML文件列表
@@ -133,7 +134,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             throw new ServiceException("xml文件不存在");
         }
 
-        // 3. 从旧文件名中提取 VIN（vehicle_LSYZHRZ9ZY3G7B_1775179634552.xml）
+        // 3. 从旧文件名中提取 VIN
         String oldFileName = dbXmlFile.getFileName();
         String vin = oldFileName.substring(oldFileName.indexOf("_") + 1, oldFileName.lastIndexOf("_"));
 
@@ -167,7 +168,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
         String remark = "由" + oldFileName + "更新，版本：" + newVersion;
 
         // 9. 将旧记录 is_latest 设为 0
-        xmlFileMapper.updateIsLatestToFalse(dbXmlFile.getId());
+        xmlFileMapper.updateIsLatestToFalse("vehicle_" + vin);
 
         // 10. 更新 xml_file 表
         dbXmlFile.setFileName(newFileName);
@@ -301,17 +302,18 @@ public class XmlFileServiceImpl implements IXmlFileService {
         if (xmlFile == null) {
             throw new RuntimeException(remoteTranslateService.translate("common.file.not.exist", null));
         }
-        return xmlFileMapper.selectXmlFileVersions(xmlFile.getFileName());
+        String query = "vehicle_" + xmlFile.getFileName().substring(xmlFile.getFileName().indexOf("_") + 1, xmlFile.getFileName().lastIndexOf("_"));
+        return xmlFileMapper.selectXmlFileVersions(query);
     }
 
     /**
      * 版本对比
      */
     @Override
-    public String compareVersions(Long oldVersionId, Long newVersionId) {
+    public String compareVersions(Long newVersionId, Long oldVersionId) {
         try {
-            XmlFile oldFile = xmlFileMapper.selectXmlFileById(oldVersionId);
             XmlFile newFile = xmlFileMapper.selectXmlFileById(newVersionId);
+            XmlFile oldFile = xmlFileMapper.selectXmlFileById(oldVersionId);
 
             if (oldFile == null || newFile == null) {
                 throw new RuntimeException(remoteTranslateService.translate("common.file.not.exist", null));
@@ -423,7 +425,14 @@ public class XmlFileServiceImpl implements IXmlFileService {
             Element statusInfo = doc.createElement("StatusInfo");
             root.appendChild(statusInfo);
 
-            String statusText = "0".equals(vehicle.getStatus()) ? "已入库" : "待检验";
+            List<SysDictData> sysDictData = remoteDictService.getDictDataByType("xml_status").getData();
+            String statusText = "";
+            for (SysDictData data : sysDictData) {
+                if (data.getDictValue().equals(vehicle.getStatus())) {
+                    statusText = data.getDictLabel();
+                    break;
+                }
+            }
             addElement(doc, statusInfo, "Status", statusText);
             addElement(doc, statusInfo, "CreateBy", vehicle.getCreateBy());
             if (vehicle.getCreateTime() != null) {

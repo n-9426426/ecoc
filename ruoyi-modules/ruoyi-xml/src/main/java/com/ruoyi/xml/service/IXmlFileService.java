@@ -53,7 +53,7 @@ public interface IXmlFileService {
     /**
      * 版本对比
      */
-    String compareVersions(Long oldVersionId, Long newVersionId);
+    String compareVersions(Long newVersionId, Long oldVersionId);
 
     /**
      * 校验XML文件

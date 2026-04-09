@@ -125,8 +125,8 @@
 
     <select id="selectXmlFileVersions" parameterType="String" resultMap="XmlFileResult">
         <include refid="selectXmlFileVo"/>
-        where file_name = #{fileName} and deleted = 0
-        order by version desc
+        where file_name like concat(#{configName}, '%') and deleted = 0
+        order by cast(version as UNSIGNED) desc, create_time desc
     </select>
 
     <update id="restoreXmlByIds" parameterType="String">
@@ -154,14 +154,15 @@
     </delete>
 
     <select id="selectVersionByFileName" resultType="java.lang.String">
-        SELECT MAX(version)
+        SELECT version
         FROM xml_file
         WHERE file_name LIKE CONCAT(#{fileName}, '%')
-        ORDER BY version desc
+        ORDER BY cast(version as UNSIGNED) desc
+        limit 1
     </select>
 
     <update id="updateIsLatestToFalse">
-        UPDATE xml_file SET is_latest = 0 WHERE id = #{id}
+        UPDATE xml_file SET is_latest = 0 WHERE file_name LIKE CONCAT(#{fileName}, '%')
     </update>
 
 </mapper>

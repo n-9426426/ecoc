@@ -19,6 +19,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.OutputStream;
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -192,9 +193,9 @@ public class XmlController extends BaseController {
     @Operation(summary = "版本对比")
     @RequiresPermissions("system:xml:compare")
     @GetMapping("/compare")
-    public AjaxResult compare(@RequestParam Long oldVersionId, @RequestParam Long newVersionId) {
+    public AjaxResult compare(@RequestParam String newVersion, @RequestParam String oldVersion) {
         try {
-            String diff = xmlFileService.compareVersions(oldVersionId, newVersionId);
+            String diff = xmlFileService.compareVersions(new BigDecimal(newVersion).longValue(), new BigDecimal(oldVersion).longValue());
             return success(diff);
         } catch (Exception e) {
             return error("版本对比失败: " + e.getMessage());

@@ -58,5 +58,5 @@ public interface XmlFileMapper {
 
     String selectVersionByFileName(String fileName);
 
-    void updateIsLatestToFalse(Long id);
+    void updateIsLatestToFalse(String fileName);
 }
