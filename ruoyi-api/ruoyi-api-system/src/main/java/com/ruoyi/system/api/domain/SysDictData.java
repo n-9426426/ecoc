@@ -43,7 +43,7 @@ public class SysDictData extends BaseEntity
     private String cssClass;
 
     /** 表格字典样式 */
-    private String listClass;
+    private String rule;
 
     /** 是否默认（Y是 N否） */
     @Excel(name = "是否默认", readConverterExp = "Y=是,N=否")
@@ -120,16 +120,6 @@ public class SysDictData extends BaseEntity
         this.cssClass = cssClass;
     }
 
-    public String getListClass()
-    {
-        return listClass;
-    }
-
-    public void setListClass(String listClass)
-    {
-        this.listClass = listClass;
-    }
-
     public boolean getDefault()
     {
         return UserConstants.YES.equals(this.isDefault);
@@ -154,6 +144,14 @@ public class SysDictData extends BaseEntity
     {
         this.status = status;
     }
+
+    public String getRule() {
+        return rule;
+    }
+
+    public void setRule(String rule) {
+        this.rule = rule;
+    }
     
     @Override
     public String toString() {
@@ -164,7 +162,7 @@ public class SysDictData extends BaseEntity
             .append("dictValue", getDictValue())
             .append("dictType", getDictType())
             .append("cssClass", getCssClass())
-            .append("listClass", getListClass())
+            .append("rule", getRule())
             .append("isDefault", getIsDefault())
             .append("status", getStatus())
             .append("createBy", getCreateBy())
