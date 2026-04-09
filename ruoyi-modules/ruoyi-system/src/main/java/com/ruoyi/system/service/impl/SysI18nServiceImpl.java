@@ -1,5 +1,6 @@
 package com.ruoyi.system.service.impl;
 
+import com.ruoyi.common.core.constant.I18nConstants;
 import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.StringUtils;
@@ -7,7 +8,6 @@ import com.ruoyi.common.core.utils.uuid.UUID;
 import com.ruoyi.common.redis.service.RedisService;
 import com.ruoyi.system.config.I18nConfig;
 import com.ruoyi.system.config.RedisListenerConfig;
-import com.ruoyi.system.constant.I18nConstants;
 import com.ruoyi.system.domain.SysI18n;
 import com.ruoyi.system.mapper.SysI18nMapper;
 import com.ruoyi.system.service.ISysI18nService;
@@ -87,15 +87,14 @@ public class SysI18nServiceImpl implements ISysI18nService {
             return;
         }
         Map<String, String> messages = new HashMap<>();
-        list.forEach(item -> messages.put(item.getLangKey(), item.getLangValue()));
+        list.forEach(item -> messages.put(item.getLangKey().trim(), item.getLangValue().trim()));
 
         // 1. 存入本地 JVM 缓存（translate 只读此处，无 IO，无阻塞）
         localCache.put(langCode, Collections.unmodifiableMap(messages));
 
         // 2. 同步存入 Redis（供其他服务节点懒加载使用）
         String cacheKey = I18nConstants.CACHE_KEY_PREFIX + langCode;
-        redisService.setCacheObject(cacheKey, messages,
-                I18nConstants.CACHE_EXPIRE_HOURS, TimeUnit.HOURS);
+        redisService.setCacheObject(cacheKey, messages, I18nConstants.CACHE_EXPIRE_HOURS, TimeUnit.HOURS);
 
         log.info("【i18n】语言 [{}] 加载完成，共 {} 条", langCode, messages.size());
     }
@@ -109,6 +108,7 @@ public class SysI18nServiceImpl implements ISysI18nService {
      */
     @Override
     public String translate(String langKey, String langCode) {
+        langKey = langKey.trim();
         if (StringUtils.isBlank(langKey)) {
             return langKey;
         }
@@ -123,11 +123,12 @@ public class SysI18nServiceImpl implements ISysI18nService {
         }
 
         // 命中本地缓存，降级为默认语言
-        Map<String, String> messages = localCache.getOrDefault(
-                resolvedLang,
-                localCache.getOrDefault(I18nConstants.DEFAULT_LANG, Collections.emptyMap())
-        );
-        return messages.getOrDefault(langKey, langKey);
+        Map<String, String> messages = localCache.getOrDefault(resolvedLang, localCache.getOrDefault(I18nConstants.DEFAULT_LANG, Collections.emptyMap()));
+        String translate = messages.get(langKey);
+        if (StringUtils.isBlank(translate)) {
+            return langKey;
+        }
+        return translate;
     }
 
     /**

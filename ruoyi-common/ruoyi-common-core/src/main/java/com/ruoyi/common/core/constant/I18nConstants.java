@@ -1,4 +1,4 @@
-package com.ruoyi.system.constant;
+package com.ruoyi.common.core.constant;
 
 public class I18nConstants {
     /** 状态：正常 */

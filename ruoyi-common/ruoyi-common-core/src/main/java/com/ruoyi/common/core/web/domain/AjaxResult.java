@@ -3,9 +3,15 @@ package com.ruoyi.common.core.web.domain;
 import com.ruoyi.common.core.constant.HttpStatus;
 import com.ruoyi.common.core.utils.SpringUtils;
 import com.ruoyi.common.core.utils.StringUtils;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
+import javax.servlet.http.HttpServletRequest;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 操作消息提醒
@@ -25,13 +31,36 @@ public class AjaxResult extends HashMap<String, Object>
     /** 数据对象 */
     public static final String DATA_TAG = "data";
 
+    private static final Map<String, Map<String, String>> LOCAL_CACHE = new ConcurrentHashMap<>();
+
+    private static String getLangFromRequest() {
+        try {
+            HttpServletRequest request = ((ServletRequestAttributes) Objects.requireNonNull(RequestContextHolder.getRequestAttributes())).getRequest();
+            String lang = request.getHeader("Accept-Language");
+            return StringUtils.isNotEmpty(lang) ? lang : "zh_CN";
+        } catch (Exception e) {
+            return "zh_CN";
+        }
+    }
+
     private static String translate(String key) {
         try {
-            Object service = SpringUtils.getBean("sysI18nServiceImpl");
-            if (service != null) {
-                java.lang.reflect.Method method =
-                        service.getClass().getMethod("translate", String.class);
-                return (String) method.invoke(service, key);
+            // 1. 获取当前语言
+            String langCode = getLangFromRequest();
+
+            // 2. 直接从 Redis 读取
+            String cacheKey = "sys:i18n:" + langCode;
+
+            RedisTemplate<String, Object> redisTemplate = SpringUtils.getBean("redisTemplate");
+            Object cacheObj = redisTemplate.opsForValue().get(cacheKey);
+
+            if (cacheObj instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, String> messages = (Map<String, String>) cacheObj;
+                String translated = messages.get(key);
+                if (StringUtils.isNotEmpty(translated)) {
+                    return translated;
+                }
             }
         } catch (Exception ignored) {
 
@@ -92,7 +121,8 @@ public class AjaxResult extends HashMap<String, Object>
      */
     public static AjaxResult success(Object data)
     {
-        return AjaxResult.success(translate("common.success"), data);
+        String message = translate("common.success");
+        return AjaxResult.success(message, data);
     }
 
     /**
