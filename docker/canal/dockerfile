@@ -1,0 +1,13 @@
+# 基础镜像
+FROM canal
+# author
+MAINTAINER ruoyi
+
+# 挂载目录
+VOLUME /home/ruoyi/canal
+# 创建目录
+RUN mkdir -p /home/ruoyi/canal
+# 指定路径
+WORKDIR /home/ruoyi/canal
+# 复制conf文件到路径
+COPY ./conf/canal.conf /home/ruoyi/canal/canal.conf

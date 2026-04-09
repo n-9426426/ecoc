@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.xml.mapper.XmlFileMapper">
+
+    <resultMap type="XmlFile" id="XmlFileResult">
+        <id property="id" column="id"/>
+        <result property="vin" column="vin"/>
+        <result property="fileName" column="file_name"/>
+        <result property="filePath" column="file_path"/>
+        <result property="fileSize" column="file_size"/>
+        <result property="fileLevel" column="file_level"/>
+        <result property="version" column="version"/>
+        <result property="isLatest" column="is_latest"/>
+        <result property="pdfPath" column="pdf_path"/>
+        <result property="status" column="status"/>
+        <result property="deleted" column="deleted"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy" column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="remark" column="remark"/>
+    </resultMap>
+
+    <sql id="selectXmlFileVo">
+        select id, SUBSTRING_INDEX(SUBSTRING_INDEX(file_path, '_', 2), '_', -1) AS vin,
+            file_name, file_path, file_size, file_level, version, is_latest, pdf_path,
+            status, deleted, create_by, create_time, update_by, update_time, remark
+        from xml_file
+    </sql>
+
+    <select id="selectXmlFileList" parameterType="XmlFile" resultMap="XmlFileResult">
+        <include refid="selectXmlFileVo"/>
+        <where>
+            1 = 1
+            <if test="vin != null and vin != ''">
+                AND file_name like concat('%', #{vin}, '%')
+            </if>
+            <if test="fileName != null and fileName != ''">
+                AND file_name like concat('%', #{fileName}, '%')
+            </if>
+            <if test="fileLevel != null and fileLevel != ''">
+                AND file_level = #{fileLevel}
+            </if>
+            <if test="version != null and version != ''">
+                AND version = #{version}
+            </if>
+            <if test="status != null and status != ''">
+                AND status = #{status}
+            </if>
+            <if test="reclaim">
+                AND deleted = 2
+            </if>
+            <if test="!reclaim">
+                AND deleted = 0
+            </if>
+        </where>
+        order by update_time desc, create_time desc
+    </select>
+
+    <select id="selectXmlFileById" parameterType="Long" resultMap="XmlFileResult">
+        <include refid="selectXmlFileVo"/>
+        where id = #{id}
+    </select>
+
+    <insert id="insertXmlFile" parameterType="XmlFile" useGeneratedKeys="true" keyProperty="id">
+        insert into xml_file
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="fileName != null and fileName != ''">file_name,</if>
+            <if test="filePath != null and filePath != ''">file_path,</if>
+            <if test="fileSize != null">file_size,</if>
+            <if test="fileLevel != null">file_level,</if>
+            <if test="version != null">version,</if>
+            <if test="isLatest != null">is_latest,</if>
+            <if test="pdfPath != null">pdf_path,</if>
+            <if test="status != null">status,</if>
+            <if test="deleted != null">deleted,</if>
+            <if test="createBy != null">create_by,</if>
+            <if test="remark != null">remark,</if>
+            create_time
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="fileName != null and fileName != ''">#{fileName},</if>
+            <if test="filePath != null and filePath != ''">#{filePath},</if>
+            <if test="fileSize != null">#{fileSize},</if>
+            <if test="fileLevel != null">#{fileLevel},</if>
+            <if test="version != null">#{version},</if>
+            <if test="isLatest != null">#{isLatest},</if>
+            <if test="pdfPath != null">#{pdfPath},</if>
+            <if test="status != null">#{status},</if>
+            <if test="deleted != null">#{deleted},</if>
+            <if test="createBy != null">#{createBy},</if>
+            <if test="remark != null">#{remark},</if>
+            sysdate()
+        </trim>
+    </insert>
+
+    <update id="updateXmlFile" parameterType="XmlFile">
+        update xml_file
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="fileName != null and fileName != ''">file_name = #{fileName},</if>
+            <if test="filePath != null">file_path = #{filePath},</if>
+            <if test="fileSize != null">file_size = #{fileSize},</if>
+            <if test="fileLevel != null">file_level = #{fileLevel},</if>
+            <if test="version != null">version = #{version},</if>
+            <if test="isLatest != null">is_latest = #{isLatest},</if>
+            <if test="pdfPath != null">pdf_path = #{pdfPath},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            update_time = sysdate()
+        </trim>
+        where id = #{id}
+    </update>
+
+    <update id="deleteXmlFileById" parameterType="Long">
+        update xml_file set deleted = 2 where id = #{id}
+    </update>
+
+    <update id="deleteXmlFileByIds" parameterType="Long">
+        update xml_file set deleted = 2 where id in
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
+    <select id="selectXmlFileVersions" parameterType="String" resultMap="XmlFileResult">
+        <include refid="selectXmlFileVo"/>
+        where file_name = #{fileName} and deleted = 0
+        order by version desc
+    </select>
+
+    <update id="restoreXmlByIds" parameterType="String">
+        update xml_file set deleted = 0 where id in
+        <foreach item="xmlId" collection="array" open="(" separator="," close=")">
+            #{xmlId}
+        </foreach>
+    </update>
+
+    <delete id="permanentlyDeleteXmlByIds" parameterType="Long">
+        delete from xml_file where deleted = 2 and id in
+        <foreach item="xmlId" collection="array" open="(" separator="," close=")">
+            #{xmlId}
+        </foreach>
+    </delete>
+
+    <delete id="permanentlyDeleteVehicleInfoById" parameterType="Long">
+        delete from xml_file where deleted = 2 and id = #{xmlId}
+    </delete>
+
+    <delete id="deleteExpiredXml">
+        delete from xml_file
+        where deleted = 2
+          and update_time &lt; date_sub(now(), interval 1 month)
+    </delete>
+
+    <select id="selectVersionByFileName" resultType="java.lang.String">
+        SELECT MAX(version)
+        FROM xml_file
+        WHERE file_name LIKE CONCAT(#{fileName}, '%')
+        ORDER BY version desc
+    </select>
+
+    <update id="updateIsLatestToFalse">
+        UPDATE xml_file SET is_latest = 0 WHERE id = #{id}
+    </update>
+
+</mapper>

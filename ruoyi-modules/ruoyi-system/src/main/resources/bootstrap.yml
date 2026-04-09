@@ -1,0 +1,40 @@
+# Tomcat
+server:
+  port: 9201
+
+# Spring
+spring: 
+  application:
+    # 应用名称
+    name: ruoyi-system
+  profiles:
+    # 环境配置
+    active: dev
+  cloud:
+    nacos:
+      discovery:
+        # 服务注册地址
+        server-addr: 127.0.0.1:8848
+      config:
+        # 配置中心地址
+        server-addr: 127.0.0.1:8848
+        # 配置文件格式
+        file-extension: yml
+        # 共享配置
+        shared-configs:
+          - application-${spring.profiles.active}.${spring.cloud.nacos.config.file-extension}
+  mvc:
+    async:
+      request-timeout: -1
+canal:
+  hostname: localhost
+  port: 11111
+  server: ruoyi-mysql:11111
+  destination: example
+  username: canal
+  password: canal
+  filter: ry-cloud\.sys_notice
+  max-retry: 5
+  retry-interval: 5000
+  heartbeat-interval: 30000  # 心跳检测间隔(ms)
+  heartbeat-timeout: 60000   # 心跳超时时间(ms)

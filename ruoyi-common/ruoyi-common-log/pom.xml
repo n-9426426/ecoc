@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <groupId>com.bimgg</groupId>
+        <artifactId>ruoyi-common</artifactId>
+        <version>3.6.7</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+    
+    <artifactId>ruoyi-common-log</artifactId>
+	
+    <description>
+        ruoyi-common-log日志记录
+    </description>
+
+    <dependencies>
+		
+        <!-- RuoYi Common Security -->
+        <dependency>
+            <groupId>com.bimgg</groupId>
+            <artifactId>ruoyi-common-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.fastjson2</groupId>
+            <artifactId>fastjson2</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.bimgg</groupId>
+            <artifactId>ruoyi-common-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.bimgg</groupId>
+            <artifactId>ruoyi-api-system</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.bimgg</groupId>
+            <artifactId>ruoyi-common-security</artifactId>
+        </dependency>
+
+    </dependencies>
+</project>

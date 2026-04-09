@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.xml.mapper.XmlVersionMapper">
+
+    <resultMap type="XmlVersion" id="XmlVersionResult">
+        <id property="id" column="id"/>
+        <result property="fileId" column="file_id"/>
+        <result property="version" column="version"/>
+        <result property="filePath" column="file_path"/>
+        <result property="changeType" column="change_type"/>
+        <result property="changeDesc" column="change_desc"/>
+        <result property="diffContent" column="diff_content"/>
+        <result property="createBy" column="create_by"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <sql id="selectXmlVersionVo">
+        select id, file_id, version, file_path, change_type, change_desc, diff_content,
+               create_by, create_time
+        from xml_version
+    </sql>
+
+    <select id="selectXmlVersionList" parameterType="XmlVersion" resultMap="XmlVersionResult">
+        <include refid="selectXmlVersionVo"/>
+        <where>
+            <if test="fileId != null">
+                AND file_id = #{fileId}
+            </if>
+            <if test="version != null and version != ''">
+                AND version = #{version}
+            </if>
+        </where>
+        order by create_time desc
+    </select>
+
+    <insert id="insertXmlVersion" parameterType="XmlVersion" useGeneratedKeys="true" keyProperty="id">
+        insert into xml_version
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="fileId != null">file_id,</if>
+            <if test="version != null">version,</if>
+            <if test="filePath != null">file_path,</if>
+            <if test="changeType != null">change_type,</if>
+            <if test="changeDesc != null">change_desc,</if>
+            <if test="diffContent != null">diff_content,</if>
+            <if test="createBy != null">create_by,</if>
+            create_time
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="fileId != null">#{fileId},</if>
+            <if test="version != null">#{version},</if>
+            <if test="filePath != null">#{filePath},</if>
+            <if test="changeType != null">#{changeType},</if>
+            <if test="changeDesc != null">#{changeDesc},</if>
+            <if test="diffContent != null">#{diffContent},</if>
+            <if test="createBy != null">#{createBy},</if>
+            sysdate()
+        </trim>
+    </insert>
+
+    <select id="selectXmlVersionsByFileId" parameterType="Long" resultMap="XmlVersionResult">
+        <include refid="selectXmlVersionVo"/>
+        where file_id = #{fileId}
+        order by create_time desc
+    </select>
+
+</mapper>
