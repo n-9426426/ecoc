@@ -18,32 +18,34 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="createTime" column="create_time" />
 		<result property="updateBy"   column="update_by"   />
 		<result property="updateTime" column="update_time" />
+		<result property="dictTypeStr" column="dict_type_str"/>
 	</resultMap>
 	
 	<sql id="selectDictDataVo">
-        select dict_code, dict_sort, dict_label, dict_value, dict_type, css_class, rule, is_default, status, create_by, create_time, remark
-		from sys_dict_data
+        select sdd.dict_code, sdd.dict_sort, sdd.dict_label, sdd.dict_value, sdd.dict_type, sdd.css_class, sdd.rule,
+			   sdd.is_default, sdd.status, sdd.create_by, sdd.create_time, sdd.remark, sdt.dict_name as dict_type_str
+		from sys_dict_data sdd left join sys_dict_type sdt on sdd.dict_type = sdt.dict_type
     </sql>
 
 	<select id="selectDictDataList" parameterType="SysDictData" resultMap="SysDictDataResult">
 	    <include refid="selectDictDataVo"/>
 		<where>
 		    <if test="dictType != null and dictType != ''">
-				AND dict_type = #{dictType}
+				AND sdd.dict_type = #{dictType}
 			</if>
 			<if test="dictLabel != null and dictLabel != ''">
-				AND dict_label like concat('%', #{dictLabel}, '%')
+				AND sdd.dict_label like concat('%', #{dictLabel}, '%')
 			</if>
 			<if test="status != null and status != ''">
-				AND status = #{status}
+				AND sdd.status = #{status}
 			</if>
 		</where>
-		order by dict_sort asc
+		order by sdd.dict_sort asc
 	</select>
 	
 	<select id="selectDictDataByType" parameterType="String" resultMap="SysDictDataResult">
 		<include refid="selectDictDataVo"/>
-		where status = '0' and dict_type = #{dictType} order by dict_sort asc
+		where sdd.status = '0' and sdd.dict_type = #{dictType} order by sdd.dict_sort asc
 	</select>
 	
 	<select id="selectDictLabel" resultType="String">
@@ -53,7 +55,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 	
 	<select id="selectDictDataById" parameterType="Long" resultMap="SysDictDataResult">
 		<include refid="selectDictDataVo"/>
-		where dict_code = #{dictCode}
+		where sdd.dict_code = #{dictCode}
 	</select>
 	
 	<select id="countDictDataByType" resultType="Integer">

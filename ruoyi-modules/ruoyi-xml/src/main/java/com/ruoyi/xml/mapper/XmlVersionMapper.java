@@ -22,4 +22,6 @@ public interface XmlVersionMapper {
      * 查询文件的版本历史
      */
     List<XmlVersion> selectXmlVersionsByFileId(Long fileId);
+
+    void deleteXmlVersionByFileId(Long[] xmlIds);
 }

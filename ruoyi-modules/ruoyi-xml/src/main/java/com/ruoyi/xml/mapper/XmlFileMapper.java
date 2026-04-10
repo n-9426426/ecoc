@@ -18,6 +18,8 @@ public interface XmlFileMapper {
      */
     XmlFile selectXmlFileById(Long id);
 
+    List<String> selectFilePathsByIds(Long[] xmlIds);
+
     /**
      * 新增XML文件
      */

@@ -39,6 +39,9 @@ public class SysDictData extends BaseEntity
     @Excel(name = "字典类型")
     private String dictType;
 
+    @Excel(name = "字典类型名称")
+    private String dictTypeStr;
+
     /** 样式属性（其他样式扩展） */
     private String cssClass;
 
@@ -170,6 +173,15 @@ public class SysDictData extends BaseEntity
             .append("updateBy", getUpdateBy())
             .append("updateTime", getUpdateTime())
             .append("remark", getRemark())
+            .append("dictTypeStr", getDictTypeStr())
             .toString();
+    }
+
+    public String getDictTypeStr() {
+        return dictTypeStr;
+    }
+
+    public void setDictTypeStr(String dictTypeStr) {
+        this.dictTypeStr = dictTypeStr;
     }
 }

@@ -6,15 +6,16 @@ import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.security.utils.SecurityUtils;
-import com.ruoyi.system.api.*;
+import com.ruoyi.system.api.RemoteDictService;
+import com.ruoyi.system.api.RemoteFileService;
+import com.ruoyi.system.api.RemoteTranslateService;
+import com.ruoyi.system.api.RemoteVehicleService;
 import com.ruoyi.system.api.domain.SysDictData;
-import com.ruoyi.system.api.domain.SysJob;
 import com.ruoyi.system.api.domain.VehicleInfo;
-import com.ruoyi.system.api.enums.JobType;
-import com.ruoyi.xml.domain.DiffLineVO;
-import com.ruoyi.xml.domain.DiffResultVO;
 import com.ruoyi.xml.domain.XmlFile;
 import com.ruoyi.xml.domain.XmlVersion;
+import com.ruoyi.xml.domain.vo.DiffLineVO;
+import com.ruoyi.xml.domain.vo.DiffResultVO;
 import com.ruoyi.xml.mapper.XmlFileMapper;
 import com.ruoyi.xml.mapper.XmlVersionMapper;
 import com.ruoyi.xml.service.IXmlFileService;
@@ -38,6 +39,7 @@ import java.io.*;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.time.format.DateTimeFormatter;
@@ -62,9 +64,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     @Autowired
     private RemoteFileService remoteFileService;
-
-    @Autowired
-    private RemoteJobService remoteJobService;
 
     @Autowired
     private RemoteTranslateService remoteTranslateService;
@@ -205,24 +204,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
     public AjaxResult deleteXmlFileByIds(Long[] xmlIds) {
         try {
             int deleteRows = xmlFileMapper.deleteXmlFileByIds(xmlIds);
-            if (!(xmlIds.length == deleteRows)) {
-                return AjaxResult.error(remoteTranslateService.translate("common.failed", null));
-            }
-            int jobRows = 0;
-            for (Long xmlId : xmlIds) {
-                SysJob job = new SysJob(
-                        "XML" + xmlId,
-                        JobType.XML_CLEAN_EXPIRED.getType(),
-                        JobType.XML_CLEAN_EXPIRED.getInvoke() + "(" + xmlId + ")",
-                        JobType.XML_CLEAN_EXPIRED.getCron(),
-                        xmlId.toString()
-                );
-                int code = remoteJobService.createJob(job, SecurityConstants.INNER).getCode();
-                jobRows += code == 200 ? 1 : 0;
-            }
             Map<String, Integer> result = new HashMap<>();
             result.put("deleteRows", deleteRows);
-            result.put("jobRows", jobRows);
             return AjaxResult.success(result);
         } catch (Exception e){
             return AjaxResult.error(e.getMessage());
@@ -599,16 +582,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
     @Override
     public AjaxResult restoreXmlByIds(Long[] xmlIds) {
         int restoreRows = xmlFileMapper.restoreXmlByIds(xmlIds);
-        if (!(xmlIds.length == restoreRows)) {
-            return AjaxResult.error("恢复Xml文件失败");
-        }
-        Map<String, Object> params = new HashMap<>();
-        params.put("jobType", JobType.VEHICLE_CLEAN_EXPIRED.getType());
-        params.put("entityIds", Arrays.toString(xmlIds));
-        int jobResult = remoteJobService.deleteJobByIdsConditions(params, SecurityConstants.INNER).getCode();
         Map<String, Object> result = new HashMap<>();
         result.put("restoreRows", restoreRows);
-        result.put("jobResult", jobResult);
         return AjaxResult.success(result);
     }
 
@@ -619,7 +594,29 @@ public class XmlFileServiceImpl implements IXmlFileService {
      * @return 结果
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public int permanentlyDeleteXmlByIds(Long[] xmlIds) {
+        // 1. 根据 xmlIds 查询对应的 file_path
+        List<String> filePaths = xmlFileMapper.selectFilePathsByIds(xmlIds);
+
+        // 2. 遍历 filePaths 删除本地文件
+        String projectPath = System.getProperty("user.dir");
+        for (String filePath : filePaths) {
+            try {
+                Path absolutePath = Paths.get(projectPath, filePath);
+                if (Files.exists(absolutePath)) {
+                    Files.delete(absolutePath);
+                    log.info("成功删除文件: {}", absolutePath);
+                } else {
+                    log.warn("文件不存在，无法删除: {}", absolutePath);
+                }
+            } catch (Exception e) {
+                // 可以选择抛异常回滚，也可以记录日志继续
+                log.error("删除文件失败: " + filePath, e);
+                throw new RuntimeException("删除文件失败：" + filePath, e);
+            }
+        }
+        xmlVersionMapper.deleteXmlVersionByFileId(xmlIds);
         return xmlFileMapper.permanentlyDeleteXmlByIds(xmlIds);
     }
 }

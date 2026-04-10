@@ -1,16 +1,12 @@
 package com.ruoyi.vehicle.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.ruoyi.common.core.constant.SecurityConstants;
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.utils.poi.ExcelUtil;
 import com.ruoyi.common.core.utils.uuid.UUID;
 import com.ruoyi.common.core.web.domain.AjaxResult;
-import com.ruoyi.system.api.RemoteJobService;
 import com.ruoyi.system.api.RemoteTranslateService;
-import com.ruoyi.system.api.domain.SysJob;
-import com.ruoyi.system.api.enums.JobType;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
@@ -32,7 +28,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,9 +42,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Autowired
     private VehicleInfoMapper vehicleInfoMapper;
-
-    @Autowired
-    private RemoteJobService remoteJobService;
 
     @Value("${ocr.python.url}")
     private String pythonUrl;
@@ -129,25 +121,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     public AjaxResult deleteVehicleInfoByIds(Long[] vehicleIds) {
         try {
             int deleteRows = vehicleInfoMapper.deleteVehicleInfoByIds(vehicleIds);
-            if (!(vehicleIds.length == deleteRows)) {
-                return AjaxResult.error(remoteTranslateService.translate("common.failed", null));
-            }
-            int jobRows = 0;
-            for (Long vehicleId : vehicleIds) {
-                SysJob job = new SysJob(
-                        "VEHICLE_" + vehicleId,
-                        JobType.VEHICLE_CLEAN_EXPIRED.getType(),
-                        JobType.VEHICLE_CLEAN_EXPIRED.getInvoke() + "(" + vehicleId + ")",
-                        JobType.VEHICLE_CLEAN_EXPIRED.getCron(),
-                        vehicleId.toString()
-                );
-                int code = remoteJobService.createJob(job, SecurityConstants.INNER).getCode();
-                jobRows += code == 200 ? 1 : 0;
-            }
-            Map<String, Integer> result = new HashMap<>();
-            result.put("deleteRows", deleteRows);
-            result.put("jobRows", jobRows);
-            return AjaxResult.success(result);
+            return AjaxResult.success(deleteRows);
         } catch (Exception e){
             return AjaxResult.error(e.getMessage());
         }
@@ -162,13 +136,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     @Override
     public AjaxResult restoreVehicleInfoByIds(Long[] vehicleIds) {
         int restoreRows = vehicleInfoMapper.restoreVehicleInfoByIds(vehicleIds);
-        Map<String, Object> params = new HashMap<>();
-        params.put("jobType", JobType.VEHICLE_CLEAN_EXPIRED.getType());
-        params.put("entityIds", Arrays.toString(vehicleIds));
-        int jobResult = remoteJobService.deleteJobByIdsConditions(params, SecurityConstants.INNER).getCode();
         Map<String, Object> result = new HashMap<>();
         result.put("restoreRows", restoreRows);
-        result.put("jobResult", jobResult);
         return AjaxResult.success(result);
     }
 

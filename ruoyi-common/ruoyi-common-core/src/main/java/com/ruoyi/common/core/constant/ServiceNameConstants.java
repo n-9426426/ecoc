@@ -31,4 +31,9 @@ public class ServiceNameConstants
      * 车辆信息管理的serviceid
      */
     public static final String VEHICLE_SERVICE = "ruoyi-vehicle";
+
+    /**
+     * xml管理的serviceid
+     */
+    public static final String XML_SERVICE = "ruoyi-xml";
 }

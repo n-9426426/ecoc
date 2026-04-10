@@ -1,8 +1,15 @@
 package com.ruoyi.common.security.handler;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
+import com.ruoyi.common.core.constant.HttpStatus;
+import com.ruoyi.common.core.exception.DemoModeException;
+import com.ruoyi.common.core.exception.InnerAuthException;
+import com.ruoyi.common.core.exception.ServiceException;
+import com.ruoyi.common.core.exception.auth.NotPermissionException;
+import com.ruoyi.common.core.exception.auth.NotRoleException;
+import com.ruoyi.common.core.text.Convert;
+import com.ruoyi.common.core.utils.StringUtils;
+import com.ruoyi.common.core.utils.html.EscapeUtil;
+import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.system.api.RemoteTranslateService;
 import org.apache.ibatis.session.SqlSessionException;
 import org.slf4j.Logger;
@@ -18,17 +25,9 @@ import org.springframework.web.bind.MissingPathVariableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
-import com.ruoyi.common.core.constant.HttpStatus;
-import com.ruoyi.common.core.exception.DemoModeException;
-import com.ruoyi.common.core.exception.InnerAuthException;
-import com.ruoyi.common.core.exception.ServiceException;
-import com.ruoyi.common.core.exception.auth.NotPermissionException;
-import com.ruoyi.common.core.exception.auth.NotRoleException;
-import com.ruoyi.common.core.text.Convert;
-import com.ruoyi.common.core.utils.StringUtils;
-import com.ruoyi.common.core.utils.html.EscapeUtil;
-import com.ruoyi.common.core.web.domain.AjaxResult;
 
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.sql.SQLIntegrityConstraintViolationException;
 

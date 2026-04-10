@@ -1,8 +1,8 @@
 package com.ruoyi.xml.service;
 
 import com.ruoyi.common.core.web.domain.AjaxResult;
-import com.ruoyi.xml.domain.DiffResultVO;
 import com.ruoyi.xml.domain.XmlFile;
+import com.ruoyi.xml.domain.vo.DiffResultVO;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
