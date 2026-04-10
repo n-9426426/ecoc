@@ -95,7 +95,7 @@ public interface SysDictDataMapper
     public int updateDictDataType(@Param("oldDictType") String oldDictType, @Param("newDictType") String newDictType);
 
     /**
-     * 检查 dictCode 是否被 vehicle_template_attribute.attr_path 引用
+     * 检查 dictCode 是否被 xml_template_attribute.attr_path 引用
      *
      * @param dictCode 字典编码
      * @return 引用数量
