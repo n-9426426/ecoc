@@ -12,7 +12,6 @@
         <module>ruoyi-system</module>
         <module>ruoyi-file</module>
         <module>ruoyi-vehicle</module>
-        <module>ruoyi-xml</module>
     </modules>
 
     <artifactId>ruoyi-modules</artifactId>

@@ -22,4 +22,10 @@ public interface RemoteDictService {
      */
     @GetMapping("/dict/data/type/{dictType}")
     R<List<SysDictData>> getDictDataByType(@PathVariable("dictType") String dictType);
+
+    /**
+     * 根据字典数据ID查询字典数据
+     */
+    @GetMapping("/dict/data/{dictCode}")
+    R<SysDictData> getDataByDictCode(@PathVariable("dictCode") Long dictCode);
 }

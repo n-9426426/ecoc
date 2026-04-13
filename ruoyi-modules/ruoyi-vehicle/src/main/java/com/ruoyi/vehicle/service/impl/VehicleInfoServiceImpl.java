@@ -6,10 +6,12 @@ import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.utils.poi.ExcelUtil;
 import com.ruoyi.common.core.utils.uuid.UUID;
 import com.ruoyi.common.core.web.domain.AjaxResult;
+import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
+import com.ruoyi.vehicle.utils.JsonDictConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,6 +54,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     @Autowired
     private RemoteTranslateService remoteTranslateService;
 
+    @Autowired
+    private JsonDictConverter jsonDictConverter;
+
     private final Map<String, Sinks.Many<ServerSentEvent<String>>> sinks = new ConcurrentHashMap<>();
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -66,7 +71,13 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
      */
     @Override
     public VehicleInfo selectVehicleInfoById(Long vehicleId) {
-        return vehicleInfoMapper.selectVehicleInfoById(vehicleId);
+        VehicleInfo vehicle = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
+        if (vehicle != null && StringUtils.isNotBlank(vehicle.getJson())) {
+            // 转换 JSON key 为 dict_label
+            Map<String, Object> convertedMap = jsonDictConverter.convertJsonKeysToDictLabel(vehicle.getJson());
+            vehicle.setJsonMap(convertedMap);
+        }
+        return vehicle;
     }
 
     /**
@@ -77,7 +88,15 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
      */
     @Override
     public List<VehicleInfo> selectVehicleInfoList(VehicleInfo vehicleInfo) {
-        return vehicleInfoMapper.selectVehicleInfoList(vehicleInfo);
+        List<VehicleInfo> list = vehicleInfoMapper.selectVehicleInfoList(vehicleInfo);
+        // 批量转换
+        for (VehicleInfo vehicle : list) {
+            if (StringUtils.isNotBlank(vehicle.getJson())) {
+                Map<String, Object> convertedMap = jsonDictConverter.convertJsonKeysToDictLabel(vehicle.getJson());
+                vehicle.setJsonMap(convertedMap);
+            }
+        }
+        return list;
     }
 
     /**
@@ -88,15 +107,16 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
      */
     @Override
     public int insertVehicleInfo(VehicleInfo vehicleInfo) {
-        if (selectVehicleInfoByVin(vehicleInfo.getVin()) != null) {
+        if (selectVehicleInfoByWvtaNo(vehicleInfo.getWvtaNo()) != null) {
             throw new RuntimeException("数据已存在");
         }
         vehicleInfo.setCreateTime(DateUtils.getNowDate());
+        vehicleInfo.setCreateBy(SecurityUtils.getUsername());
         return vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
     }
 
-    private VehicleInfo selectVehicleInfoByVin(String vin) {
-        return vehicleInfoMapper.selectVehicleInfoByVin(vin);
+    private VehicleInfo selectVehicleInfoByWvtaNo(String vin) {
+        return vehicleInfoMapper.selectVehicleInfoByWvtaNo(vin);
     }
 
     /**
@@ -108,6 +128,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     @Override
     public int updateVehicleInfo(VehicleInfo vehicleInfo) {
         vehicleInfo.setUpdateTime(DateUtils.getNowDate());
+        vehicleInfo.setUpdateBy(SecurityUtils.getUsername());
         return vehicleInfoMapper.updateVehicleInfo(vehicleInfo);
     }
 
@@ -178,21 +199,20 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
         for (VehicleInfo vehicle : vehicleList) {
             try {
-                // 检查vin是否已存在
+                // 检查wvta是否已存在
                 VehicleInfo query = new VehicleInfo();
-                query.setVin(vehicle.getVin());
+                query.setWvtaNo(vehicle.getWvtaNo());
                 List<VehicleInfo> existList = this.selectVehicleInfoList(query);
 
                 if (!existList.isEmpty()) {
                     failCount++;
-                    failMsg.append(remoteTranslateService.translate("vehicle.import.vin.exists", vehicle.getVin()));
+                    failMsg.append(remoteTranslateService.translate("vehicle.import.wvta.exists", vehicle.getWvtaNo()));
                     continue;
                 }
-                vehicle.setImportSource("Excel上传");
                 successCount++;
             } catch (Exception e) {
                 failCount++;
-                failMsg.append(StringUtils.format(remoteTranslateService.translate("vehicle.import.fail", null), vehicle.getVin(), e.getMessage()));
+                failMsg.append(StringUtils.format(remoteTranslateService.translate("vehicle.import.fail", null), vehicle.getWvtaNo(), e.getMessage()));
             }
         }
 

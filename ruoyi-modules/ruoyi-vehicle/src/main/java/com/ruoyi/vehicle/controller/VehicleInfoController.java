@@ -1,7 +1,6 @@
 package com.ruoyi.vehicle.controller;
 
 import com.ruoyi.common.core.exception.ServiceException;
-import com.ruoyi.common.core.utils.poi.ExcelUtil;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.core.web.page.TableDataInfo;
@@ -22,12 +21,11 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
 
-import javax.servlet.http.HttpServletResponse;
 import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/info")
+@RequestMapping("/vehicle")
 public class VehicleInfoController extends BaseController {
 
     private static final Logger log = LoggerFactory.getLogger(VehicleInfoController.class);
@@ -48,19 +46,6 @@ public class VehicleInfoController extends BaseController {
         startPage();
         List<VehicleInfo> list = vehicleInfoService.selectVehicleInfoList(vehicleInfo);
         return getDataTable(list);
-    }
-
-    /**
-     * 导出车辆信息列表
-     */
-    @Operation(summary = "导出车辆信息")
-    @RequiresPermissions("vehicle:info:export")
-    @Log(title = "车辆信息管理", businessType = BusinessType.EXPORT)
-    @PostMapping("/export")
-    public void export(HttpServletResponse response, @RequestBody VehicleInfo vehicleInfo) {
-        List<VehicleInfo> list = vehicleInfoService.selectVehicleInfoList(vehicleInfo);
-        ExcelUtil<VehicleInfo> util = new ExcelUtil<VehicleInfo>(VehicleInfo.class);
-        util.exportExcel(response, list, "车辆信息数据");
     }
 
     /**
