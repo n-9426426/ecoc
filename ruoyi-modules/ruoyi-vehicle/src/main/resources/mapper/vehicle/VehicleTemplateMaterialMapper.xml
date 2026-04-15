@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.vehicle.mapper.VehicleTemplateMaterialMapper">
+
+    <!-- ==================== ResultMap ==================== -->
+    <resultMap id="MaterialResult" type="com.ruoyi.vehicle.domain.VehicleTemplateMaterial">
+        <id     property="id"          column="id"/>
+        <result property="templateId"  column="template_id"/>
+        <result property="materialNo"  column="material_no"/>
+        <result property="remark"      column="remark"/>
+        <result property="createBy"    column="create_by"/>
+        <result property="createTime"  column="create_time"/>
+        <result property="updateBy"    column="update_by"/>
+        <result property="updateTime"  column="update_time"/>
+    </resultMap>
+
+    <!-- ==================== 根据模板ID查询物料号列表 ==================== -->
+    <select id="selectByTemplateId"
+            parameterType="java.lang.Long"
+            resultMap="MaterialResult">
+        SELECT
+            id,
+            template_id,
+            material_no,
+            remark,
+            create_by,
+            create_time,
+            update_by,
+            update_time
+        FROM vehicle_template_material
+        WHERE template_id = #{templateId}
+        ORDER BY create_time ASC
+    </select>
+
+    <!-- ==================== 批量新增 ==================== -->
+    <insert id="batchInsert">
+        INSERT INTO vehicle_template_material (
+        template_id,
+        material_no,
+        remark,
+        create_by,
+        create_time
+        ) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+            #{item.templateId},
+            #{item.materialNo},
+            #{item.remark},
+            #{item.createBy},
+            #{item.createTime}
+            )
+        </foreach>
+    </insert>
+
+    <!-- ==================== 根据模板ID删除 ==================== -->
+    <delete id="deleteByTemplateId" parameterType="java.lang.Long">
+        DELETE FROM vehicle_template_material
+        WHERE template_id = #{templateId}
+    </delete>
+
+    <!-- ==================== 根据多个模板ID删除 ==================== -->
+    <delete id="deleteByTemplateIds">
+        DELETE FROM vehicle_template_material
+        WHERE template_id IN
+        <foreach collection="array" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+
+</mapper>

@@ -2,12 +2,9 @@ package com.ruoyi.vehicle.service;
 
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.vehicle.domain.VehicleInfo;
-import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.multipart.MultipartFile;
-import reactor.core.publisher.Flux;
 
 import java.util.List;
-import java.util.Map;
 
 public interface IVehicleInfoService {
     /**
@@ -81,27 +78,4 @@ public interface IVehicleInfoService {
      * @return 导入结果
      */
     public AjaxResult importExcel(MultipartFile file) throws Exception;
-
-    /**
-     * 调用Python对文件进行OCR识别
-     *
-     * @param file PDF文件
-     * @return 识别结果
-     */
-    public Flux<ServerSentEvent<String>> importPdf(MultipartFile file);
-
-    /**
-     * OCR识别进度回调
-     */
-    public void sendProgress(String taskId, Map<String, Object> data);
-
-    /**
-     * OCR识别完成回调
-     */
-    public void sendComplete(String taskId, Map<String, Object> data);
-
-    /**
-     * OCR识别错误回调
-     */
-    public void sendError(String taskId, Map<String, Object> data);
 }

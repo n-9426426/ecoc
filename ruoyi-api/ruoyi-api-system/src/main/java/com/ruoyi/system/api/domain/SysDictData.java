@@ -48,6 +48,8 @@ public class SysDictData extends BaseEntity
     /** 表格字典样式 */
     private String rule;
 
+    private String rangeRule;
+
     /** 是否默认（Y是 N否） */
     @Excel(name = "是否默认", readConverterExp = "Y=是,N=否")
     private String isDefault;
@@ -166,6 +168,7 @@ public class SysDictData extends BaseEntity
             .append("dictType", getDictType())
             .append("cssClass", getCssClass())
             .append("rule", getRule())
+            .append("rangeRule", getRangeRule())
             .append("isDefault", getIsDefault())
             .append("status", getStatus())
             .append("createBy", getCreateBy())
@@ -183,5 +186,13 @@ public class SysDictData extends BaseEntity
 
     public void setDictTypeStr(String dictTypeStr) {
         this.dictTypeStr = dictTypeStr;
+    }
+
+    public String getRangeRule() {
+        return rangeRule;
+    }
+
+    public void setRangeRule(String rangeRule) {
+        this.rangeRule = rangeRule;
     }
 }

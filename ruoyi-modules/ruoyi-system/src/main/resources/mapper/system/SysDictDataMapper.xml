@@ -5,24 +5,25 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 <mapper namespace="com.ruoyi.system.mapper.SysDictDataMapper">
 	
 	<resultMap type="SysDictData" id="SysDictDataResult">
-		<id     property="dictCode"   column="dict_code"   />
-		<result property="dictSort"   column="dict_sort"   />
-		<result property="dictLabel"  column="dict_label"  />
-		<result property="dictValue"  column="dict_value"  />
-		<result property="dictType"   column="dict_type"   />
-		<result property="cssClass"   column="css_class"   />
-		<result property="rule"  column="rule"  />
-		<result property="isDefault"  column="is_default"  />
-		<result property="status"     column="status"      />
-		<result property="createBy"   column="create_by"   />
-		<result property="createTime" column="create_time" />
-		<result property="updateBy"   column="update_by"   />
-		<result property="updateTime" column="update_time" />
+		<id     property="dictCode"    column="dict_code"   />
+		<result property="dictSort"    column="dict_sort"   />
+		<result property="dictLabel"   column="dict_label"  />
+		<result property="dictValue"   column="dict_value"  />
+		<result property="dictType"    column="dict_type"   />
+		<result property="cssClass"    column="css_class"   />
+		<result property="rule"        column="rule"  />
+		<result property="rangeRule"   column="range_rule"/>
+		<result property="isDefault"   column="is_default"  />
+		<result property="status"      column="status"      />
+		<result property="createBy"    column="create_by"   />
+		<result property="createTime"  column="create_time" />
+		<result property="updateBy"    column="update_by"   />
+		<result property="updateTime"  column="update_time" />
 		<result property="dictTypeStr" column="dict_type_str"/>
 	</resultMap>
 	
 	<sql id="selectDictDataVo">
-        select sdd.dict_code, sdd.dict_sort, sdd.dict_label, sdd.dict_value, sdd.dict_type, sdd.css_class, sdd.rule,
+        select sdd.dict_code, sdd.dict_sort, sdd.dict_label, sdd.dict_value, sdd.dict_type, sdd.css_class, sdd.rule, sdd.range_rule,
 			   sdd.is_default, sdd.status, sdd.create_by, sdd.create_time, sdd.remark, sdt.dict_name as dict_type_str
 		from sys_dict_data sdd left join sys_dict_type sdt on sdd.dict_type = sdt.dict_type
     </sql>
