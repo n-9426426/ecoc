@@ -2,7 +2,6 @@ package com.ruoyi.vehicle.service.impl;
 
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.StringUtils;
-import com.ruoyi.common.core.utils.poi.ExcelUtil;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.RemoteDictService;
@@ -11,6 +10,7 @@ import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMaterialMapper;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
+import com.ruoyi.vehicle.utils.ExcelUtil;
 import com.ruoyi.vehicle.utils.JsonDictConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,6 +41,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Autowired
     private JsonDictConverter jsonDictConverter;
+
+    @Autowired
+    private ExcelUtil excelUtil;
 
     /**
      * 查询车辆信息
@@ -171,8 +174,11 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Override
     public AjaxResult importExcel(MultipartFile file) throws Exception {
-        ExcelUtil<VehicleInfo> excelUtil = new ExcelUtil<>(VehicleInfo.class);
-        List<VehicleInfo> vehicleList = excelUtil.importExcel(file.getInputStream());
+        List<VehicleInfo> vehicleList = excelUtil.importExcel(
+                file.getInputStream(),
+                "vehicle_info",
+                VehicleInfo.class
+        );
 
         if (vehicleList.isEmpty()) {
             return AjaxResult.error(remoteTranslateService.translate("vehicle.import.data.empty", null));
@@ -194,6 +200,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                     failMsg.append(remoteTranslateService.translate("vehicle.import.wvta.exists", vehicle.getWvtaNo()));
                     continue;
                 }
+                insertVehicleInfo(vehicle);
                 successCount++;
             } catch (Exception e) {
                 failCount++;
@@ -209,5 +216,11 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         resultMap.put("message", StringUtils.format(remoteTranslateService.translate("common.import.result", null), successCount, failCount));
         resultMap.put("data", vehicleList);
         return AjaxResult.success(resultMap);
+    }
+
+    @Override
+    public int updateStatus(VehicleInfo vehicleInfo) {
+        String updateBy = SecurityUtils.getUsername();
+        return vehicleInfoMapper.updateStatus(updateBy, vehicleInfo.getVehicleId(), vehicleInfo.getStatus());
     }
 }

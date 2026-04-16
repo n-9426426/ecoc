@@ -1,6 +1,5 @@
 package com.ruoyi.system.controller;
 
-import com.ruoyi.common.core.utils.poi.ExcelUtil;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.core.web.page.TableDataInfo;
@@ -14,7 +13,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpServletResponse;
 import java.util.List;
 
 /**
@@ -39,16 +37,6 @@ public class SysConfigController extends BaseController
         startPage();
         List<SysConfig> list = configService.selectConfigList(config);
         return getDataTable(list);
-    }
-
-    @Log(title = "参数管理", businessType = BusinessType.EXPORT)
-    @RequiresPermissions("system:config:export")
-    @PostMapping("/export")
-    public void export(HttpServletResponse response, SysConfig config)
-    {
-        List<SysConfig> list = configService.selectConfigList(config);
-        ExcelUtil<SysConfig> util = new ExcelUtil<SysConfig>(SysConfig.class);
-        util.exportExcel(response, list, "参数数据");
     }
 
     /**

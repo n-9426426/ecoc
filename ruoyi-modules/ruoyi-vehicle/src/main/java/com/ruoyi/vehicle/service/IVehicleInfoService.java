@@ -78,4 +78,6 @@ public interface IVehicleInfoService {
      * @return 导入结果
      */
     public AjaxResult importExcel(MultipartFile file) throws Exception;
+
+    public int updateStatus(VehicleInfo vehicleInfo);
 }

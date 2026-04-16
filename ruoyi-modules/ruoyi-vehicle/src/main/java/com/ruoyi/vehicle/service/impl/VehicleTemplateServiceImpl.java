@@ -204,9 +204,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         String taskId = UUID.randomUUID().toString();
 
         // ✅ 创建热流Sink
-        Sinks.Many<ServerSentEvent<String>> sink = Sinks.many().unicast()
-                .onBackpressureBuffer();
-
+        Sinks.Many<ServerSentEvent<String>> sink = Sinks.many().unicast().onBackpressureBuffer();
         sinks.put(taskId, sink);
 
         try {
@@ -356,5 +354,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             sink.tryEmitError(e);
             sinks.remove(taskId);
         }
+    }
+
+    public List<VehicleTemplate> selectVehicleTemplateOption() {
+        return templateMapper.selectVehicleTemplateOption();
     }
 }

@@ -79,6 +79,13 @@
         ORDER BY create_time DESC
     </select>
 
+    <select id="selectVehicleTemplateOption" resultMap="VehicleTemplateResult">
+        select template_id, coc_template_no, version
+        from vehicle_template
+        where status = '0' and del_flag = '0'
+        order by create_time desc
+    </select>
+
     <!-- ==================== 根据ID查询 ==================== -->
     <select id="selectVehicleTemplateById"
             parameterType="java.lang.Long"

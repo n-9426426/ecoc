@@ -24,4 +24,6 @@ public interface VehicleTemplateMapper {
                              @Param("validateMsg") String validateMsg);
 
     int batchUpdateValidateResult(List<VehicleTemplate> list);
+
+    List<VehicleTemplate> selectVehicleTemplateOption();
 }

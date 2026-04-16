@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ruoyi.vehicle.mapper.ExcelColumnConfigMapper">
+
+    <resultMap id="ExcelColumnConfigResult" type="com.ruoyi.system.api.domain.ExcelColumnConfig">
+        <id property="id"             column="id"/>
+        <result property="tableName"      column="table_name"/>
+        <result property="fieldName"      column="field_name"/>
+        <result property="columnNameZhCn" column="column_name_zh_cn"/>
+        <result property="columnNameEnUs" column="column_name_en_us"/>
+        <result property="sort"           column="sort"/>
+        <result property="enabled"        column="enabled"/>
+    </resultMap>
+
+    <select id="selectByTableName" resultMap="ExcelColumnConfigResult">
+        SELECT id, table_name, field_name,
+               column_name_zh_cn, column_name_en_us,
+               sort, enabled
+        FROM excel_column_config
+        WHERE table_name = #{tableName}AND enabled = 1
+        ORDER BY sort
+    </select>
+
+</mapper>

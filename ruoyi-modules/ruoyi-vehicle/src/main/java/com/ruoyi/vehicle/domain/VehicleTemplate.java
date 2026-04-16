@@ -1,7 +1,6 @@
 package com.ruoyi.vehicle.domain;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.ruoyi.common.core.annotation.Excel;
 import com.ruoyi.common.core.web.domain.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -22,31 +21,24 @@ public class VehicleTemplate extends BaseEntity {
     private List<Long> templateIds;
 
     /** WVTA-COC编号 */
-    @Excel(name = "WVTA-COC编号")
     private String wvtaCocNo;
 
     /** COC模板号 */
-    @Excel(name = "COC模板号")
     private String cocTemplateNo;
 
     /** 车型号 */
-    @Excel(name = "车型号")
     private String modelNo;
 
     /** 版本号 */
-    @Excel(name = "版本")
     private String version;
 
     /** 车辆类型 */
-    @Excel(name = "车辆类型")
     private String vehicleType;
 
     /** 状态（0=启用 1=停用） */
-    @Excel(name = "状态", readConverterExp = "0=启用,1=停用")
     private String status;
 
     /** 校验结果（0=未校验 1=通过 2=不通过） */
-    @Excel(name = "校验结果", readConverterExp = "0=未校验,1=通过,2=不通过")
     private String validateResult;
 
     /** 最近校验时间 */

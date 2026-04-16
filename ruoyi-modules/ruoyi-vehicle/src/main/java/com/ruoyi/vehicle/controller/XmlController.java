@@ -1,6 +1,5 @@
 package com.ruoyi.vehicle.controller;
 
-import com.ruoyi.common.core.utils.poi.ExcelUtil;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.core.web.page.TableDataInfo;
@@ -57,9 +56,8 @@ public class XmlController extends BaseController {
     @Log(title = "XML文件", businessType = BusinessType.EXPORT)
     @PostMapping("/export")
     public void export(HttpServletResponse response, XmlFile xmlFile) {
-        List<XmlFile> list = xmlFileService.selectXmlFileList(xmlFile);
-        ExcelUtil<XmlFile> util = new ExcelUtil<XmlFile>(XmlFile.class);
-        util.exportExcel(response, list, "XML文件数据");
+        // todo 导出
+
     }
 
     /**

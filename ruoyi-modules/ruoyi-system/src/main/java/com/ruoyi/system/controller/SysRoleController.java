@@ -1,6 +1,5 @@
 package com.ruoyi.system.controller;
 
-import com.ruoyi.common.core.utils.poi.ExcelUtil;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.core.web.page.TableDataInfo;
@@ -19,7 +18,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpServletResponse;
 import java.util.List;
 
 /**
@@ -47,16 +45,6 @@ public class SysRoleController extends BaseController
         startPage();
         List<SysRole> list = roleService.selectRoleList(role);
         return getDataTable(list);
-    }
-
-    @Log(title = "角色管理", businessType = BusinessType.EXPORT)
-    @RequiresPermissions("system:role:export")
-    @PostMapping("/export")
-    public void export(HttpServletResponse response, SysRole role)
-    {
-        List<SysRole> list = roleService.selectRoleList(role);
-        ExcelUtil<SysRole> util = new ExcelUtil<SysRole>(SysRole.class);
-        util.exportExcel(response, list, "角色数据");
     }
 
     /**

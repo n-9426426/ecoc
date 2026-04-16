@@ -39,4 +39,6 @@ public interface IVehicleTemplateService {
     void sendComplete(String taskId, Map<String, Object> data);
 
     void sendError(String taskId, Map<String, Object> data);
+
+    List<VehicleTemplate> selectVehicleTemplateOption();
 }

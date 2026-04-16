@@ -1,6 +1,5 @@
 package com.ruoyi.vehicle.domain;
 
-import com.ruoyi.common.core.annotation.Excel;
 import com.ruoyi.common.core.web.domain.BaseEntity;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
@@ -14,26 +13,21 @@ public class XmlFile extends BaseEntity {
     /** ID */
     private Long id;
 
-    @Excel(name = "vin")
     private String vin;
 
     /** 文件名 */
-    @Excel(name = "文件名")
     private String fileName;
 
     /** 文件路径 */
     private String filePath;
 
     /** 文件大小 */
-    @Excel(name = "文件大小")
     private Long fileSize;
 
     /** 文件分级 */
-    @Excel(name = "文件分级")
     private String fileLevel;
 
     /** 版本号 */
-    @Excel(name = "版本号")
     private String version;
 
     /** 是否最新版本 */
@@ -43,7 +37,6 @@ public class XmlFile extends BaseEntity {
     private String pdfPath;
 
     /** 状态(0正常 1停用) */
-    @Excel(name = "状态", readConverterExp = "0=正常,1=停用")
     private String status;
 
     /** 是否回收 */

@@ -53,6 +53,15 @@ public class VehicleInfoController extends BaseController {
         return AjaxResult.success(vehicleInfoService.selectVehicleInfoById(vehicleId));
     }
 
+    @Operation(summary = "更新车辆信息状态")
+    @RequiresPermissions("system:role:edit")
+    @Log(title = "角色管理", businessType = BusinessType.UPDATE)
+    @PutMapping("/changeStatus")
+    public AjaxResult changeStatus(@RequestBody VehicleInfo vehicleInfo)
+    {
+        return toAjax(vehicleInfoService.updateStatus(vehicleInfo));
+    }
+
     /**
      * 新增车辆信息
      */

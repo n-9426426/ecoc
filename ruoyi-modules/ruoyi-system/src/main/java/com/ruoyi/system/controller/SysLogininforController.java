@@ -1,7 +1,6 @@
 package com.ruoyi.system.controller;
 
 import com.ruoyi.common.core.constant.CacheConstants;
-import com.ruoyi.common.core.utils.poi.ExcelUtil;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.core.web.page.TableDataInfo;
@@ -15,7 +14,6 @@ import com.ruoyi.system.service.ISysLogininforService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpServletResponse;
 import java.util.List;
 
 /**
@@ -40,16 +38,6 @@ public class SysLogininforController extends BaseController
         startPage();
         List<SysLogininfor> list = logininforService.selectLogininforList(logininfor);
         return getDataTable(list);
-    }
-
-    @Log(title = "登录日志", businessType = BusinessType.EXPORT)
-    @RequiresPermissions("system:logininfor:export")
-    @PostMapping("/export")
-    public void export(HttpServletResponse response, SysLogininfor logininfor)
-    {
-        List<SysLogininfor> list = logininforService.selectLogininforList(logininfor);
-        ExcelUtil<SysLogininfor> util = new ExcelUtil<SysLogininfor>(SysLogininfor.class);
-        util.exportExcel(response, list, "登录日志");
     }
 
     @RequiresPermissions("system:logininfor:remove")

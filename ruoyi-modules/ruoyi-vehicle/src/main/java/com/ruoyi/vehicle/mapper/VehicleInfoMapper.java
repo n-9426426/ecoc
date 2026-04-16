@@ -1,6 +1,7 @@
 package com.ruoyi.vehicle.mapper;
 
 import com.ruoyi.vehicle.domain.VehicleInfo;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
@@ -75,4 +76,6 @@ public interface VehicleInfoMapper {
     public int permanentlyDeleteVehicleInfoById(Long vehicleId);
 
     VehicleInfo selectVehicleInfoByWvtaNo(String vin);
+
+    int updateStatus( @Param("updateBy") String updateBy, @Param("vehicleId") Long vehicleId, @Param("status") Integer status);
 }

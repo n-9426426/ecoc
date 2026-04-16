@@ -1,6 +1,5 @@
 package com.ruoyi.vehicle.domain;
 
-import com.ruoyi.common.core.annotation.Excel;
 import com.ruoyi.common.core.web.domain.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -19,6 +18,5 @@ public class VehicleTemplateMaterial extends BaseEntity {
     private Long templateId;
 
     /** 整车物料号 */
-    @Excel(name = "整车物料号")
     private String materialNo;
 }

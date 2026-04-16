@@ -4,7 +4,6 @@ import com.ruoyi.common.core.constant.UserConstants;
 import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.utils.SpringUtils;
 import com.ruoyi.common.core.utils.StringUtils;
-import com.ruoyi.common.core.utils.bean.BeanValidators;
 import com.ruoyi.common.datascope.annotation.DataScope;
 import com.ruoyi.common.redis.service.RedisService;
 import com.ruoyi.common.security.utils.SecurityUtils;
@@ -488,80 +487,5 @@ public class SysUserServiceImpl implements ISysUserService
         // 删除用户与岗位关联
         userPostMapper.deleteUserPost(userIds);
         return userMapper.deleteUserByIds(userIds);
-    }
-
-    /**
-     * 导入用户数据
-     * 
-     * @param userList 用户数据列表
-     * @param isUpdateSupport 是否更新支持，如果已存在，则进行更新数据
-     * @param operName 操作用户
-     * @return 结果
-     */
-    @Override
-    public String importUser(List<SysUser> userList, Boolean isUpdateSupport, String operName)
-    {
-        if (StringUtils.isNull(userList) || userList.size() == 0)
-        {
-            throw new ServiceException(remoteTranslateService.translate("user.import.data.not.empty", null));
-        }
-        int successNum = 0;
-        int failureNum = 0;
-        StringBuilder successMsg = new StringBuilder();
-        StringBuilder failureMsg = new StringBuilder();
-        for (SysUser user : userList)
-        {
-            try
-            {
-                // 验证是否存在这个用户
-                SysUser u = userMapper.selectUserByUserName(user.getUserName());
-                if (StringUtils.isNull(u))
-                {
-                    BeanValidators.validateWithException(validator, user);
-                    deptService.checkDeptDataScope(user.getDeptId());
-                    String password = configService.selectConfigByKey("sys.user.initPassword");
-                    user.setPassword(SecurityUtils.encryptPassword(password));
-                    user.setCreateBy(operName);
-                    userMapper.insertUser(user);
-                    successNum++;
-                    successMsg.append("<br/>" + successNum + "、账号 " + user.getUserName() + " 导入成功");
-                }
-                else if (isUpdateSupport)
-                {
-                    BeanValidators.validateWithException(validator, user);
-                    checkUserAllowed(u);
-                    checkUserDataScope(u.getUserId());
-                    deptService.checkDeptDataScope(user.getDeptId());
-                    user.setUserId(u.getUserId());
-                    user.setDeptId(u.getDeptId());
-                    user.setUpdateBy(operName);
-                    userMapper.updateUser(user);
-                    successNum++;
-                    successMsg.append(StringUtils.format(remoteTranslateService.translate("user.import.update.success", null), String.valueOf(successNum), user.getUserName()));
-                }
-                else
-                {
-                    failureNum++;
-                    failureMsg.append(StringUtils.format(remoteTranslateService.translate("user.import.account.exist", null), String.valueOf(failureNum), user.getUserName()));
-                }
-            }
-            catch (Exception e)
-            {
-                failureNum++;
-                String msg = StringUtils.format(remoteTranslateService.translate("user.import.account.failure", null));
-                failureMsg.append(msg + e.getMessage());
-                log.error(msg, e);
-            }
-        }
-        if (failureNum > 0)
-        {
-            failureMsg.insert(0, StringUtils.format(remoteTranslateService.translate("user.import.failure.header", null), String.valueOf(failureNum)));
-            throw new ServiceException(failureMsg.toString());
-        }
-        else
-        {
-            successMsg.insert(0, StringUtils.format(remoteTranslateService.translate("user.import.success.header", null), String.valueOf(successNum)));
-        }
-        return successMsg.toString();
     }
 }

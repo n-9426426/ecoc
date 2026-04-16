@@ -2,7 +2,6 @@ package com.ruoyi.vehicle.controller;
 
 import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.model.ValidationReport;
-import com.ruoyi.common.core.utils.poi.ExcelUtil;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.core.web.page.TableDataInfo;
@@ -14,6 +13,7 @@ import com.ruoyi.system.api.enums.FileTypeEnum;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.domain.VehicleTemplateMaterial;
 import com.ruoyi.vehicle.service.IVehicleTemplateService;
+import com.ruoyi.vehicle.utils.ExcelUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,6 +39,9 @@ public class VehicleTemplateController extends BaseController {
     @Autowired
     private RemoteTranslateService remoteTranslateService;
 
+    @Autowired
+    private ExcelUtil excelUtil;
+
     /**
      * 查询列表
      */
@@ -48,6 +51,13 @@ public class VehicleTemplateController extends BaseController {
         startPage();
         List<VehicleTemplate> list = vehicleTemplateService.selectVehicleTemplateList(template);
         return getDataTable(list);
+    }
+
+    @RequiresPermissions("vehicle:template:list")
+    @GetMapping("/options")
+    public AjaxResult optionSelect() {
+        List<VehicleTemplate> list = vehicleTemplateService.selectVehicleTemplateOption();
+        return AjaxResult.success(list);
     }
 
     /**
@@ -122,10 +132,9 @@ public class VehicleTemplateController extends BaseController {
     @RequiresPermissions("vehicle:template:export")
     @Log(title = "车辆模板", businessType = BusinessType.EXPORT)
     @PostMapping("/export")
-    public void export(HttpServletResponse response, @RequestBody VehicleTemplate template) {
+    public void export(HttpServletResponse response, @RequestBody VehicleTemplate template) throws Exception {
         List<VehicleTemplate> list = vehicleTemplateService.selectVehicleTemplateList(template);
-        ExcelUtil<VehicleTemplate> util = new ExcelUtil<>(VehicleTemplate.class);
-        util.exportExcel(response, list, "车辆模板数据");
+        excelUtil.exportExcel(response, list, "vehicle_template", "Vehicle Template");
     }
 
     /**

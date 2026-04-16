@@ -228,4 +228,12 @@
 		and deleted = 0
 	</select>
 
+	<update id="updateStatus">
+		UPDATE vehicle_info
+		SET
+			status      = #{status},
+			update_by   = #{updateBy},
+			update_time = SYSDATE()
+		WHERE vehicle_id = #{vehicleId}
+	</update>
 </mapper>

@@ -1,6 +1,5 @@
 package com.ruoyi.system.controller;
 
-import com.ruoyi.common.core.utils.poi.ExcelUtil;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.core.web.page.TableDataInfo;
@@ -13,7 +12,6 @@ import com.ruoyi.system.service.ISysOperLogService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpServletResponse;
 import java.util.List;
 
 /**
@@ -35,16 +33,6 @@ public class SysOperlogController extends BaseController
         startPage();
         List<SysOperLog> list = operLogService.selectOperLogList(operLog);
         return getDataTable(list);
-    }
-
-    @Log(title = "操作日志", businessType = BusinessType.EXPORT)
-    @RequiresPermissions("system:operlog:export")
-    @PostMapping("/export")
-    public void export(HttpServletResponse response, SysOperLog operLog)
-    {
-        List<SysOperLog> list = operLogService.selectOperLogList(operLog);
-        ExcelUtil<SysOperLog> util = new ExcelUtil<SysOperLog>(SysOperLog.class);
-        util.exportExcel(response, list, "操作日志");
     }
 
     @Log(title = "操作日志", businessType = BusinessType.DELETE)
