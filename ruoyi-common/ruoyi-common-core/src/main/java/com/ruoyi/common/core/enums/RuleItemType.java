@@ -1,8 +1,11 @@
 package com.ruoyi.common.core.enums;
 
+import lombok.Getter;
+
 /**
  * 规则项类型
  */
+@Getter
 public enum RuleItemType {
     // 基础规则
     VALUE_IS_PRESENT_IF_FIELD_REF,      // VALUE IS PRESENT IF @fieldName

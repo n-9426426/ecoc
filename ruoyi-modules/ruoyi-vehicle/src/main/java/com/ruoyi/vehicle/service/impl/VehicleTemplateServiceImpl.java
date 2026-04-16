@@ -5,6 +5,7 @@ import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.uuid.UUID;
 import com.ruoyi.common.security.utils.SecurityUtils;
+import com.ruoyi.system.api.RemoteFileService;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.domain.VehicleTemplateMaterial;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMapper;
@@ -48,6 +49,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
     @Value("${ocr.callback.url}")
     private String callbackUrl;
+
+    @Autowired
+    private RemoteFileService remoteFileService;
 
     @Autowired
     private VehicleTemplateMapper templateMapper;
@@ -208,6 +212,19 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         try {
             byte[] fileBytes = file.getBytes();
             String fileName = file.getOriginalFilename();
+
+            try {
+                String filePath = remoteFileService.upload(file).getData().getUrl();
+                sendProgress(taskId, new HashMap<String, Object>() {{
+                    put("process", 0);
+                    put("message", "文件上传中...");
+                    put("filePath", filePath);
+                }}); ;
+                log.info("文件保存成功, taskId={}, filePath={}", taskId, filePath);
+            } catch (Exception e) {
+                log.error("文件保存失败, taskId={}", taskId, e);
+                return null;
+            }
 
             executor.execute(() -> {
                 try {

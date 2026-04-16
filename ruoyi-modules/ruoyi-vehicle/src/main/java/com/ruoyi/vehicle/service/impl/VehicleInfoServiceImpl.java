@@ -9,6 +9,7 @@ import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
+import com.ruoyi.vehicle.mapper.VehicleTemplateMaterialMapper;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.utils.JsonDictConverter;
 import org.slf4j.Logger;
@@ -28,6 +29,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Autowired
     private VehicleInfoMapper vehicleInfoMapper;
+
+    @Autowired
+    private VehicleTemplateMaterialMapper vehicleTemplateMaterialMapper;
 
     @Autowired
     private RemoteDictService remoteDictService;
@@ -85,6 +89,12 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         if (selectVehicleInfoByWvtaNo(vehicleInfo.getWvtaNo()) != null) {
             throw new RuntimeException("数据已存在");
         }
+        if (!StringUtils.isBlank(vehicleInfo.getMaterialNo())) {
+            Long vehicleTemplateId = vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo());
+            vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
+        }
+        vehicleInfo.setUploadStatus(0);
+        vehicleInfo.setValidationResult(0);
         vehicleInfo.setCreateTime(DateUtils.getNowDate());
         vehicleInfo.setCreateBy(SecurityUtils.getUsername());
         return vehicleInfoMapper.insertVehicleInfo(vehicleInfo);

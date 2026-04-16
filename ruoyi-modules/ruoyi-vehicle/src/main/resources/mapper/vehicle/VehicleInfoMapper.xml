@@ -3,28 +3,44 @@
 <mapper namespace="com.ruoyi.vehicle.mapper.VehicleInfoMapper">
 
 	<resultMap type="VehicleInfo" id="VehicleInfoResult">
-		<result property="vehicleId"          column="vehicle_id"          />
-		<result property="uploadStatus"        column="upload_status"        />
-		<result property="country"             column="country"              />
-		<result property="color"               column="color"                />
-		<result property="certificateVersion"  column="certificate_version"  />
-		<result property="wvtaNo"              column="wvta_no"              />
-		<result property="issueDate"           column="issue_date"           />
-		<result property="json"                column="json"                 />
-		<result property="xmlTemplateId"       column="xml_template_id"/>
-		<result property="createBy"            column="create_by"            />
-		<result property="createTime"          column="create_time"          />
-		<result property="updateBy"            column="update_by"            />
-		<result property="updateTime"          column="update_time"          />
-		<result property="remark"              column="remark"               />
-		<result property="deleted"             column="deleted"              />
+		<result property="vehicleId"          column="vehicle_id"           />
+		<result property="vin"                column="vin"                  />
+		<result property="vehicleModel"       column="vehicle_model"        />
+		<result property="factoryCode"        column="factory_code"         />
+		<result property="factoryName"        column="factory_name"         />
+		<result property="materialNo"         column="material_no"          />
+		<result property="uploadStatus"       column="upload_status"        />
+		<result property="validationResult"   column="validation_result"    />
+		<result property="status"             column="status"               />
+		<result property="country"            column="country"              />
+		<result property="color"              column="color"                />
+		<result property="secondaryColor"     column="secondary_color"      />
+		<result property="certificateVersion" column="certificate_version"  />
+		<result property="wvtaNo"             column="wvta_no"              />
+		<result property="issueDate"          column="issue_date"           />
+		<result property="json"               column="json"                 />
+		<result property="xmlTemplateId"      column="xml_template_id"      />
+		<result property="vehicleTemplateId"  column="vehicle_template_id"  />
+		<result property="deleted"            column="deleted"              />
+		<result property="createBy"           column="create_by"            />
+		<result property="createTime"         column="create_time"          />
+		<result property="updateBy"           column="update_by"            />
+		<result property="updateTime"         column="update_time"          />
+		<result property="remark"             column="remark"               />
+		<result property="vehicleModelStr"    column="vehicle_model_str"    />
+		<result property="vehicleTemplateFilepath" column="vehicle_template_filepath"/>
+		<result property="cocTemplateNo"      column="coc_template_no"      />
 	</resultMap>
 
 	<sql id="selectVehicleInfoVo">
-		select vehicle_id, upload_status, country, color, certificate_version,
-			   wvta_no, issue_date, json, xml_template_id, create_by, create_time,
-			   update_by, update_time, remark, deleted
-		from vehicle_info
+		select vehicle_id, vin, vehicle_model, factory_code, factory_name, material_no,
+			   upload_status, validation_result, status, country, color, secondary_color,
+			   certificate_version, wvta_no, issue_date, json, xml_template_id, vehicle_template_id,
+			   deleted, create_by, create_time, update_by, update_time, remark,
+			   sdd.dict_label as vehicleModelStr, vt.filepath as vehicleTemplateFilepath, vt.coc_template_no as coc_template_no
+		from vehicle_info vi
+		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
+		left join (select template_id, filepath, coc_template_no from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
 	</sql>
 
 	<select id="selectVehicleInfoById" parameterType="Long" resultMap="VehicleInfoResult">
@@ -35,31 +51,61 @@
 	<select id="selectVehicleInfoList" parameterType="VehicleInfo" resultMap="VehicleInfoResult">
 		<include refid="selectVehicleInfoVo"/>
 		<where>
-			<if test="uploadStatus != null">
-				AND upload_status = #{uploadStatus}
+			<if test="vin != null and vin != ''">
+				AND vin like concat('%', #{vin}, '%')
 			</if>
-			<if test="country != null and country != ''">
-				AND country like concat('%', #{country}, '%')
+			<if test="vehicleModel != null">
+				AND vehicle_model = #{vehicleModel}
+			</if>
+			<if test="factoryCode != null and factoryCode != ''">
+				AND factory_code like concat('%', #{factoryCode}, '%')
+			</if>
+			<if test="factoryName != null and factoryName != ''">
+				AND factory_name like concat('%', #{factoryName}, '%')
+			</if>
+			<if test="materialNo != null and materialNo != ''">
+				AND material_no like concat('%', #{materialNo}, '%')
 			</if>
 			<if test="color != null and color != ''">
 				AND color like concat('%', #{color}, '%')
 			</if>
-			<if test="certificateVersion != null and certificateVersion != ''">
-				AND certificate_version = #{certificateVersion}
+			<if test="secondaryColor != null and secondaryColor != ''">
+				AND secondary_color like concat('%', #{secondaryColor}, '%')
+			</if>
+			<if test="country != null and country != ''">
+				AND country like concat('%', #{country}, '%')
+			</if>
+			<if test="issueDateBeginTime != null and issueDateBeginTime != ''">
+				AND date_format(issue_date,'%y%m%d') &gt;= date_format(#{issueDateBeginTime},'%y%m%d')
+			</if>
+			<if test="issueDateEndTime != null and issueDateEndTime != ''">
+				AND date_format(issue_date,'%y%m%d') &lt;= date_format(#{issueDateEndTime},'%y%m%d')
+			</if>
+			<if test="createdBeginTime != null and createdBeginTime != ''">
+				AND date_format(create_time,'%y%m%d') &gt;= date_format(#{createdBeginTime},'%y%m%d')
+			</if>
+			<if test="createdEndTime != null and createdEndTime != ''">
+				AND date_format(create_time,'%y%m%d') &lt;= date_format(#{createdEndTime},'%y%m%d')
 			</if>
 			<if test="wvtaNo != null and wvtaNo != ''">
 				AND wvta_no like concat('%', #{wvtaNo}, '%')
 			</if>
-			<if test="params.beginTime != null and params.beginTime != ''">
-				AND date_format(issue_date,'%y%m%d') &gt;= date_format(#{params.beginTime},'%y%m%d')
+			<if test="uploadStatus != null">
+				AND upload_status = #{uploadStatus}
 			</if>
-			<if test="params.endTime != null and params.endTime != ''">
-				AND date_format(issue_date,'%y%m%d') &lt;= date_format(#{params.endTime},'%y%m%d')
+			<if test="validationResult != null">
+				AND validation_result = #{validationResult}
 			</if>
-			<if test="reclaim">
+			<if test="status != null">
+				AND status = #{status}
+			</if>
+			<if test="cocTemplateNo != null and cocTemplateNo != ''">
+				AND coc_template_no = #{cocTemplateNo}
+			</if>
+			<if test="reclaim != null and reclaim">
 				AND deleted = 2
 			</if>
-			<if test="!reclaim">
+			<if test="reclaim == null or !reclaim">
 				AND deleted = 0
 			</if>
 		</where>
@@ -68,26 +114,44 @@
 
 	<insert id="insertVehicleInfo" parameterType="VehicleInfo" useGeneratedKeys="true" keyProperty="vehicleId">
 		insert into vehicle_info (
+		<if test="vin != null and vin != ''">vin, </if>
+		<if test="vehicleModel != null">vehicle_model, </if>
+		<if test="factoryCode != null and factoryCode != ''">factory_code, </if>
+		<if test="factoryName != null and factoryName != ''">factory_name, </if>
+		<if test="materialNo != null and materialNo != ''">material_no, </if>
 		<if test="uploadStatus != null">upload_status, </if>
+		<if test="validationResult != null">validation_result, </if>
+		<if test="status != null">status, </if>
 		<if test="country != null and country != ''">country, </if>
 		<if test="color != null and color != ''">color, </if>
+		<if test="secondaryColor != null and secondaryColor != ''">secondary_color, </if>
 		<if test="certificateVersion != null and certificateVersion != ''">certificate_version, </if>
 		<if test="wvtaNo != null and wvtaNo != ''">wvta_no, </if>
 		<if test="issueDate != null">issue_date, </if>
 		<if test="json != null and json != ''">json, </if>
-	    <if test="xmlTemplateId != null">xml_template_id,</if>
+		<if test="xmlTemplateId != null">xml_template_id, </if>
+		<if test="vehicleTemplateId != null and vehicleTemplateId != ''">vehicle_template_id, </if>
 		<if test="remark != null and remark != ''">remark, </if>
 		<if test="createBy != null and createBy != ''">create_by, </if>
 		create_time
 		) values (
+		<if test="vin != null and vin != ''">#{vin}, </if>
+		<if test="vehicleModel != null">#{vehicleModel}, </if>
+		<if test="factoryCode != null and factoryCode != ''">#{factoryCode}, </if>
+		<if test="factoryName != null and factoryName != ''">#{factoryName}, </if>
+		<if test="materialNo != null and materialNo != ''">#{materialNo}, </if>
 		<if test="uploadStatus != null">#{uploadStatus}, </if>
+		<if test="validationResult != null">#{validationResult}, </if>
+		<if test="status != null">#{status}, </if>
 		<if test="country != null and country != ''">#{country}, </if>
 		<if test="color != null and color != ''">#{color}, </if>
+		<if test="secondaryColor != null and secondaryColor != ''">#{secondaryColor}, </if>
 		<if test="certificateVersion != null and certificateVersion != ''">#{certificateVersion}, </if>
 		<if test="wvtaNo != null and wvtaNo != ''">#{wvtaNo}, </if>
 		<if test="issueDate != null">#{issueDate}, </if>
 		<if test="json != null and json != ''">#{json}, </if>
-		<if test="xmlTemplateId != null">#{xmlTemplateId},</if>
+		<if test="xmlTemplateId != null">#{xmlTemplateId}, </if>
+		<if test="vehicleTemplateId != null and vehicleTemplateId != ''">#{vehicleTemplateId}, </if>
 		<if test="remark != null and remark != ''">#{remark}, </if>
 		<if test="createBy != null and createBy != ''">#{createBy}, </if>
 		sysdate()
@@ -97,14 +161,23 @@
 	<update id="updateVehicleInfo" parameterType="VehicleInfo">
 		update vehicle_info
 		<set>
+			<if test="vin != null and vin != ''">vin = #{vin}, </if>
+			<if test="vehicleModel != null">vehicle_model = #{vehicleModel}, </if>
+			<if test="factoryCode != null and factoryCode != ''">factory_code = #{factoryCode}, </if>
+			<if test="factoryName != null and factoryName != ''">factory_name = #{factoryName}, </if>
+			<if test="materialNo != null and materialNo != ''">material_no = #{materialNo}, </if>
 			<if test="uploadStatus != null">upload_status = #{uploadStatus}, </if>
+			<if test="validationResult != null">validation_result = #{validationResult}, </if>
+			<if test="status != null">status = #{status}, </if>
 			<if test="country != null and country != ''">country = #{country}, </if>
 			<if test="color != null and color != ''">color = #{color}, </if>
+			<if test="secondaryColor != null and secondaryColor != ''">secondary_color = #{secondaryColor}, </if>
 			<if test="certificateVersion != null and certificateVersion != ''">certificate_version = #{certificateVersion}, </if>
 			<if test="wvtaNo != null and wvtaNo != ''">wvta_no = #{wvtaNo}, </if>
 			<if test="issueDate != null">issue_date = #{issueDate}, </if>
 			<if test="json != null">json = #{json}, </if>
-			<if test="xmlTemplateId != null">xml_template_id = #{xmlTemplateId},</if>
+			<if test="xmlTemplateId != null">xml_template_id = #{xmlTemplateId}, </if>
+			<if test="vehicleTemplateId != null and vehicleTemplateId != ''">vehicle_template_id = #{vehicleTemplateId}, </if>
 			<if test="remark != null">remark = #{remark}, </if>
 			<if test="updateBy != null and updateBy != ''">update_by = #{updateBy}, </if>
 			update_time = sysdate()
@@ -146,6 +219,12 @@
 	<select id="selectVehicleInfoByWvtaNo" parameterType="String" resultMap="VehicleInfoResult">
 		<include refid="selectVehicleInfoVo"/>
 		where wvta_no = #{wvtaNo}
+		and deleted = 0
+	</select>
+
+	<select id="selectVehicleInfoByVin" parameterType="String" resultMap="VehicleInfoResult">
+		<include refid="selectVehicleInfoVo"/>
+		where vin = #{vin}
 		and deleted = 0
 	</select>
 

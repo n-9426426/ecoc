@@ -58,6 +58,19 @@ public class SysDictData extends BaseEntity
     @Excel(name = "状态", readConverterExp = "0=正常,1=停用")
     private String status;
 
+    @Excel(name = "键的映射")
+    private String keyMap;
+
+    @Excel(name = "值的映射")
+    private String valueMap;
+
+    private Long dictTypeAffiliation;
+
+    @Excel(name = "车型")
+    private String dictTypeAffiliationStr;
+
+    private String ruleType;
+
     public Long getDictCode()
     {
         return dictCode;
@@ -177,6 +190,8 @@ public class SysDictData extends BaseEntity
             .append("updateTime", getUpdateTime())
             .append("remark", getRemark())
             .append("dictTypeStr", getDictTypeStr())
+            .append("dictTypeAffiliation", getDictTypeAffiliation())
+            .append("dictTypeAffiliationStr", getDictTypeAffiliationStr())
             .toString();
     }
 
@@ -194,5 +209,45 @@ public class SysDictData extends BaseEntity
 
     public void setRangeRule(String rangeRule) {
         this.rangeRule = rangeRule;
+    }
+
+    public String getKeyMap() {
+        return keyMap;
+    }
+
+    public void setKeyMap(String keyMap) {
+        this.keyMap = keyMap;
+    }
+
+    public String getValueMap() {
+        return valueMap;
+    }
+
+    public void setValueMap(String valueMap) {
+        this.valueMap = valueMap;
+    }
+
+    public Long getDictTypeAffiliation() {
+        return dictTypeAffiliation;
+    }
+
+    public void setDictTypeAffiliation(Long dictTypeAffiliation) {
+        this.dictTypeAffiliation = dictTypeAffiliation;
+    }
+
+    public String getDictTypeAffiliationStr() {
+        return dictTypeAffiliationStr;
+    }
+
+    public void setDictTypeAffiliationStr(String dictTypeAffiliationStr) {
+        this.dictTypeAffiliationStr = dictTypeAffiliationStr;
+    }
+
+    public String getRuleType() {
+        return ruleType;
+    }
+
+    public void setRuleType(String ruleType) {
+        this.ruleType = ruleType;
     }
 }

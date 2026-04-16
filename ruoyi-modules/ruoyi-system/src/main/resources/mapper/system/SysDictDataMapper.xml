@@ -11,8 +11,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="dictValue"   column="dict_value"  />
 		<result property="dictType"    column="dict_type"   />
 		<result property="cssClass"    column="css_class"   />
-		<result property="rule"        column="rule"  />
-		<result property="rangeRule"   column="range_rule"/>
+		<result property="rule"        column="rule"        />
+		<result property="rangeRule"   column="range_rule"  />
+		<result property="keyMap"      column="key_map"     />
+		<result property="valueMap"    column="value_map"     />
 		<result property="isDefault"   column="is_default"  />
 		<result property="status"      column="status"      />
 		<result property="createBy"    column="create_by"   />
@@ -20,17 +22,27 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="updateBy"    column="update_by"   />
 		<result property="updateTime"  column="update_time" />
 		<result property="dictTypeStr" column="dict_type_str"/>
+		<result property="dictTypeAffiliation" column="dict_type_affiliation"/>
+		<result property="dictTypeAffiliationStr" column="dict_type_affiliation_str"/>
+		<result property="ruleType" column="rule_type"/>
 	</resultMap>
 	
 	<sql id="selectDictDataVo">
         select sdd.dict_code, sdd.dict_sort, sdd.dict_label, sdd.dict_value, sdd.dict_type, sdd.css_class, sdd.rule, sdd.range_rule,
-			   sdd.is_default, sdd.status, sdd.create_by, sdd.create_time, sdd.remark, sdt.dict_name as dict_type_str
-		from sys_dict_data sdd left join sys_dict_type sdt on sdd.dict_type = sdt.dict_type
+               sdd.key_map, sdd.value_map, sdd.is_default, sdd.status, sdd.create_by, sdd.create_time, sdd.remark, sdd.dict_type_affiliation,
+               sdt.dict_name as dict_type_str, sdd2.dict_label as dict_type_affiliation_str, sdd.rule_type
+		from sys_dict_data sdd
+		left join sys_dict_type sdt on sdd.dict_type = sdt.dict_type
+        left join sys_dict_data sdd2 on sdd.dict_type_affiliation = sdd2.dict_code
     </sql>
 
 	<select id="selectDictDataList" parameterType="SysDictData" resultMap="SysDictDataResult">
 	    <include refid="selectDictDataVo"/>
 		<where>
+			1 = 1
+			<if test="dictTypeAffiliation != null">
+				and sdd.dict_type_affiliation = #{dictTypeAffiliation}
+			</if>
 		    <if test="dictType != null and dictType != ''">
 				AND sdd.dict_type = #{dictType}
 			</if>
@@ -39,6 +51,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 			</if>
 			<if test="status != null and status != ''">
 				AND sdd.status = #{status}
+			</if>
+			<if test="ruleType != null and ruleType != ''">
+				AND sdd.rule_type = #{ruleType}
 			</if>
 		</where>
 		order by sdd.dict_sort asc
@@ -83,10 +98,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
  			<if test="dictType != null and dictType != ''">dict_type = #{dictType},</if>
  			<if test="cssClass != null">css_class = #{cssClass},</if>
  			<if test="rule != null">rule = #{rule},</if>
+ 		    <if test="rangeRule != null">range_rule = #{rangeRule},</if>
+			<if test="keyMap != null">key_map = #{keyMap},</if>
+			<if test="valueMap != null">value_map = #{valueMap},</if>
  			<if test="isDefault != null and isDefault != ''">is_default = #{isDefault},</if>
  			<if test="status != null">status = #{status},</if>
  			<if test="remark != null">remark = #{remark},</if>
  			<if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
+			<if test="dictTypeAffiliation != null">dict_type_affiliation = #{dictTypeAffiliation},</if>
+			<if test="ruleType != null and ruleType != ''">rule_type = #{ruleType},</if>
  			update_time = sysdate()
  		</set>
  		where dict_code = #{dictCode}
@@ -104,10 +124,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
  			<if test="dictType != null and dictType != ''">dict_type,</if>
  			<if test="cssClass != null and cssClass != ''">css_class,</if>
  			<if test="rule != null and rule != ''">rule,</if>
+			<if test="rangeRule != null">range_rule,</if>
+			<if test="keyMap != null">key_map,</if>
+			<if test="valueMap != null">value_map,</if>
  			<if test="isDefault != null and isDefault != ''">is_default,</if>
  			<if test="status != null">status,</if>
  			<if test="remark != null and remark != ''">remark,</if>
+			<if test="dictTypeAffiliation != null">dict_type_affiliation,</if>
  			<if test="createBy != null and createBy != ''">create_by,</if>
+			<if test="ruleType != null and ruleType != ''">rule_type,</if>
  			create_time
  		)values(
  		    <if test="dictSort != null">#{dictSort},</if>
@@ -116,10 +141,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
  			<if test="dictType != null and dictType != ''">#{dictType},</if>
  			<if test="cssClass != null and cssClass != ''">#{cssClass},</if>
  			<if test="rule != null and rule != ''">#{rule},</if>
+			<if test="rangeRule != null">#{rangeRule},</if>
+			<if test="keyMap != null">#{keyMap},</if>
+			<if test="valueMap != null">#{valueMap},</if>
  			<if test="isDefault != null and isDefault != ''">#{isDefault},</if>
  			<if test="status != null">#{status},</if>
  			<if test="remark != null and remark != ''">#{remark},</if>
+			<if test="dictTypeAffiliation != null">#{dictTypeAffiliation},</if>
  			<if test="createBy != null and createBy != ''">#{createBy},</if>
+			<if test="ruleType != null and ruleType != ''">#{ruleType},</if>
  			sysdate()
  		)
 	</insert>

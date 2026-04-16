@@ -21,6 +21,7 @@
         <result property="createTime"     column="create_time"/>
         <result property="updateBy"       column="update_by"/>
         <result property="updateTime"     column="update_time"/>
+        <result property="filepath"       column="filepath"/>
     </resultMap>
 
     <!-- ==================== 公共查询列 ==================== -->
@@ -40,7 +41,8 @@
         create_by,
         create_time,
         update_by,
-        update_time
+        update_time,
+        filepath
         FROM vehicle_template
     </sql>
 
@@ -92,32 +94,8 @@
             useGeneratedKeys="true"
             keyProperty="templateId">
         INSERT INTO vehicle_template (
-        wvta_coc_no,
-        coc_template_no,
-        model_no,
-        version,
-        vehicle_type,
-        status,
-        validate_result,
-        json,
-        remark,
-        del_flag,
-        create_by,
-        create_time
-        ) VALUES (
-        #{wvtaCocNo},
-        #{cocTemplateNo},
-        #{modelNo},
-        #{version},
-        #{vehicleType},
-        #{status},
-        #{validateResult},
-        #{json},
-        #{remark},
-        '0',
-        #{createBy},
-        #{createTime}
-        )
+        wvta_coc_no, coc_template_no,model_no, version, vehicle_type, status, validate_result, json, remark, del_flag, create_by, create_time)
+        VALUES (#{wvtaCocNo}, #{cocTemplateNo}, #{modelNo}, #{version}, #{vehicleType}, #{status}, #{validateResult}, #{json}, #{remark}, '0', #{createBy}, #{createTime})
     </insert>
 
     <!-- ==================== 修改 ==================== -->

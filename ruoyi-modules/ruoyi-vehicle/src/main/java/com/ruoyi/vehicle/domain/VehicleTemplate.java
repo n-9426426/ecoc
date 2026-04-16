@@ -64,4 +64,6 @@ public class VehicleTemplate extends BaseEntity {
 
     /** 关联的物料号列表（非DB字段）*/
     private List<VehicleTemplateMaterial> materialList;
+
+    private String filepath;
 }

@@ -4,10 +4,14 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.core.web.domain.BaseEntity;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 import java.io.IOException;
 import java.util.*;
 
+@EqualsAndHashCode(callSuper = true)
+@Data
 public class VehicleInfo extends BaseEntity {
 
     private static final long serialVersionUID = 1L;
@@ -19,7 +23,7 @@ public class VehicleInfo extends BaseEntity {
 
     private List<Long> vehicleIds;
 
-    /** 上传状态 0-未上传 1-已上传 */
+    /** 上传状态(0=未生成 1=已生成 2=已上传 3=未上传 4=上传失败) */
     private Integer uploadStatus;
 
     /** 国家 */
@@ -38,6 +42,18 @@ public class VehicleInfo extends BaseEntity {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date issueDate;
 
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date issueDateBeginTime;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date issueDateEndTime;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date createdBeginTime;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date createdEndTime;
+
     /** 是否回收 */
     private Boolean reclaim = false;
 
@@ -46,6 +62,38 @@ public class VehicleInfo extends BaseEntity {
     private transient Map<String, Object> jsonMap;
 
     private Long xmlTemplateId;
+
+    /** VIN码 */
+    private String vin;
+
+    /** 车型代码 */
+    private Long vehicleModel;
+
+    private String vehicleModelStr;
+
+    /** 工厂代码 */
+    private String factoryCode;
+
+    /** 工厂名称 */
+    private String factoryName;
+
+    /** 整车物料号 */
+    private String materialNo;
+
+    /** 校验结果(0=未校验 1=校验通过 2=校验失败) */
+    private Integer validationResult;
+
+    /** 状态(0=正常 1=停用) */
+    private Integer status;
+
+    /** 双色的次色 */
+    private String secondaryColor;
+
+    private String vehicleTemplateId;
+
+    private String vehicleTemplateFilepath;
+
+    private String cocTemplateNo;
 
     public Map<String, Object> getJsonMap() {
         if (jsonMap != null) {
@@ -62,115 +110,5 @@ public class VehicleInfo extends BaseEntity {
         } catch (IOException e) {
             return Collections.emptyMap();
         }
-    }
-
-    public void setJsonMap(Map<String, Object> jsonMap) {
-        this.jsonMap = jsonMap;
-    }
-
-    public Long getVehicleId() {
-        return vehicleId;
-    }
-
-    public void setVehicleId(Long vehicleId) {
-        this.vehicleId = vehicleId;
-    }
-
-    public Boolean getReclaim() {
-        return reclaim;
-    }
-
-    public void setReclaim(Boolean reclaim) {
-        this.reclaim = reclaim;
-    }
-
-    public List<Long> getVehicleIds() {
-        return vehicleIds;
-    }
-
-    public void setVehicleIds(List<Long> vehicleIds) {
-        this.vehicleIds = vehicleIds;
-    }
-
-    public Integer getUploadStatus() {
-        return uploadStatus;
-    }
-
-    public void setUploadStatus(Integer uploadStatus) {
-        this.uploadStatus = uploadStatus;
-    }
-
-    public String getCountry() {
-        return country;
-    }
-
-    public void setCountry(String country) {
-        this.country = country;
-    }
-
-    public String getColor() {
-        return color;
-    }
-
-    public void setColor(String color) {
-        this.color = color;
-    }
-
-    public String getCertificateVersion() {
-        return certificateVersion;
-    }
-
-    public void setCertificateVersion(String certificateVersion) {
-        this.certificateVersion = certificateVersion;
-    }
-
-    public String getWvtaNo() {
-        return wvtaNo;
-    }
-
-    public void setWvtaNo(String wvtaNo) {
-        this.wvtaNo = wvtaNo;
-    }
-
-    public Date getIssueDate() {
-        return issueDate;
-    }
-
-    public void setIssueDate(Date issueDate) {
-        this.issueDate = issueDate;
-    }
-
-    @Override
-    public String toString() {
-        return "VehicleInfo{" +
-                "vehicleId=" + vehicleId +
-                ", uploadStatus=" + uploadStatus +
-                ", country='" + country + '\'' +
-                ", color='" + color + '\'' +
-                ", certificateVersion='" + certificateVersion + '\'' +
-                ", wvtaNo='" + wvtaNo + '\'' +
-                ", issueDate=" + issueDate +
-                ", createBy='" + getCreateBy() + '\'' +
-                ", createTime=" + getCreateTime() +
-                ", updateBy='" + getUpdateBy() + '\'' +
-                ", updateTime=" + getUpdateTime() +
-                ", remark='" + getRemark() + '\'' +
-                '}';
-    }
-
-    public String getJson() {
-        return json;
-    }
-
-    public void setJson(String json) {
-        this.json = json;
-    }
-
-    public Long getXmlTemplateId() {
-        return xmlTemplateId;
-    }
-
-    public void setXmlTemplateId(Long xmlTemplateId) {
-        this.xmlTemplateId = xmlTemplateId;
     }
 }
