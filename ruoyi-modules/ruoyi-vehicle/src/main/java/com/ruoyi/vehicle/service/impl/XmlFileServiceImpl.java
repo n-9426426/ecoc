@@ -212,31 +212,40 @@ public class XmlFileServiceImpl implements IXmlFileService {
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public String uploadXmlFile(MultipartFile file, String fileLevel) {
+    public String uploadXmlFile(MultipartFile file, Long xmlId) {
         try {
             String filePath = remoteFileService.upload(file).getData().getUrl();
-
-            XmlFile xmlFile = new XmlFile();
-            xmlFile.setFileName(file.getOriginalFilename());
+            XmlFile xmlFile = xmlFileMapper.selectXmlFileById(xmlId);
             xmlFile.setFilePath(filePath);
             xmlFile.setFileSize(file.getSize());
-            xmlFile.setFileLevel(fileLevel);
-            xmlFile.setVersion("1.0");
+
+            String xmlVersion = xmlFileMapper.selectVersionByFileName("vehicle_" + xmlFile.getVin());
+            if (xmlVersion == null) {
+                xmlVersion = "1.0";
+            } else {
+                xmlVersion = String.valueOf(new BigDecimal(xmlVersion).add(new BigDecimal(1)));
+            }
+
+            xmlFile.setVersion(xmlVersion);
+            xmlFile.setFileName(file.getOriginalFilename());
+            xmlFile.setFileSize(file.getSize());
             xmlFile.setIsLatest(true);
             xmlFile.setStatus("0");
             xmlFile.setDeleted(0);
             xmlFile.setCreateBy(SecurityUtils.getUsername());
+            xmlFile.setCreateTime(new Date());
 
             xmlFileMapper.insertXmlFile(xmlFile);
 
             // 保存版本记录
             XmlVersion version = new XmlVersion();
             version.setFileId(xmlFile.getId());
-            version.setVersion("1.0");
+            version.setVersion(xmlVersion);
             version.setFilePath(filePath);
-            version.setChangeType("新建");
-            version.setChangeDesc("初始版本");
+            version.setChangeType("上传");
+            version.setChangeDesc("上传新版本");
             version.setCreateBy(SecurityUtils.getUsername());
+            version.setCreateTime(new Date());
             xmlVersionMapper.insertXmlVersion(version);
 
             return filePath;
@@ -454,7 +463,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             DocumentBuilder builder = factory.newDocumentBuilder();
             Document doc = builder.newDocument();
 
-            String xmlVersion = xmlFileMapper.selectVersionByFileName("vehicle_" + vehicle.getWvtaNo());
+            String xmlVersion = xmlFileMapper.selectVersionByFileName("vehicle_" + vehicle.getVin());
             if (xmlVersion == null) {
                 xmlVersion = "1.0";
             } else {
@@ -474,14 +483,22 @@ public class XmlFileServiceImpl implements IXmlFileService {
             transformer.transform(new DOMSource(doc), new StreamResult(writer));
             String xmlContent = writer.toString();
 
-            // 保存文件
+            // todo 保存文件
+//            MultipartFile multipartFile = new MockMultipartFile(
+//                    "file",
+//                    "generated.xml",
+//                    "application/xml",
+//                    xmlContent.getBytes(StandardCharsets.UTF_8)
+//            );
+//            remoteFileService.upload();
+
             String savePath = "xml" + File.separator;
             File dir = new File(savePath);
             if (!dir.exists()) {
                 dir.mkdirs();
             }
 
-            String newFileName = "vehicle_" + vehicle.getWvtaNo() + "_" + System.currentTimeMillis() + ".xml";
+            String newFileName = "vehicle_" + vehicle.getVin() + "_" + System.currentTimeMillis() + ".xml";
             File saveFile = new File(savePath + newFileName);
             Files.write(saveFile.toPath(), xmlContent.getBytes(StandardCharsets.UTF_8));
 
@@ -497,7 +514,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             xmlFile.setDeleted(0);
             xmlFile.setCreateBy(SecurityUtils.getUsername());
             xmlFile.setCreateTime(new Date());
-            xmlFile.setRemark("由车辆VIN: " + vehicle.getWvtaNo() + " 生成XML, 版本: " + xmlVersion);
+            xmlFile.setRemark("由车辆VIN: " + vehicle.getVin() + " 生成XML, 版本: " + xmlVersion);
             xmlFileMapper.insertXmlFile(xmlFile);
 
             // 保存版本记录
@@ -506,7 +523,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             version.setVersion(xmlVersion);
             version.setFilePath(File.separator + savePath + newFileName);
             version.setChangeType("生成");
-            version.setChangeDesc("由车辆VIN: " + vehicle.getWvtaNo() + " 生成XML, 版本: " + xmlVersion);
+            version.setChangeDesc("由车辆VIN: " + vehicle.getVin() + " 生成XML, 版本: " + xmlVersion);
             version.setCreateBy(SecurityUtils.getUsername());
             version.setCreateTime(new Date());
             xmlVersionMapper.insertXmlVersion(version);

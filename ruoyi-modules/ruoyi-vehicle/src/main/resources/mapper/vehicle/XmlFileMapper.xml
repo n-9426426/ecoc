@@ -21,14 +21,27 @@
         <result property="remark" column="remark"/>
         <result property="xmlTemplateId" column="xml_template_id"/>
         <result property="xmlTemplateName" column="xml_template_name"/>
+        <result property="modelCode" column="model_code"/>
+        <result property="modelName" column="model_name"/>
+        <result property="factoryCode" column="factory_code"/>
+        <result property="vehicleMaterialNo" column="vehicle_material_no"/>
+        <result property="country" column="country"/>
+        <result property="uploadResult" column="upload_result"/>
+        <result property="uploadDate" column="upload_date"/>
+        <result property="issueDate" column="issue_date"/>
+        <result property="validateResult" column="validate_result"/>
     </resultMap>
 
     <sql id="selectXmlFileVo">
         select xl.id, SUBSTRING_INDEX(SUBSTRING_INDEX(xl.file_path, '_', 2), '_', -1) AS vin,
                xl.file_name, xl.file_path, xl.file_size, xl.file_level, xl.version, xl.is_latest,
                xl.pdf_path, xl.status, xl.deleted, xl.create_by, xl.create_time, xl.update_by,
-               xl.update_time, xl.remark, xl.xml_template_id, xt.template_name xml_template_name
-        from xml_file xl left join xml_template xt on xl.xml_template_id = xt.template_id
+               xl.update_time, xl.remark, xl.xml_template_id, xl.model_code, xl.factory_code,
+               xl.vehicle_material_no, xl.country, xl.upload_result, xl.upload_date, xl.issue_date,
+               xl.validate_result,xt.template_name xml_template_name, sdd.dict_label model_name
+        from xml_file xl
+        left join xml_template xt on xl.xml_template_id = xt.template_id
+        left join sys_dict_data sdd on sdd.dict_value = xl.model_code
     </sql>
 
     <select id="selectXmlFileList" parameterType="XmlFile" resultMap="XmlFileResult">
@@ -36,7 +49,10 @@
         <where>
             1 = 1
             <if test="vin != null and vin != ''">
-                AND xl.file_name like concat('%', #{vin}, '%')
+                AND xl.vin IN
+                <foreach collection="vin.split(',')" item="vinItem" open="(" separator="," close=")">
+                    #{vinItem}
+                </foreach>
             </if>
             <if test="fileName != null and fileName != ''">
                 AND xl.file_name like concat('%', #{fileName}, '%')
@@ -49,6 +65,39 @@
             </if>
             <if test="status != null and status != ''">
                 AND xl.status = #{status}
+            </if>
+            <if test="modelCode != null and modelCode != ''">
+                AND xl.model_code IN
+                <foreach collection="modelCode.split(',')" item="codeItem" open="(" separator="," close=")">
+                    #{codeItem}
+                </foreach>
+            </if>
+            <if test="factoryCode != null and factoryCode != ''">
+                AND xl.factory_code = #{factoryCode}
+            </if>
+            <if test="vehicleMaterialNo != null and vehicleMaterialNo != ''">
+                AND xl.vehicle_material_no = #{vehicleMaterialNo}
+            </if>
+            <if test="country != null and country != ''">
+                AND xl.country = #{country}
+            </if>
+            <if test="uploadResult != null and uploadResult != ''">
+                AND xl.upload_result = #{uploadResult}
+            </if>
+            <if test="uploadDateBeginTime != null and uploadDateBeginTime != ''">
+                AND date_format(upload_date,'%y%m%d') &gt;= date_format(#{uploadDateBeginTime},'%y%m%d')
+            </if>
+            <if test="uploadDateEndTime != null and uploadDateEndTime != ''">
+                AND date_format(upload_date,'%y%m%d') &lt;= date_format(#{uploadDateEndTime},'%y%m%d')
+            </if>
+            <if test="issueDateBeginTime != null and issueDateBeginTime != ''">
+                AND date_format(issue_date,'%y%m%d') &gt;= date_format(#{issueDateBeginTime},'%y%m%d')
+            </if>
+            <if test="issueDateEndTime != null and issueDateEndTime != ''">
+                AND date_format(issue_date,'%y%m%d') &lt;= date_format(#{issueDateEndTime},'%y%m%d')
+            </if>
+            <if test="validateResult != null">
+                AND xl.validate_result = #{validateResult}
             </if>
             <if test="reclaim">
                 AND xl.deleted = 2
@@ -86,6 +135,14 @@
             <if test="deleted != null">deleted,</if>
             <if test="createBy != null">create_by,</if>
             <if test="remark != null">remark,</if>
+            <if test="modelCode != null">model_code,</if>
+            <if test="factoryCode != null">factory_code,</if>
+            <if test="vehicleMaterialNo != null">vehicle_material_no,</if>
+            <if test="country != null">country,</if>
+            <if test="uploadResult != null">upload_result,</if>
+            <if test="uploadDate != null">upload_date,</if>
+            <if test="issueDate != null">issue_date,</if>
+            <if test="validateResult != null">validate_result,</if>
             create_time
         </trim>
         <trim prefix="values (" suffix=")" suffixOverrides=",">
@@ -100,6 +157,14 @@
             <if test="deleted != null">#{deleted},</if>
             <if test="createBy != null">#{createBy},</if>
             <if test="remark != null">#{remark},</if>
+            <if test="modelCode != null">#{modelCode},</if>
+            <if test="factoryCode != null">#{factoryCode},</if>
+            <if test="vehicleMaterialNo != null">#{vehicleMaterialNo},</if>
+            <if test="country != null">#{country},</if>
+            <if test="uploadResult != null">#{uploadResult},</if>
+            <if test="uploadDate != null">#{uploadDate},</if>
+            <if test="issueDate != null">#{issueDate},</if>
+            <if test="validateResult != null">#{validateResult},</if>
             sysdate()
         </trim>
     </insert>
@@ -117,6 +182,14 @@
             <if test="status != null">status = #{status},</if>
             <if test="updateBy != null">update_by = #{updateBy},</if>
             <if test="remark != null">remark = #{remark},</if>
+            <if test="modelCode != null">model_code = #{modelCode},</if>
+            <if test="factoryCode != null">factory_code = #{factoryCode},</if>
+            <if test="vehicleMaterialNo != null">vehicle_material_no = #{vehicleMaterialNo},</if>
+            <if test="country != null">country = #{country},</if>
+            <if test="uploadResult != null">upload_result = #{uploadResult},</if>
+            <if test="uploadDate != null">upload_date = #{uploadDate},</if>
+            <if test="issueDate != null">issue_date = #{issueDate},</if>
+            <if test="validateResult != null">validate_result = #{validateResult},</if>
             update_time = sysdate()
         </trim>
         where id = #{id}

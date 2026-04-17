@@ -71,7 +71,7 @@
         select vtm.template_id
         from vehicle_template_material vtm
         left join vehicle_template vt on vtm.template_id = vt.template_id
-        where material_no = #{material_no}
+        where material_no = #{materialNo}
         order by vt.version desc
         limit 1
     </select>

@@ -39,7 +39,7 @@ public interface IXmlFileService {
     /**
      * 上传XML文件
      */
-    String uploadXmlFile(MultipartFile file, String fileLevel);
+    String uploadXmlFile(MultipartFile file, Long xmlId);
 
     /**
      * 预览XML文件

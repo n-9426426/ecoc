@@ -9,6 +9,7 @@ import com.ruoyi.common.security.annotation.RequiresPermissions;
 import com.ruoyi.vehicle.domain.XmlFile;
 import com.ruoyi.vehicle.domain.vo.DiffResultVO;
 import com.ruoyi.vehicle.service.IXmlFileService;
+import com.ruoyi.vehicle.utils.ExcelUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,6 +34,9 @@ public class XmlController extends BaseController {
     @Autowired
     private IXmlFileService xmlFileService;
 
+    @Autowired
+    private ExcelUtil excelUtil;
+
     @Value("${file.path:/profile}")
     private String uploadPath;
 
@@ -55,9 +59,10 @@ public class XmlController extends BaseController {
     @RequiresPermissions("system:xml:export")
     @Log(title = "XML文件", businessType = BusinessType.EXPORT)
     @PostMapping("/export")
-    public void export(HttpServletResponse response, XmlFile xmlFile) {
+    public void export(HttpServletResponse response, XmlFile xmlFile) throws Exception {
         // todo 导出
-
+        List<XmlFile> xmlFiles = xmlFileService.selectXmlFileList(xmlFile);
+        excelUtil.exportExcel(response, xmlFiles, "xml_file", "XML File");
     }
 
     /**
@@ -78,9 +83,9 @@ public class XmlController extends BaseController {
     @Log(title = "XML文件", businessType = BusinessType.INSERT)
     @PostMapping("/upload")
     public AjaxResult upload(@RequestParam("file") MultipartFile file,
-                             @RequestParam("fileLevel") String fileLevel) {
+                             @RequestParam("xmlId") Long xmlId) {
         try {
-            String filePath = xmlFileService.uploadXmlFile(file, fileLevel);
+            String filePath = xmlFileService.uploadXmlFile(file, xmlId);
             return success(filePath);
         } catch (Exception e) {
             return error("上传失败: " + e.getMessage());

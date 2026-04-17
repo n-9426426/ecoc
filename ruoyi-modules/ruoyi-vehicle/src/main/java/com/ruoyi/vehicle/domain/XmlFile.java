@@ -1,17 +1,24 @@
 package com.ruoyi.vehicle.domain;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.ruoyi.common.core.web.domain.BaseEntity;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.Data;
+
+import java.util.Date;
+import java.util.List;
 
 /**
  * XML文件对象 xml_file
  */
+@Data
 public class XmlFile extends BaseEntity {
+
     private static final long serialVersionUID = 1L;
 
     /** ID */
     private Long id;
+
+    private List<Long> ids;
 
     private String vin;
 
@@ -48,136 +55,43 @@ public class XmlFile extends BaseEntity {
 
     private String xmlTemplateName;
 
-    public Long getId() {
-        return id;
-    }
+    /** 车型代码 */
+    private String modelCode;
 
-    public void setId(Long id) {
-        this.id = id;
-    }
+    private String modelName;
 
-    public String getFileName() {
-        return fileName;
-    }
+    /** 工厂代码 */
+    private String factoryCode;
 
-    public void setFileName(String fileName) {
-        this.fileName = fileName;
-    }
+    /** 整车物料号 */
+    private String vehicleMaterialNo;
 
-    public String getFilePath() {
-        return filePath;
-    }
+    /** 出口国家 */
+    private String country;
 
-    public void setFilePath(String filePath) {
-        this.filePath = filePath;
-    }
+    /** 上传结果 */
+    private String uploadResult;
 
-    public Long getFileSize() {
-        return fileSize;
-    }
+    /** 上传日期 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date uploadDate;
 
-    public void setFileSize(Long fileSize) {
-        this.fileSize = fileSize;
-    }
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date uploadDateBeginTime;
 
-    public String getFileLevel() {
-        return fileLevel;
-    }
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date uploadDateEndTime;
 
-    public void setFileLevel(String fileLevel) {
-        this.fileLevel = fileLevel;
-    }
+    /** 发证日期 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date issueDate;
 
-    public String getVersion() {
-        return version;
-    }
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date issueDateBeginTime;
 
-    public void setVersion(String version) {
-        this.version = version;
-    }
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date issueDateEndTime;
 
-    public Boolean getIsLatest() {
-        return isLatest;
-    }
-
-    public void setIsLatest(Boolean isLatest) {
-        this.isLatest = isLatest;
-    }
-
-    public String getPdfPath() {
-        return pdfPath;
-    }
-
-    public void setPdfPath(String pdfPath) {
-        this.pdfPath = pdfPath;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
-    }
-
-    public Boolean getReclaim() {
-        return reclaim;
-    }
-
-    public void setReclaim(Boolean reclaim) {
-        this.reclaim = reclaim;
-    }
-
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this, ToStringStyle.MULTI_LINE_STYLE)
-                .append("id", getId())
-                .append("fileName", getFileName())
-                .append("filePath", getFilePath())
-                .append("fileSize", getFileSize())
-                .append("fileLevel", getFileLevel())
-                .append("version", getVersion())
-                .append("isLatest", getIsLatest())
-                .append("pdfPath", getPdfPath())
-                .append("status", getStatus())
-                .append("deleted", getDeleted())
-                .append("createBy", getCreateBy())
-                .append("createTime", getCreateTime())
-                .append("updateBy", getUpdateBy())
-                .append("updateTime", getUpdateTime())
-                .append("remark", getRemark())
-                .toString();
-    }
-
-    public String getVin() {
-        return vin;
-    }
-
-    public void setVin(String vin) {
-        this.vin = vin;
-    }
-
-    public String getContent() {
-        return content;
-    }
-
-    public void setContent(String content) {
-        this.content = content;
-    }
-
-    public Long getXmlTemplateId() {
-        return xmlTemplateId;
-    }
-
-    public void setXmlTemplateId(Long xmlTemplateId) {
-        this.xmlTemplateId = xmlTemplateId;
-    }
-
-    public String getXmlTemplateName() {
-        return xmlTemplateName;
-    }
-
-    public void setXmlTemplateName(String xmlTemplateName) {
-        this.xmlTemplateName = xmlTemplateName;
-    }
+    /** 校验结果（0=未校验 1=通过 2=不通过） */
+    private Integer validateResult;
 }
