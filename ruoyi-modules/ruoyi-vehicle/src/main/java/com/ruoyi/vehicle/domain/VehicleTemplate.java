@@ -58,4 +58,6 @@ public class VehicleTemplate extends BaseEntity {
     private List<VehicleTemplateMaterial> materialList;
 
     private String filepath;
+
+    private Integer isLast;
 }

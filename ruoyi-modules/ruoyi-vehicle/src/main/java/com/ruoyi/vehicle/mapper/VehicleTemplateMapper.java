@@ -26,4 +26,8 @@ public interface VehicleTemplateMapper {
     int batchUpdateValidateResult(List<VehicleTemplate> list);
 
     List<VehicleTemplate> selectVehicleTemplateOption();
+
+    String selectVersionByCoc(@Param("cocTemplateNo") String cocTemplateNo);
+
+    int updateAllTemplateNotIsLast(@Param("cocTemplateNo") String cocTemplateNo);
 }

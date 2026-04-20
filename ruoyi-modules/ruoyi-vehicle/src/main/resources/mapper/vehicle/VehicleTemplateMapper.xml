@@ -22,6 +22,7 @@
         <result property="updateBy"       column="update_by"/>
         <result property="updateTime"     column="update_time"/>
         <result property="filepath"       column="filepath"/>
+        <result property="isLast"         column="is_last"/>
     </resultMap>
 
     <!-- ==================== 公共查询列 ==================== -->
@@ -203,6 +204,19 @@
         <foreach collection="list" item="item" open="(" separator="," close=")">
             #{item.templateId}
         </foreach>
+    </update>
+
+    <select id="selectVersionByCoc" resultType="java.lang.String">
+        SELECT version
+        FROM vehicle_template
+        WHERE coc_template_no = #{cocTemplateNo}
+        ORDER BY cast(version as UNSIGNED) desc
+            limit 1
+    </select>
+
+    <update id="updateAllTemplateNotIsLast">
+        UPDATE vehicle_template set is_last = 0
+        where coc_template_no = #{cocTemplateNo}
     </update>
 
 </mapper>

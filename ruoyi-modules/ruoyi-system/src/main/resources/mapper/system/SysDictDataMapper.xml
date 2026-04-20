@@ -43,6 +43,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 			<if test="dictTypeAffiliation != null">
 				and sdd.dict_type_affiliation = #{dictTypeAffiliation}
 			</if>
+			<if test="isVehicle != null and !isVehicle">
+				AND sdd.dict_type != 'vehicle_attribute'
+			</if>
 		    <if test="dictType != null and dictType != ''">
 				AND sdd.dict_type = #{dictType}
 			</if>
@@ -75,7 +78,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 	</select>
 	
 	<select id="countDictDataByType" resultType="Integer">
-	    select count(1) from sys_dict_data where dict_type=#{dictType}  
+	    select count(1) from sys_dict_data where dict_type=#{dictType}
 	</select>
 	
 	<delete id="deleteDictDataById" parameterType="Long">

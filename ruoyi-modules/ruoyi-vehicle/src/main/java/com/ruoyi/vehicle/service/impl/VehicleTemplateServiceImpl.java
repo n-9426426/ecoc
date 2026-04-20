@@ -31,6 +31,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -102,6 +103,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int insertVehicleTemplate(VehicleTemplate template) {
+        template.setVersion("1.0");
         template.setStatus("0");
         template.setValidateResult("0");
         template.setCreateBy(SecurityUtils.getUsername());
@@ -112,9 +114,18 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int updateVehicleTemplate(VehicleTemplate template) {
-        template.setUpdateBy(SecurityUtils.getUsername());
-        template.setUpdateTime(DateUtils.getNowDate());
-        return templateMapper.updateVehicleTemplate(template);
+        String templateVersion = templateMapper.selectVersionByCoc(template.getCocTemplateNo());
+        if (templateVersion == null) {
+            templateVersion = "1.0";
+        } else {
+            templateVersion = String.valueOf(new BigDecimal(templateVersion).add(new BigDecimal(1)));
+        }
+        template.setTemplateId(null);
+        template.setVersion(templateVersion);
+        template.setCreateBy(SecurityUtils.getUsername());
+        template.setCreateTime(DateUtils.getNowDate());
+        templateMapper.updateAllTemplateNotIsLast(template.getCocTemplateNo());
+        return templateMapper.insertVehicleTemplate(template);
     }
 
     @Override

@@ -58,6 +58,8 @@ public class SysDictData extends BaseEntity
 
     private String ruleType;
 
+    private Boolean isVehicle = true;
+
     public Long getDictCode()
     {
         return dictCode;
@@ -236,5 +238,13 @@ public class SysDictData extends BaseEntity
 
     public void setRuleType(String ruleType) {
         this.ruleType = ruleType;
+    }
+
+    public Boolean getVehicle() {
+        return isVehicle;
+    }
+
+    public void setVehicle(Boolean vehicle) {
+        isVehicle = vehicle;
     }
 }
