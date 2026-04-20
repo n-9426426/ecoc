@@ -94,8 +94,7 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
                 VehicleFieldParser.parseListFieldsFromMap(jsonMap, remoteDictService);
 
         // 3. 构建上下文（所有字段值+ 车型+ 阶段）
-        Map<String, Object> contextFields =
-                buildContextFields(jsonMap, vehicleCategory, stageOfCompletion);
+        Map<String, Object> contextFields = buildContextFields(jsonMap, vehicleCategory, stageOfCompletion);
 
         // 4. 遍历每个字段逐一校验
         List<FieldValidationResult> allResults = new ArrayList<>();

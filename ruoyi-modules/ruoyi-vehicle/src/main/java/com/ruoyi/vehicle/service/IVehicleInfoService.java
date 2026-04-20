@@ -1,5 +1,6 @@
 package com.ruoyi.vehicle.service;
 
+import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import org.springframework.web.multipart.MultipartFile;
@@ -80,4 +81,6 @@ public interface IVehicleInfoService {
     public AjaxResult importExcel(MultipartFile file) throws Exception;
 
     public int updateStatus(VehicleInfo vehicleInfo);
+
+    public ValidationReport validateVehicleInfo(Long vehicleInfoId);
 }

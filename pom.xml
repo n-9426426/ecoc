@@ -40,6 +40,7 @@
         <spring-framework.version>5.3.39</spring-framework.version>
         <canal.version>1.1.8</canal.version>
         <ocr.version>1.2.2</ocr.version>
+        <fileupload.version>1.6.0</fileupload.version>
     </properties>
 
     <!-- 依赖声明 -->
@@ -266,6 +267,12 @@
                 <groupId>com.alibaba.otter</groupId>
                 <artifactId>canal.protocol</artifactId>
                 <version>${canal.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>commons-fileupload</groupId>
+                <artifactId>commons-fileupload</artifactId>
+                <version>${fileupload.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

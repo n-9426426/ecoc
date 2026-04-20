@@ -1,15 +1,18 @@
 package com.ruoyi.vehicle.service.impl;
 
+import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.RemoteTranslateService;
+import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMaterialMapper;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
+import com.ruoyi.vehicle.service.IVehicleValidationService;
 import com.ruoyi.vehicle.utils.ExcelUtil;
 import com.ruoyi.vehicle.utils.JsonDictConverter;
 import org.slf4j.Logger;
@@ -18,9 +21,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service("vehicleInfoService")
 public class VehicleInfoServiceImpl implements IVehicleInfoService {
@@ -38,6 +43,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Autowired
     private RemoteTranslateService remoteTranslateService;
+
+    @Autowired
+    private IVehicleValidationService vehicleValidationService;
 
     @Autowired
     private JsonDictConverter jsonDictConverter;
@@ -188,6 +196,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         int failCount = 0;
         StringBuilder failMsg = new StringBuilder();
 
+        List<ValidationReport> validationReports = new ArrayList<>();
         for (VehicleInfo vehicle : vehicleList) {
             try {
                 // 检查wvta是否已存在
@@ -215,6 +224,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         resultMap.put("failMsg", failMsg.toString());
         resultMap.put("message", StringUtils.format(remoteTranslateService.translate("common.import.result", null), successCount, failCount));
         resultMap.put("data", vehicleList);
+        resultMap.put("validationReports", validationReports);
         return AjaxResult.success(resultMap);
     }
 
@@ -222,5 +232,22 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     public int updateStatus(VehicleInfo vehicleInfo) {
         String updateBy = SecurityUtils.getUsername();
         return vehicleInfoMapper.updateStatus(updateBy, vehicleInfo.getVehicleId(), vehicleInfo.getStatus());
+    }
+
+    @Override
+    public ValidationReport validateVehicleInfo(Long vehicleInfoId) {
+        VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleInfoId);
+        List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_attribute").getData();
+        sysDictData = sysDictData.stream()
+                .filter(data -> vehicleInfo.getVehicleModel().equals(data.getDictTypeAffiliation()))
+                .collect(Collectors.toList());
+        SysDictData vehicleModel = remoteDictService.getDataByDictCode(vehicleInfo.getVehicleModel()).getData();
+        ValidationReport validationReport = vehicleValidationService.validate(vehicleInfo.getJson(), vehicleModel.getDictValue(), "C");
+        if (validationReport.isAllValid()) {
+            vehicleInfo.setValidationResult(1);
+        } else {
+            vehicleInfo.setValidationResult(2);
+        }
+        return validationReport;
     }
 }

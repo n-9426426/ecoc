@@ -73,6 +73,14 @@ public class VehicleInfoController extends BaseController {
         return AjaxResult.success(vehicleInfoService.insertVehicleInfo(vehicleInfo));
     }
 
+    @Operation(summary = "新增车辆信息")
+    @RequiresPermissions("vehicle:info:validation")
+    @Log(title = "校验车辆信息", businessType = BusinessType.VALIDATION)
+    @PostMapping("/validation")
+    public AjaxResult validation(@RequestBody Long vehicleInfoId) {
+        return AjaxResult.success(vehicleInfoService.validateVehicleInfo(vehicleInfoId));
+    }
+
     /**
      * 修改车辆信息
      */

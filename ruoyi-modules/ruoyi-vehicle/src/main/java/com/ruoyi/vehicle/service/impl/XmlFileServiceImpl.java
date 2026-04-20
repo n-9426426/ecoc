@@ -16,6 +16,7 @@ import com.ruoyi.vehicle.mapper.XmlFileMapper;
 import com.ruoyi.vehicle.mapper.XmlVersionMapper;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.service.IXmlFileService;
+import com.ruoyi.vehicle.utils.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -234,8 +235,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
             xmlFile.setDeleted(0);
             xmlFile.setCreateBy(SecurityUtils.getUsername());
             xmlFile.setCreateTime(new Date());
-
             xmlFileMapper.insertXmlFile(xmlFile);
+            xmlFileMapper.updateIsLatestToFalse("vehicle_" + xmlFile.getVin());
 
             // 保存版本记录
             XmlVersion version = new XmlVersion();
@@ -432,12 +433,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (xmlFile == null) {
                 return false;
             }
-            String projectPath = System.getProperty("user.dir");
-            String fullPath = projectPath + xmlFile.getFilePath();
-            File file = new File(fullPath);
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            DocumentBuilder builder = factory.newDocumentBuilder();
-            builder.parse(file);
+            File file = new File(xmlFile.getFilePath());
+            // todo 校验
+
             return true;
         } catch (Exception e) {
             log.error("校验XML文件失败", e);
@@ -483,29 +481,19 @@ public class XmlFileServiceImpl implements IXmlFileService {
             transformer.transform(new DOMSource(doc), new StreamResult(writer));
             String xmlContent = writer.toString();
 
-            // todo 保存文件
-//            MultipartFile multipartFile = new MockMultipartFile(
-//                    "file",
-//                    "generated.xml",
-//                    "application/xml",
-//                    xmlContent.getBytes(StandardCharsets.UTF_8)
-//            );
-//            remoteFileService.upload();
+            MultipartFile multipartFile = FileUtils.createMultipartFile(
+                    xmlContent,
+                    "generated.xml",      // 文件名
+                    "application/xml"     // Content-Type
+            );
 
-            String savePath = "xml" + File.separator;
-            File dir = new File(savePath);
-            if (!dir.exists()) {
-                dir.mkdirs();
-            }
-
+            String filePath = remoteFileService.upload(multipartFile).getData().getUrl();
             String newFileName = "vehicle_" + vehicle.getVin() + "_" + System.currentTimeMillis() + ".xml";
-            File saveFile = new File(savePath + newFileName);
-            Files.write(saveFile.toPath(), xmlContent.getBytes(StandardCharsets.UTF_8));
 
             // 保存到数据库
             XmlFile xmlFile = new XmlFile();
             xmlFile.setFileName(newFileName);
-            xmlFile.setFilePath(File.separator + savePath + newFileName);
+            xmlFile.setFilePath(filePath);
             xmlFile.setFileSize((long) xmlContent.getBytes(StandardCharsets.UTF_8).length);
             xmlFile.setFileLevel("1");
             xmlFile.setVersion(xmlVersion);
@@ -521,12 +509,14 @@ public class XmlFileServiceImpl implements IXmlFileService {
             XmlVersion version = new XmlVersion();
             version.setFileId(xmlFile.getId());
             version.setVersion(xmlVersion);
-            version.setFilePath(File.separator + savePath + newFileName);
+            version.setFilePath(filePath);
             version.setChangeType("生成");
             version.setChangeDesc("由车辆VIN: " + vehicle.getVin() + " 生成XML, 版本: " + xmlVersion);
             version.setCreateBy(SecurityUtils.getUsername());
             version.setCreateTime(new Date());
             xmlVersionMapper.insertXmlVersion(version);
+
+            xmlFileMapper.updateIsLatestToFalse("vehicle_" + vehicle.getVin());
 
             log.info("成功生成XML文件: {}", newFileName);
             return xmlContent;
