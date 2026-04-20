@@ -5,6 +5,8 @@ import com.ruoyi.common.core.constant.UserConstants;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.system.api.domain.SysRole;
 import com.ruoyi.system.api.domain.SysUser;
+import com.ruoyi.system.mapper.SysPostMenuMapper;
+import com.ruoyi.system.mapper.SysUserPostMapper;
 import com.ruoyi.system.service.ISysMenuService;
 import com.ruoyi.system.service.ISysPermissionService;
 import com.ruoyi.system.service.ISysRoleService;
@@ -28,12 +30,18 @@ public class SysPermissionServiceImpl implements ISysPermissionService
     private ISysRoleService roleService;
 
     @Autowired
+    private SysUserPostMapper userPostMapper;
+
+    @Autowired
+    private SysPostMenuMapper postMenuMapper;
+
+    @Autowired
     private ISysMenuService menuService;
 
     /**
      * 获取角色数据权限
      * 
-     * @param userId 用户Id
+     * @param user Id 用户Id
      * @return 角色权限信息
      */
     @Override
@@ -55,7 +63,7 @@ public class SysPermissionServiceImpl implements ISysPermissionService
     /**
      * 获取菜单数据权限
      * 
-     * @param userId 用户Id
+     * @param user Id 用户Id
      * @return 菜单权限信息
      */
     @Override
@@ -63,29 +71,26 @@ public class SysPermissionServiceImpl implements ISysPermissionService
     {
         Set<String> perms = new HashSet<String>();
         // 管理员拥有所有权限
-        if (user.isAdmin())
-        {
+        if (user.isAdmin()) {
             perms.add(Constants.ALL_PERMISSION);
-        }
-        else
-        {
+        } else {
             List<SysRole> roles = user.getRoles();
-            if (!CollectionUtils.isEmpty(roles))
-            {
+            if (!CollectionUtils.isEmpty(roles)) {
                 // 多角色设置permissions属性，以便数据权限匹配权限
-                for (SysRole role : roles)
-                {
-                    if (StringUtils.equals(role.getStatus(), UserConstants.ROLE_NORMAL) && !role.isAdmin())
-                    {
+                for (SysRole role : roles) {
+                    if (StringUtils.equals(role.getStatus(), UserConstants.ROLE_NORMAL) && !role.isAdmin()) {
                         Set<String> rolePerms = menuService.selectMenuPermsByRoleId(role.getRoleId());
                         role.setPermissions(rolePerms);
                         perms.addAll(rolePerms);
                     }
                 }
-            }
-            else
-            {
+            } else {
                 perms.addAll(menuService.selectMenuPermsByUserId(user.getUserId()));
+            }
+            List<Long> postIds = userPostMapper.selectPostIdsByUserId(user.getUserId());
+            if (!postIds.isEmpty()) {
+                List<String> postPerms = postMenuMapper.selectPermsByPostIds(postIds);
+                perms.addAll(postPerms);
             }
         }
         return perms;

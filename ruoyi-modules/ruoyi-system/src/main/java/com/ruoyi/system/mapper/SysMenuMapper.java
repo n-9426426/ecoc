@@ -139,4 +139,6 @@ public interface SysMenuMapper
      * @return 匹配的菜单列表
      */
     public List<SysMenu> selectMenusByPathOrRouteName(@Param("path") String path, @Param("routeName") String routeName);
+
+    public List<SysMenu> selectMenusByPostIds(List<Long> postIds);
 }

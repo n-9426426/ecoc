@@ -73,21 +73,11 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int insertTemplate(XmlTemplate template) {
-        // 1. 校验模板编码唯一性（仅未删除的记录）
-        XmlTemplate example = new XmlTemplate();
-        example.setTemplateCode(template.getTemplateCode());
-        List<XmlTemplate> existList = templateMapper.selectTemplateList(example);
-        if (existList != null && !existList.isEmpty()) {
-            throw new ServiceException("模板编码已存在");
-        }
-
-        // 2. 插入主表
+        template.setTemplateCode(UUID.randomUUID().toString().replace("-", ""));
         template.setDeleted(0);
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(new Date());
         templateMapper.insert(template);
-
-        // 3. 保存属性树
         if (template.getAttributeTree() != null && !template.getAttributeTree().isEmpty()) {
             saveAttributeTree(template.getTemplateId(), template.getAttributeTree());
         }

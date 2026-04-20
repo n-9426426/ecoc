@@ -59,7 +59,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 				AND sdd.rule_type = #{ruleType}
 			</if>
 		</where>
-		order by sdd.dict_sort asc
+		order by dict_type, sdd.dict_sort asc
 	</select>
 	
 	<select id="selectDictDataByType" parameterType="String" resultMap="SysDictDataResult">

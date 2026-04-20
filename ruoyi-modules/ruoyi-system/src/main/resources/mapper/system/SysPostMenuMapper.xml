@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.SysPostMenuMapper">
+
+    <resultMap id="SysMenuResult" type="com.ruoyi.system.domain.SysMenu">
+        <id     property="postId"     column="post_id"     />
+        <result property="menuId"   column="menu_id"   />
+    </resultMap>
+
+    <!-- SysPostMenuMapper.xml -->
+    <select id="selectPermsByPostIds" resultType="String">
+        SELECT DISTINCT m.perms
+        FROM sys_menu m
+        INNER JOIN sys_post_menu pm ON m.menu_id = pm.menu_id
+        WHERE pm.post_id IN
+        <foreach collection="list" item="postId" open="(" separator="," close=")">
+            #{postId}
+        </foreach>
+        AND m.status = '0'
+        AND m.perms IS NOT NULL
+        AND m.perms != ''
+    </select>
+
+    <select id="selectMenuIdsByPostId" resultType="Long">
+        SELECT menu_id FROM sys_post_menu WHERE post_id = #{postId}
+    </select>
+
+    <insert id="batchInsertPostMenu">
+        INSERT INTO sys_post_menu (post_id, menu_id) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.postId}, #{item.menuId})
+        </foreach>
+    </insert>
+
+    <delete id="deletePostMenuByPostId">
+        DELETE FROM sys_post_menu WHERE post_id = #{postId}
+    </delete>
+</mapper>

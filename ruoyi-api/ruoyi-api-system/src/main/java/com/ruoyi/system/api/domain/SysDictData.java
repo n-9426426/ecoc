@@ -244,7 +244,7 @@ public class SysDictData extends BaseEntity
         return isVehicle;
     }
 
-    public void setVehicle(Boolean vehicle) {
-        isVehicle = vehicle;
+    public void setIsVehicle(Boolean isVehicle) {
+        this.isVehicle = isVehicle;
     }
 }

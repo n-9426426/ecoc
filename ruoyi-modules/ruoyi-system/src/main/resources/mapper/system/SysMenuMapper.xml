@@ -212,4 +212,16 @@
 	    delete from sys_menu where menu_id = #{menuId}
 	</delete>
 
+	<select id="selectMenusByPostIds" resultMap="SysMenuResult">
+		SELECT DISTINCT m.*
+		FROM sys_menu m
+		INNER JOIN sys_post_menu pm ON m.menu_id = pm.menu_id
+		WHERE pm.post_id IN
+		<foreach collection="list" item="postId" open="(" separator="," close=")">
+			#{postId}
+		</foreach>
+		AND m.status = '0'
+		ORDER BY m.parent_id, m.order_num
+	</select>
+
 </mapper> 

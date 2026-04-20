@@ -12,9 +12,7 @@ import com.ruoyi.system.domain.SysMenu;
 import com.ruoyi.system.domain.vo.MetaVo;
 import com.ruoyi.system.domain.vo.RouterVo;
 import com.ruoyi.system.domain.vo.TreeSelect;
-import com.ruoyi.system.mapper.SysMenuMapper;
-import com.ruoyi.system.mapper.SysRoleMapper;
-import com.ruoyi.system.mapper.SysRoleMenuMapper;
+import com.ruoyi.system.mapper.*;
 import com.ruoyi.system.service.ISysMenuService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +45,12 @@ public class SysMenuServiceImpl implements ISysMenuService
 
     @Autowired
     private SysRoleMenuMapper roleMenuMapper;
+
+    @Autowired
+    private SysUserPostMapper userPostMapper;
+
+    @Autowired
+    private SysPostMenuMapper postMenuMapper;
 
     @Autowired
     private RemoteTranslateService remoteTranslateService;
@@ -138,13 +142,20 @@ public class SysMenuServiceImpl implements ISysMenuService
     public List<SysMenu> selectMenuTreeByUserId(Long userId)
     {
         List<SysMenu> menus = null;
-        if (SecurityUtils.isAdmin(userId))
-        {
+        if (SecurityUtils.isAdmin(userId)) {
             menus = menuMapper.selectMenuTreeAll();
-        }
-        else
-        {
+        } else {
             menus = menuMapper.selectMenuTreeByUserId(userId);
+
+            List<Long> postIds = userPostMapper.selectPostIdsByUserId(userId);
+            if (!postIds.isEmpty()) {
+                List<SysMenu> postMenus = menuMapper.selectMenusByPostIds(postIds);
+                // 合并，按 menu_id 去重
+                Map<Long, SysMenu> menuMap = new LinkedHashMap<>();
+                menus.forEach(m -> menuMap.put(m.getMenuId(), m));
+                postMenus.forEach(m -> menuMap.putIfAbsent(m.getMenuId(), m));
+                menus = new ArrayList<>(menuMap.values());
+            }
         }
         return getChildPerms(menus, MENU_ROOT_ID);
     }

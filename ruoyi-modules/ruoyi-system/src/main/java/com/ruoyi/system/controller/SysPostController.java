@@ -8,7 +8,9 @@ import com.ruoyi.common.log.enums.BusinessType;
 import com.ruoyi.common.security.annotation.RequiresPermissions;
 import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.domain.SysPost;
+import com.ruoyi.system.domain.SysPostMenu;
 import com.ruoyi.system.service.ISysPostService;
+import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -108,5 +110,17 @@ public class SysPostController extends BaseController
     {
         List<SysPost> posts = postService.selectPostAll();
         return success(posts);
+    }
+
+    @Operation(summary = "获取组的菜单权限")
+    @GetMapping("/menuIds/{postId}")
+    public AjaxResult getPostMenuIds(@PathVariable Long postId) {
+        return AjaxResult.success(postService.getPostMenuIds(postId));
+    }
+
+    @Operation(summary = "新增、编辑组的菜单权限")
+    @PutMapping("/menuScope")
+    public AjaxResult updatePostMenu(@RequestBody SysPostMenu postMenu) {
+        return AjaxResult.success(postService.updatePostMenu(postMenu));
     }
 }

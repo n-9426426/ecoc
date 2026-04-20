@@ -5,13 +5,17 @@ import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.domain.SysPost;
+import com.ruoyi.system.domain.SysPostMenu;
 import com.ruoyi.system.mapper.SysPostMapper;
+import com.ruoyi.system.mapper.SysPostMenuMapper;
 import com.ruoyi.system.mapper.SysUserPostMapper;
 import com.ruoyi.system.service.ISysPostService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 岗位信息 服务层处理
@@ -26,6 +30,9 @@ public class SysPostServiceImpl implements ISysPostService
 
     @Autowired
     private SysUserPostMapper userPostMapper;
+
+    @Autowired
+    private SysPostMenuMapper postMenuMapper;
 
     @Autowired
     private RemoteTranslateService remoteTranslateService;
@@ -179,5 +186,25 @@ public class SysPostServiceImpl implements ISysPostService
     public int updatePost(SysPost post)
     {
         return postMapper.updatePost(post);
+    }
+
+    @Override
+    public List<Long> getPostMenuIds(Long postId) {
+        return postMenuMapper.selectMenuIdsByPostId(postId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int updatePostMenu(SysPostMenu postMenu) {
+        // 先删除旧关联
+        postMenuMapper.deletePostMenuByPostId(postMenu.getPostId());
+        // 插入新关联
+        if (!postMenu.getMenuIds().isEmpty()) {
+            List<SysPostMenu> list = postMenu.getMenuIds().stream()
+                    .map(menuId -> new SysPostMenu(postMenu.getPostId(), menuId))
+                    .collect(Collectors.toList());
+            return postMenuMapper.batchInsertPostMenu(list);
+        }
+        return 0;
     }
 }
