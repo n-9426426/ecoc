@@ -6,8 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 规则违规信息
- * 校验不通过时返回的违规详情
+ * 单条规则违规信息
  */
 @Data
 @Builder
@@ -15,23 +14,21 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class RuleViolation {
 
-    /**
-     * 规则编号（如R1、R2a）
-     */
+    /** 规则编号 */
     private String ruleId;
 
-    /**
-     * 英文错误提示
-     */
+    /** 字段名 */
+    private String fieldName;
+
+    /** 实际值（字符串形式） */
+    private String actualValue;
+
+    /** 英文错误信息 */
     private String messageEn;
 
-    /**
-     * 中文错误提示
-     */
+    /** 中文错误信息 */
     private String messageZh;
 
-    /**
-     * 原始规则字符串（用于调试）
-     */
+    /** 原始规则字符串 */
     private String rawRule;
 }

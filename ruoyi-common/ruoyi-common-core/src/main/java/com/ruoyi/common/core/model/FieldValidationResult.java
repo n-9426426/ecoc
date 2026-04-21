@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 /**
- * 单个字段的校验结果
+ * 单字段校验结果
  */
 @Data
 @Builder
@@ -16,23 +16,15 @@ import java.util.List;
 @AllArgsConstructor
 public class FieldValidationResult {
 
-    /**
-     * 字段名称（dict_label）
-     */
+    /** 字段名 */
     private String fieldName;
 
-    /**
-     * 字段填写的值
-     */
+    /** 字段实际值 */
     private Object value;
 
-    /**
-     * 是否通过校验
-     */
+    /** 是否通过校验 */
     private boolean valid;
 
-    /**
-     * 违规列表（未通过的规则）
-     */
+    /** 违规列表（valid=false 时有值） */
     private List<RuleViolation> violations;
 }

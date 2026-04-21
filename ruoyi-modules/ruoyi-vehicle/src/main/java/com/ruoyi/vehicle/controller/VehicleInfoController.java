@@ -1,14 +1,18 @@
 package com.ruoyi.vehicle.controller;
 
+import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.core.web.page.TableDataInfo;
 import com.ruoyi.common.log.annotation.Log;
 import com.ruoyi.common.log.enums.BusinessType;
 import com.ruoyi.common.security.annotation.RequiresPermissions;
+import com.ruoyi.system.api.RemoteLoginService;
 import com.ruoyi.system.api.RemoteTranslateService;
+import com.ruoyi.system.api.domain.LoginBody;
 import com.ruoyi.system.api.enums.FileTypeEnum;
 import com.ruoyi.vehicle.domain.VehicleInfo;
+import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import io.swagger.v3.oas.annotations.Operation;
 import org.slf4j.Logger;
@@ -30,6 +34,23 @@ public class VehicleInfoController extends BaseController {
 
     @Autowired
     private RemoteTranslateService remoteTranslateService;
+
+    @Autowired
+    private RemoteLoginService remoteLoginService;
+
+    @Operation(summary = "MES数据推送至本系统")
+    @PostMapping("/to-system")
+    public AjaxResult MesToSystem(VehicleDto vehicleDto) {
+        LoginBody body = new LoginBody();
+        body.setUsername(vehicleDto.getUsername());
+        body.setPassword(vehicleDto.getPassword());
+        int loginResultCode = remoteLoginService.login(body).getCode();
+        if (loginResultCode != 200) {
+            throw new ServiceException("MES数据推送至本系统时用户名密码错误");
+        }
+        vehicleInfoService.getVehicleInfoFromMes(vehicleDto);
+        return AjaxResult.success();
+    }
 
     /**
      * 查询车辆信息列表

@@ -4,50 +4,99 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
-import java.util.List;
+import java.util.Collection;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * 条件表达式实体类
- * 用于 ANY / ALL 条件中的单个条件描述
+ * 单个条件表达式
+ * 支持：
+ *   field = value
+ *   field IS PRESENT
+ *   field IS ABSENT
+ *   @field（字段有值即满足）
  */
+@Slf4j
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class ConditionExpression {
 
-    /**
-     * 量词（ANY 或 ALL）
-     */
-    private String quantifier;
+    // field = value
+    private static final Pattern EQ_PATTERN =
+            Pattern.compile("^([\\w.]+)\\s*=\\s*(.+)$");
+    // field IS PRESENT / IS ABSENT
+    private static final Pattern IS_PATTERN =
+            Pattern.compile("^([\\w.]+)\\s+IS\\s+(PRESENT|ABSENT)$", Pattern.CASE_INSENSITIVE);
+    // @field
+    private static final Pattern REF_PATTERN =
+            Pattern.compile("^@([\\w.]+)$");
 
-    /**
-     * 字段名
-     * 例如: EnergySource、brakedAxleIndicator
-     */
     private String fieldName;
+    private String operator;   // "=", "IS_PRESENT", "IS_ABSENT", "REF"
+    private String expectValue;
 
-    /**
-     * 运算符
-     * 例如: =、!=、IS_ABSENT、IS_PRESENT
-     */
-    private String operator;
+    public static ConditionExpression parse(String expr) {
+        expr = expr.trim();
 
-    /**
-     * 比较值
-     * 例如: "95"、"Y"
-     */
-    private Object value;
+        Matcher m = IS_PATTERN.matcher(expr);
+        if (m.matches()) {
+            return ConditionExpression.builder()
+                    .fieldName(m.group(1))
+                    .operator("IS_" + m.group(2).toUpperCase())
+                    .build();
+        }
 
-    /**
-     * 逻辑连接符（AND / OR）
-     * 用于多条件组合
-     */
-    private String logic;
+        m = EQ_PATTERN.matcher(expr);
+        if (m.matches()) {
+            return ConditionExpression.builder()
+                    .fieldName(m.group(1).trim())
+                    .operator("=")
+                    .expectValue(m.group(2).trim())
+                    .build();
+        }
 
-    /**
-     * 子条件列表（用于嵌套条件）
-     */
-    private List<ConditionExpression> children;
+        m = REF_PATTERN.matcher(expr);
+        if (m.matches()) {
+            return ConditionExpression.builder()
+                    .fieldName(m.group(1))
+                    .operator("REF")
+                    .build();
+        }
+
+        log.warn("无法解析条件表达式: {}", expr);
+        return null;
+    }
+
+    public boolean evaluate(Map<String, Object> context) {
+        if (this.fieldName == null || this.operator == null) return false;
+        Object val = context.get(this.fieldName);
+
+        switch (this.operator) {
+            case "IS_PRESENT":
+                return !isAbsent(val);
+            case "IS_ABSENT":
+                return isAbsent(val);
+            case "=":
+                return this.expectValue != null
+                        && this.expectValue.equals(val == null ? null : val.toString());
+            case "REF":
+                return !isAbsent(val);
+            default:
+                log.warn("未知条件运算符: {}", this.operator);
+                return false;
+        }
+    }
+
+    private boolean isAbsent(Object value) {
+        if (value == null) return true;
+        if (value instanceof String) return ((String) value).trim().isEmpty();
+        if (value instanceof Collection) return ((Collection<?>) value).isEmpty();
+        if (value instanceof Map) return ((Map<?, ?>) value).isEmpty();
+        return false;
+    }
 }

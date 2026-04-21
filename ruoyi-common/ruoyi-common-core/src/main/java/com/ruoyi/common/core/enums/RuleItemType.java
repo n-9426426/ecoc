@@ -3,51 +3,40 @@ package com.ruoyi.common.core.enums;
 import lombok.Getter;
 
 /**
- * 规则项类型
+ * 规则类型枚举
  */
 @Getter
 public enum RuleItemType {
-    // 基础规则
-    VALUE_IS_PRESENT_IF_FIELD_REF,      // VALUE IS PRESENT IF @fieldName
-    VALUE_IS_PRESENT_IF,                 // VALUE IS PRESENT IF fieldName IS ABSENT/PRESENT
-    VALUE_IS_ABSENT,                     // VALUE IS ABSENT
-    VALUE_IN,                            // VALUE IN ['AA', 'AB', ...]
-    VALUE_REGEX,                         // VALUE = /regex/
-    VALUE_COMPARE,                       // VALUE >= 1
-    RANGE,                               // RANGE 1 TO 9
 
-    // 条件规则
-    FORBIDDEN_IF,                        // FORBIDDEN IF vehicleCategory IN [Mx]
-    MANDATORY_IF,                        // MANDATORY IF vehicleCategory IN [Mx] AND stageOfCompletion = C
-    FIELD_IS_NULL,                       // fieldName IS NULL / IS NOT NULL
-    FIELD_IS_ABSENT,                     // fieldName IS ABSENT / IS PRESENT
+    // ===== 存在性 =====
+    VALUE_IS_PRESENT,       // VALUE IS PRESENT
+    VALUE_IS_ABSENT,        // VALUE IS ABSENT
 
-    // 列表规则
-    ANY_CONDITION,                       // ANY fieldName = value
-    ALL_CONDITION,                       // ALL fieldName IS ABSENT
+    // ===== 枚举 =====
+    VALUE_IN,               // VALUE IN [x, y, z]
 
-    // 聚合规则
-    COUNT_AGGREGATE,                     // COUNT(axleList, condition) = VALUE
-    SUM_AGGREGATE,                       // SUM(axleList, fieldName) >= VALUE
+    // ===== 正则 =====
+    VALUE_REGEX,            // VALUE = /regex/
 
-    // 嵌套条件规则
-    NESTED_CONDITION,                     // VALUE = /regex/ IF ANY ... IF ALL ...
+    // ===== 数值比较 =====
+    VALUE_COMPARE,          // VALUE >= x, VALUE = x 等
 
-    /** 数值范围校验：min=x; max=y */
-    NUMERIC_RANGE,
+    // ===== 条件触发 =====
+    MANDATORY_IF,           // VALUE IS PRESENT IF ANY ...
+    FORBIDDEN_IF,           // VALUE IS ABSENT IF ALL ...
 
-    /** 字符串长度范围：minLength=x; maxLength=y */
-    LENGTH_RANGE,
+    // ===== 聚合 =====
+    COUNT_AGGREGATE,        // COUNT(list, cond) >= n
+    SUM_AGGREGATE,          // SUM(list, field) >= VALUE
 
-    /**仅最大长度：maxLength=n */
-    MAX_LENGTH,
+    // ===== 嵌套条件 =====
+    NESTED_CONDITION,       // VALUE = /re/ IF ANY f=v IF ALL g IS PRESENT
 
-    /** 仅最小长度：minLength=n */
-    MIN_LENGTH,
-
-    /** 总有效数字位数：totalDigits=n */
-    TOTAL_DIGITS,
-
-    /** 小数位数：fractionDigits=n */
-    FRACTION_DIGITS,
+    // ===== 范围约束（来自 rangeRule 字段）=====
+    NUMERIC_RANGE,          // min=x; max=y
+    LENGTH_RANGE,           // minLength=x; maxLength=y
+    MIN_LENGTH,             // minLength=x
+    MAX_LENGTH,             // maxLength=x
+    TOTAL_DIGITS,           // totalDigits=n
+    FRACTION_DIGITS         // fractionDigits=n
 }

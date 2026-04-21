@@ -50,7 +50,7 @@ public class JsonDictConverter {
                 }
 
                 String newKey = StringUtils.isNotBlank(dictLabel) ? dictLabel : key;
-                resultMap.put(newKey, value);
+                resultMap.put(key, value);
             }
 
             return resultMap;

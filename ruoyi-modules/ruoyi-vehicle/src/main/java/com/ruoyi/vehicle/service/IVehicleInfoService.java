@@ -3,6 +3,7 @@ package com.ruoyi.vehicle.service;
 import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.vehicle.domain.VehicleInfo;
+import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -83,4 +84,6 @@ public interface IVehicleInfoService {
     public int updateStatus(VehicleInfo vehicleInfo);
 
     public ValidationReport validateVehicleInfo(Long vehicleInfoId);
+
+    void getVehicleInfoFromMes(VehicleDto vehicleDto);
 }

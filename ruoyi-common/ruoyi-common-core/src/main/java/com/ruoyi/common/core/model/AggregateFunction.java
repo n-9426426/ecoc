@@ -1,13 +1,14 @@
 package com.ruoyi.common.core.model;
 
+import com.ruoyi.common.core.enums.CompareOperator;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 聚合函数实体类
- * 用于 COUNT / SUM 聚合规则
+ * 聚合函数描述
+ * 支持 COUNT 和 SUM
  */
 @Data
 @Builder
@@ -15,36 +16,26 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class AggregateFunction {
 
-    /**
-     * 聚合类型（COUNT 或 SUM）
-     */
-    private String aggregateType;
+    public enum Type { COUNT, SUM }
+
+    /** 聚合类型 */
+    private Type functionType;
+
+    /** 列表字段名，如 axleList */
+    private String listField;
+
+    /** COUNT 用：条件字符串，如 "axleType = 1" */
+    private String condition;
+
+    /** SUM 用：求和字段名，如 "axleLoad" */
+    private String field;
+
+    /** 比较运算符 */
+    private CompareOperator operator;
 
     /**
-     * 列表字段名
-     * 例如: axleList、bodyworkList、energySourceList
+     * 比较阈值
+     * SUM 中为 null 时表示引用当前字段值（VALUE）
      */
-    private String listFieldName;
-
-    /**
-     * 目标字段名（仅 SUM 使用）
-     * 例如: massAxle
-     */
-    private String targetFieldName;
-
-    /**
-     * 过滤条件（仅 COUNT 使用）
-     * 例如: brakedAxleIndicator = 'Y'
-     */
-    private ConditionExpression filterCondition;
-
-    /**
-     * 比较运算符（=、>=、<=、>、<）
-     */
-    private String compareOperator;
-
-    /**
-     * 比较值（通常是 "VALUE"，表示与当前字段值比较）
-     */
-    private String compareValue;
+    private Double threshold;
 }

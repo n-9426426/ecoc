@@ -1,16 +1,13 @@
 package com.ruoyi.common.core.model;
 
-import com.ruoyi.common.core.enums.RuleItemType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
-
 /**
- * 嵌套条件规则实体类
- * 用于 VALUE = /regex/ IF ANY ... IF ALL ... 这类复合规则
+ * 嵌套条件规则
+ * 示例：VALUE = /regex/ IF ANY certType = 1 IF ALL issueDate IS PRESENT
  */
 @Data
 @Builder
@@ -19,21 +16,22 @@ import java.util.List;
 public class NestedConditionRule {
 
     /**
-     * 主规则类型
-     * 例如: VALUE_REGEX、VALUE_IN
+     * 主体操作：IS_PRESENT / IS_ABSENT / REGEX / COMPARE
      */
-    private RuleItemType mainRuleType;
+    private String operator;
 
     /**
-     * 主规则内容
-     * -若mainRuleType = VALUE_REGEX → String（正则表达式）
-     * - 若 mainRuleType = VALUE_IN   → List<String>（枚举值列表）
+     * 主体比较值（正则表达式字符串 或 比较数值）
      */
-    private Object mainRuleContent;
+    private String compareValue;
 
     /**
-     * 条件链（按顺序依次评估）
-     * 所有条件都满足时，才执行主规则校验
+     * IF ANY 条件链（任意满足）
      */
-    private List<ConditionChain> conditionChains;
+    private ConditionChain anyChain;
+
+    /**
+     * IF ALL 条件链（全部满足）
+     */
+    private ConditionChain allChain;
 }

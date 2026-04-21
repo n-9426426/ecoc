@@ -1,4 +1,4 @@
-package com.ruoyi.auth.form;
+package com.ruoyi.system.api.domain;
 
 /**
  * 用户登录对象

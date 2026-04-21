@@ -3,12 +3,14 @@ package com.ruoyi.vehicle.service.impl;
 import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.StringUtils;
+import com.ruoyi.common.core.utils.bean.BeanUtils;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.vehicle.domain.VehicleInfo;
+import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMaterialMapper;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
@@ -107,7 +109,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setUploadStatus(0);
         vehicleInfo.setValidationResult(0);
         vehicleInfo.setCreateTime(DateUtils.getNowDate());
-        vehicleInfo.setCreateBy(SecurityUtils.getUsername());
+        vehicleInfo.setCreateBy(SecurityUtils.getUsername() == null ? "MES To System" : SecurityUtils.getUsername());
         return vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
     }
 
@@ -249,5 +251,22 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             vehicleInfo.setValidationResult(2);
         }
         return validationReport;
+    }
+
+    @Override
+    public void getVehicleInfoFromMes(VehicleDto vehicleDto) {
+        VehicleInfo vehicleInfo = new VehicleInfo();
+        BeanUtils.copyProperties(vehicleDto, vehicleInfo);
+        List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_model").getData();
+        for (SysDictData dictData : sysDictData) {
+            if (dictData.getDictLabel().equals(vehicleDto.getVehicleModel())) {
+                vehicleInfo.setVehicleModel(dictData.getDictCode());
+                break;
+            }
+        }
+        if (vehicleInfo.getVehicleModel() == null) {
+            throw new RuntimeException("车型代码不存在");
+        }
+        insertVehicleInfo(vehicleInfo);
     }
 }

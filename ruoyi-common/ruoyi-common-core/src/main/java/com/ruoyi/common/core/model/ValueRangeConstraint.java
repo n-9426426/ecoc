@@ -6,13 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 值范围约束模型
- * 对应CSV 中"值范围"列，支持以下格式：
- *min=0.0; max=999999
- *   maxLength=2
- *   minLength=1; maxLength=35
- *   totalDigits=5;
- *   totalDigits=9; fractionDigits=5; min=0.0; max=9999.99999
+ * 值范围约束（来自 rangeRule 字段）
  */
 @Data
 @Builder
@@ -20,42 +14,33 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class ValueRangeConstraint {
 
-    /** 数值最小值（对应 min=） */
-    private Double numericMin;
+    /** 数值最小值 */
+    private Double min;
 
-    /** 数值最大值（对应 max=） */
-    private Double numericMax;
+    /** 数值最大值 */
+    private Double max;
 
-    /** 字符串最小长度（对应 minLength=） */
+    /** 字符串最小长度 */
     private Integer minLength;
 
-    /** 字符串最大长度（对应 maxLength=） */
+    /** 字符串最大长度 */
     private Integer maxLength;
 
-    /** 总有效数字位数（对应 totalDigits=） */
+    /** 总有效数字位数（整数+小数） */
     private Integer totalDigits;
 
-    /** 小数位数（对应 fractionDigits=） */
+    /** 小数位数上限 */
     private Integer fractionDigits;
 
-    public boolean hasNumericRange() {
-        return numericMin != null || numericMax != null;
-    }
-
-    public boolean hasLengthConstraint() {
-        return minLength != null || maxLength != null;
-    }
-
-    public boolean hasTotalDigits() {
-        return totalDigits != null;
-    }
-
-    public boolean hasFractionDigits() {
-        return fractionDigits != null;
-    }
-
-    public boolean isEmpty() {
-        return !hasNumericRange() && !hasLengthConstraint()
-                && !hasTotalDigits() && !hasFractionDigits();
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        if (min != null)           sb.append("min=").append(min).append("; ");
+        if (max != null)           sb.append("max=").append(max).append("; ");
+        if (minLength != null)     sb.append("minLength=").append(minLength).append("; ");
+        if (maxLength != null)     sb.append("maxLength=").append(maxLength).append("; ");
+        if (totalDigits != null)   sb.append("totalDigits=").append(totalDigits).append("; ");
+        if (fractionDigits != null)sb.append("fractionDigits=").append(fractionDigits).append("; ");
+        return sb.toString().trim();
     }
 }

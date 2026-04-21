@@ -1,6 +1,5 @@
 package com.ruoyi.auth.controller;
 
-import com.ruoyi.auth.form.LoginBody;
 import com.ruoyi.auth.form.RegisterBody;
 import com.ruoyi.auth.form.UnLockBody;
 import com.ruoyi.auth.service.SysLoginService;
@@ -11,6 +10,7 @@ import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.security.auth.AuthUtil;
 import com.ruoyi.common.security.service.TokenService;
 import com.ruoyi.common.security.utils.SecurityUtils;
+import com.ruoyi.system.api.domain.LoginBody;
 import com.ruoyi.system.api.model.LoginUser;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Autowired;

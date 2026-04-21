@@ -171,7 +171,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 update.setTemplateId(templateId);
                 update.setValidateResult(report.isAllValid() ? "1" : "2");
                 try {
-                    update.setValidateMsg(objectMapper.writeValueAsString(report.getFailedFields()));
+//                    update.setValidateMsg(objectMapper.writeValueAsString(report.getFailedFields()));
                 } catch (Exception e) {
                     update.setValidateMsg("序列化失败");
                 }
