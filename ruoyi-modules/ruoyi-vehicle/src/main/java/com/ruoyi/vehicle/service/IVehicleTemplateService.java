@@ -41,4 +41,6 @@ public interface IVehicleTemplateService {
     void sendError(String taskId, Map<String, Object> data);
 
     List<VehicleTemplate> selectVehicleTemplateOption();
+
+    List<VehicleTemplate> historyVersion(VehicleTemplate template);
 }

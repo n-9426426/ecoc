@@ -151,17 +151,20 @@ public class SysPostServiceImpl implements ISysPostService
      * @return 结果
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public int deletePostByIds(Long[] postIds)
     {
-        for (Long postId : postIds)
-        {
+        for (Long postId : postIds) {
             SysPost post = selectPostById(postId);
-            if (countUserPostById(postId) > 0)
-            {
+            if (countUserPostById(postId) > 0) {
                 throw new ServiceException(String.format(remoteTranslateService.translate("assigned.cannot.delete", null), post.getPostName()));
             }
         }
-        return postMapper.deletePostByIds(postIds);
+        int row = postMapper.deletePostByIds(postIds);
+        for (Long postId : postIds) {
+            postMenuMapper.deletePostMenuByPostId(postId);
+        }
+        return row;
     }
 
     /**

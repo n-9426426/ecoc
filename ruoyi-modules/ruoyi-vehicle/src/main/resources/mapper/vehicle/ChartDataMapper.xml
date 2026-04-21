@@ -2,11 +2,13 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.ruoyi.vehicle.mapper.ChartDataMapper">
     <resultMap type="com.ruoyi.vehicle.domain.vo.ChartDataXmlTotalVo" id="ChartDataXmlTotalVo">
-        <result property="year" column="file_id"/>
-        <result property="month" column="version"/>
-        <result property="total" column="total"/>
+        <result property="year"         column="year"         />
+        <result property="month"        column="month"        />
+        <result property="day"          column="day"          />
+        <result property="total"        column="total"        />
         <result property="submitNumber" column="submit_number"/>
-        <result property="passNumber" column="pass_number"/>
+        <result property="failNumber"   column="fail_number"  />
+        <result property="passNumber"   column="pass_number"  />
     </resultMap>
 
     <select id="selectXmlTotal" resultMap="ChartDataXmlTotalVo">
@@ -18,7 +20,9 @@
             SUM(CASE WHEN upload_result = '3' THEN 1 ELSE 0 END)        AS pass_number
         FROM xml_file
         WHERE
-            deleted = 0 AND create_time >= DATE_FORMAT(DATE_SUB(NOW(), INTERVAL 6 MONTH), '%Y-%m-01')
+            deleted = 0 and is_latest = 1
+            AND create_time >= CONCAT(IFNULL(#{year}, YEAR(NOW())), '-01-01')
+            AND create_time &lt; CONCAT(IFNULL(#{year}, YEAR(NOW())) + 1, '-01-01')
         GROUP BY
             YEAR(create_time),
             MONTH(create_time)
@@ -29,28 +33,224 @@
 
     <select id="selectXmlValidateTotal" resultMap="ChartDataXmlTotalVo">
         SELECT
-            YEAR(xf.create_time)  AS year,
-            MONTH(xf.create_time) AS month,
-            COUNT(CASE WHEN upload_result IN (1, 2) THEN 1 END)     AS total,
-            SUM(CASE WHEN xf.validate_result = 1 THEN 1 ELSE 0 END) AS validate_pass_count,
-            SUM(CASE WHEN xf.validate_result = 2 THEN 1 ELSE 0 END) AS validate_fail_count
-        FROM xml_file xf
-            INNER JOIN (
-            SELECT
-            SUBSTRING_INDEX(SUBSTRING_INDEX(file_name, '_', 2), '_', -1) AS vin,
-            MAX(id) AS max_id
-            FROM xml_file
-            WHERE deleted = 0
-            GROUP BY SUBSTRING_INDEX(SUBSTRING_INDEX(file_name, '_', 2), '_', -1)
-            ) latest ON xf.id = latest.max_id
+            YEAR(create_time)  AS year,
+            MONTH(create_time) AS month,
+            COUNT(CASE WHEN validate_result IN (1, 2) THEN 1 END)     AS total,
+            SUM(CASE WHEN validate_result = 2 THEN 1 ELSE 0 END) AS fail_number,
+            SUM(CASE WHEN validate_result = 1 THEN 1 ELSE 0 END) AS pass_number
+        FROM xml_file
         WHERE
-            xf.deleted = 0
-          AND xf.create_time >= DATE_FORMAT(DATE_SUB(NOW(), INTERVAL 6 MONTH), '%Y-%m-01')
+            deleted = 0 and is_latest = 1
+              AND create_time >= CONCAT(IFNULL(#{year}, YEAR(NOW())), '-01-01')
+              AND create_time &lt; CONCAT(IFNULL(#{year}, YEAR(NOW())) + 1, '-01-01')
         GROUP BY
-            YEAR(xf.create_time),
-            MONTH(xf.create_time)
+            YEAR(create_time),
+            MONTH(create_time)
         ORDER BY
             year ASC,
             month ASC;
+    </select>
+
+    <resultMap type="com.ruoyi.vehicle.domain.vo.VehicleModelVo" id="VehicleModelVo">
+        <result property="year" column="year"/>
+        <result property="month" column="month"/>
+        <result property="vehicleModel" column="vehicle_model"/>
+        <result property="total" column="total"/>
+    </resultMap>
+
+    <select id="selectVehicleModelVoList" resultMap="VehicleModelVo">
+        SELECT YEAR(create_time)  AS year, MONTH(create_time) AS month, model_code AS model_code, COUNT(*) AS total
+        FROM xml_file
+        WHERE deleted = 0 and is_latest = 1
+            <choose>
+                <when test="month != null">
+                    AND create_time >= CONCAT(IFNULL(#{year}, YEAR(NOW())), '-', LPAD(#{month}, 2, '0'), '-01')
+                    AND create_time &lt;  DATE_ADD(CONCAT(IFNULL(#{year}, YEAR(NOW())), '-', LPAD(#{month}, 2, '0'), '-01'), INTERVAL 1 MONTH)
+                </when>
+                <otherwise>
+                    AND create_time >= CONCAT(IFNULL(#{year}, YEAR(NOW())), '-01-01')
+                    AND create_time &lt;  CONCAT(IFNULL(#{year}, YEAR(NOW())) + 1, '-01-01')
+                </otherwise>
+            </choose>
+        GROUP BY YEAR(create_time), MONTH(create_time), model_code
+        ORDER BY year ASC, month ASC, model_code ASC;
+    </select>
+
+    <select id="selectStatisticsXmlTotal" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM xml_file
+        WHERE deleted = 0 and is_latest = 1
+            <if test="startTime != null">
+                AND create_time >= #{startTime}
+            </if>
+            <if test="endTime != null">
+                AND create_time &lt; #{endTime}
+            </if>
+            <if test="issueStartTime != null">
+                AND issue_date >= #{issueStartTime}
+            </if>
+            <if test="issueEndTime != null">
+                AND issue_date &lt; #{issueEndTime}
+            </if>
+            <if test="factoryCode != null and factoryCode != ''">
+                AND factory_code = #{factoryCode}
+            </if>
+            <if test="vehicleModel != null">
+                AND xml_template_id = #{vehicleModel}
+            </if>
+            <if test="country != null and country != ''">
+                AND country = #{country}
+            </if>
+            <if test="uploadStatus != null">
+                AND upload_result = #{uploadStatus}
+            </if>
+    </select>
+
+    <select id="selectStatisticsXmlPassNumber" resultType="java.lang.Integer">
+        SELECT COUNT(case when upload_result = 3 then 1 end)
+        FROM xml_file
+        WHERE deleted = 0 and is_latest = 1
+            <if test="startTime != null">
+                AND create_time >= #{startTime}
+            </if>
+            <if test="endTime != null">
+                AND create_time &lt; #{endTime}
+            </if>
+            <if test="issueStartTime != null">
+                AND issue_date >= #{issueStartTime}
+            </if>
+            <if test="issueEndTime != null">
+                AND issue_date &lt; #{issueEndTime}
+            </if>
+            <if test="factoryCode != null and factoryCode != ''">
+                AND factory_code = #{factoryCode}
+            </if>
+            <if test="vehicleModel != null">
+                AND xml_template_id = #{vehicleModel}
+            </if>
+            <if test="country != null and country != ''">
+                AND country = #{country}
+            </if>
+            <if test="uploadStatus != null">
+                AND upload_result = #{uploadStatus}
+            </if>
+    </select>
+
+    <select id="selectStatisticsVehicleFailNumber" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM vehicle_info vi
+        WHERE vi.deleted = 0
+            AND vi.validation_result = 2
+            AND vi.create_time >= IFNULL(#{startTime},        CONCAT(YEAR(NOW()), '-01-01'))
+            AND vi.create_time &lt;  IFNULL(#{endTime},       CONCAT(YEAR(NOW()) + 1, '-01-01'))
+            AND vi.issue_date  >= IFNULL(#{issueStartTime},   CONCAT(YEAR(NOW()), '-01-01'))
+            AND vi.issue_date  &lt;  IFNULL(#{issueEndTime},  CONCAT(YEAR(NOW()) + 1, '-01-01'))
+            <if test="factoryCode != null and factoryCode != ''">
+                AND vi.factory_code = #{factoryCode}
+            </if>
+            <if test="vehicleModel != null">
+                AND vi.vehicle_model = #{vehicleModel}
+            </if>
+            <if test="country != null and country != ''">
+                AND vi.country = #{country}
+            </if>
+            <if test="uploadStatus != null">
+                AND vi.upload_status = #{uploadStatus}
+            </if>
+    </select>
+
+    <select id="selectStatisticsXmlRejectNumber" resultType="java.lang.Integer">
+        SELECT COUNT(case when upload_result = 2 then 1 end)
+        FROM xml_file
+        WHERE deleted = 0 and is_latest = 1
+            <if test="startTime != null">
+                AND create_time >= #{startTime}
+            </if>
+            <if test="endTime != null">
+                AND create_time &lt; #{endTime}
+            </if>
+            <if test="issueStartTime != null">
+                AND issue_date >= #{issueStartTime}
+            </if>
+            <if test="issueEndTime != null">
+                AND issue_date &lt; #{issueEndTime}
+            </if>
+            <if test="factoryCode != null and factoryCode != ''">
+                AND factory_code = #{factoryCode}
+            </if>
+            <if test="vehicleModel != null">
+                AND xml_template_id = #{vehicleModel}
+            </if>
+            <if test="country != null and country != ''">
+                AND country = #{country}
+            </if>
+            <if test="uploadStatus != null">
+                AND upload_result = #{uploadStatus}
+            </if>
+    </select>
+
+    <select id="selectStatisticsTrend" resultMap="ChartDataXmlTotalVo">
+        SELECT YEAR(create_time) AS year,
+            <choose>
+                <when test="flag == 'month' or flag == 'day'">
+                    MONTH(create_time) AS month,
+                </when>
+            </choose>
+            <choose>
+                <when test="flag == 'day'">
+                    DAY(create_time) AS day,
+                </when>
+            </choose>
+            COUNT(CASE WHEN validate_result IN (0, 1, 2) THEN 1 END) AS total,
+            SUM(CASE WHEN validate_result = 2 THEN 1 ELSE 0 END)  AS fail_number,
+            SUM(CASE WHEN validate_result = 1 THEN 1 ELSE 0 END)  AS pass_number
+        FROM xml_file
+        WHERE deleted = 0 and is_latest = 1
+            <if test="startTime != null">
+                AND create_time >= #{startTime}
+            </if>
+            <if test="endTime != null">
+                AND create_time &lt; #{endTime}
+            </if>
+            <if test="issueStartTime != null">
+                AND issue_date >= #{issueStartTime}
+            </if>
+            <if test="issueEndTime != null">
+                AND issue_date &lt; #{issueEndTime}
+            </if>
+            <if test="factoryCode != null and factoryCode != ''">
+                AND factory_code = #{factoryCode}
+            </if>
+            <if test="vehicleModel != null">
+                AND xml_template_id = #{vehicleModel}
+            </if>
+            <if test="country != null and country != ''">
+                AND country = #{country}
+            </if>
+            <if test="uploadStatus != null">
+                AND upload_result = #{uploadStatus}
+            </if>
+        GROUP BY YEAR(create_time)
+            <choose>
+                <when test="flag == 'month' or flag == 'day'">
+                    , MONTH(create_time)
+                </when>
+            </choose>
+            <choose>
+                <when test="flag == 'day'">
+                    , DAY(create_time)
+                </when>
+            </choose>
+        ORDER BY year ASC
+            <choose>
+                <when test="flag == 'month' or flag == 'day'">
+                    , month ASC
+                </when>
+            </choose>
+            <choose>
+                <when test="flag == 'day'">
+                    , day ASC
+                </when>
+            </choose>
     </select>
 </mapper>

@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.OutputStream;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.List;
 
@@ -59,8 +60,7 @@ public class XmlController extends BaseController {
     @RequiresPermissions("system:xml:export")
     @Log(title = "XML文件", businessType = BusinessType.EXPORT)
     @PostMapping("/export")
-    public void export(HttpServletResponse response, XmlFile xmlFile) throws Exception {
-        // todo 导出
+    public void export(HttpServletResponse response, @RequestBody XmlFile xmlFile) throws Exception {
         List<XmlFile> xmlFiles = xmlFileService.selectXmlFileList(xmlFile);
         excelUtil.exportExcel(response, xmlFiles, "xml_file", "XML File");
     }
@@ -141,9 +141,7 @@ public class XmlController extends BaseController {
             if (xmlFile == null) {
                 return;
             }
-
-            String rootPath = System.getProperty("user.dir");
-            File file = Paths.get(rootPath, xmlFile.getFilePath()).toFile();
+            File file = Paths.get(xmlFile.getFilePath()).toFile();
             if (!file.exists()) {
                 return;
             }
@@ -151,15 +149,15 @@ public class XmlController extends BaseController {
             response.setContentType("application/xml");
             response.setCharacterEncoding("UTF-8");
             response.setHeader("Content-Disposition",
-                    "attachment; filename=" + new String(xmlFile.getFileName().getBytes("UTF-8"), "ISO-8859-1"));
+                    "attachment; filename=" + new String(xmlFile.getFileName().getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1));
 
             try (FileInputStream fis = new FileInputStream(file);
                  OutputStream os = response.getOutputStream()) {
-                byte[] buffer = new byte[1024];
-                int len;
-                while ((len = fis.read(buffer)) > 0) {
-                    os.write(buffer, 0, len);
-                }
+                 byte[] buffer = new byte[1024];
+                 int len;
+                 while ((len = fis.read(buffer)) > 0) {
+                     os.write(buffer, 0, len);
+                 }
                 os.flush();
             }
         } catch (Exception e) {

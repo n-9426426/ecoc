@@ -23,6 +23,7 @@
         <result property="updateTime"     column="update_time"/>
         <result property="filepath"       column="filepath"/>
         <result property="isLast"         column="is_last"/>
+        <result property="uuid"           column="uuid"/>
     </resultMap>
 
     <!-- ==================== 公共查询列 ==================== -->
@@ -53,6 +54,9 @@
             resultMap="VehicleTemplateResult">
         <include refid="selectVehicleTemplateVo"/>
         WHERE del_flag = '0'
+        <if test="isLast != null">
+            and is_last = #{isLast}
+        </if>
         <if test="templateIds != null and templateIds.size() > 0">
             AND template_id in
             <foreach item="templateId" collection="templateIds" open="(" separator="," close=")">
@@ -73,6 +77,12 @@
         </if>
         <if test="status != null and status != ''">
             AND status = #{status}
+        </if>
+        <if test="uuid != null and uuid != ''" >
+            and uuid = #{uuid}
+        </if>
+        <if test="version != null and version != ''" >
+            and version = #{version}
         </if>
         <if test="validateResult != null and validateResult != ''">
             AND validate_result = #{validateResult}
@@ -102,8 +112,8 @@
             useGeneratedKeys="true"
             keyProperty="templateId">
         INSERT INTO vehicle_template (
-        wvta_coc_no, coc_template_no,model_no, version, vehicle_type, status, validate_result, json, remark, del_flag, create_by, create_time)
-        VALUES (#{wvtaCocNo}, #{cocTemplateNo}, #{modelNo}, #{version}, #{vehicleType}, #{status}, #{validateResult}, #{json}, #{remark}, '0', #{createBy}, #{createTime})
+        wvta_coc_no, coc_template_no,model_no, version, vehicle_type, status, validate_result, json, remark, del_flag, create_by, create_time, uuid)
+        VALUES (#{wvtaCocNo}, #{cocTemplateNo}, #{modelNo}, #{version}, #{vehicleType}, #{status}, #{validateResult}, #{json}, #{remark}, '0', #{createBy}, #{createTime}, #{uuid})
     </insert>
 
     <!-- ==================== 修改 ==================== -->

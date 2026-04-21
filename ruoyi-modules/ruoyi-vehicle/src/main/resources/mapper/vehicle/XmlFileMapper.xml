@@ -48,6 +48,12 @@
         <include refid="selectXmlFileVo"/>
         <where>
             1 = 1
+            <if test="ids != null and ids.size() > 0">
+                and xl.id in
+                <foreach collection="ids" item="id" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </if>
             <if test="vin != null and vin != ''">
                 AND xl.vin IN
                 <foreach collection="vin.split(',')" item="vinItem" open="(" separator="," close=")">

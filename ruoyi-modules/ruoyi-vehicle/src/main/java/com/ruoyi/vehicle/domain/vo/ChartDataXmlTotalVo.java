@@ -12,5 +12,7 @@ public class ChartDataXmlTotalVo {
 
     private Integer submitNumber;
 
+    private Integer failNumber;
+
     private Integer passNumber;
 }

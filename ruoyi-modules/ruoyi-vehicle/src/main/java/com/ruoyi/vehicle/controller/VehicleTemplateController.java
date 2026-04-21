@@ -147,6 +147,12 @@ public class VehicleTemplateController extends BaseController {
         return toAjax(vehicleTemplateService.updateStatus(template.getTemplateId(), template.getStatus()));
     }
 
+    @RequiresPermissions("vehicle:template:history")
+    @PostMapping("/history")
+    public AjaxResult historyVersion(@RequestBody VehicleTemplate template) {
+        return AjaxResult.success(vehicleTemplateService.historyVersion(template));
+    }
+
     /**
      * ✅ 批量校验（支持单个或多个 ID）
      * 示例：

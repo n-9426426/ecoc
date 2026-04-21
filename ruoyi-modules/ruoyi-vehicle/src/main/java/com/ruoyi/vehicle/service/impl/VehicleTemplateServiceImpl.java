@@ -103,6 +103,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int insertVehicleTemplate(VehicleTemplate template) {
+        template.setUuid(UUID.randomUUID().toString());
         template.setVersion("1.0");
         template.setStatus("0");
         template.setValidateResult("0");
@@ -369,5 +370,15 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
     public List<VehicleTemplate> selectVehicleTemplateOption() {
         return templateMapper.selectVehicleTemplateOption();
+    }
+
+    @Override
+    public List<VehicleTemplate> historyVersion(VehicleTemplate template) {
+        Long templateId = template.getTemplateId();
+        VehicleTemplate vehicleTemplate = templateMapper.selectVehicleTemplateById(templateId);
+        VehicleTemplate query = new VehicleTemplate();
+        query.setIsLast(0);
+        query.setUuid(vehicleTemplate.getUuid());
+        return templateMapper.selectVehicleTemplateList(query);
     }
 }

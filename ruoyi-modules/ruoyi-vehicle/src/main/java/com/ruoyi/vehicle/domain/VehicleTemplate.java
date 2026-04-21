@@ -60,4 +60,6 @@ public class VehicleTemplate extends BaseEntity {
     private String filepath;
 
     private Integer isLast;
+
+    private String uuid;
 }

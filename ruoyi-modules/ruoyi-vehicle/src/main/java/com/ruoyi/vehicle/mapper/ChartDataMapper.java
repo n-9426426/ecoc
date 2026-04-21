@@ -1,6 +1,10 @@
 package com.ruoyi.vehicle.mapper;
 
+import com.ruoyi.vehicle.domain.dto.ChartDataStatisticsDto;
 import com.ruoyi.vehicle.domain.vo.ChartDataXmlTotalVo;
+import com.ruoyi.vehicle.domain.vo.VehicleModelVo;
+
+import java.util.List;
 
 
 /**
@@ -8,7 +12,19 @@ import com.ruoyi.vehicle.domain.vo.ChartDataXmlTotalVo;
  */
 public interface ChartDataMapper {
     // 主页XML汇总图表
-    ChartDataXmlTotalVo selectXmlTotal();
+    ChartDataXmlTotalVo selectXmlTotal(Integer year);
 
-    ChartDataXmlTotalVo selectXmlValidateTotal();
+    ChartDataXmlTotalVo selectXmlValidateTotal(Integer year);
+
+    List<VehicleModelVo> selectVehicleModelVoList(Integer year, Integer month);
+
+    Integer selectStatisticsXmlTotal(ChartDataStatisticsDto statisticsDto);
+
+    Integer selectStatisticsXmlPassNumber(ChartDataStatisticsDto statisticsDto);
+
+    Integer selectStatisticsVehicleFailNumber(ChartDataStatisticsDto statisticsDto);
+
+    Integer selectStatisticsXmlRejectNumber(ChartDataStatisticsDto statisticsDto);
+
+    ChartDataXmlTotalVo selectStatisticsTrend(ChartDataStatisticsDto statisticsDto);
 }
