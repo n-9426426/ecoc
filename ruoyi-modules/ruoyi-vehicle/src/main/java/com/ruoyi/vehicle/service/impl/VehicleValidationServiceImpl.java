@@ -17,7 +17,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 车辆信息校验 ServiceImpl
@@ -83,8 +86,7 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
         }
 
         // 2. 解析列表字段（axleList、bodyworkList 等）
-        Map<String, List<Map<String, Object>>> listFields =
-                VehicleFieldParser.parseListFieldsFromMap(jsonMap, remoteDictService);
+        Map<String, List<Map<String, Object>>> listFields = VehicleFieldParser.parseListFieldsFromMap(jsonMap, remoteDictService);
 
         // 3. 构建上下文（所有字段值 + 车型 + 阶段 + 列表字段）
         Map<String, Object> context = buildContext(jsonMap, listFields, vehicleCategory, stageOfCompletion);
@@ -123,18 +125,10 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
             String vehicleCategory,
             String stageOfCompletion) {
 
-        // 1. 提取 dictCode
-        Long dictCode = extractDictCode(jsonKey);
-        if (dictCode == null) {
-            log.debug("无法解析 dictCode, key={}", jsonKey);
-            return null;
-        }
-
         // 2. 查询字典数据（含 rule、rangeRule、vehicleCategory、stageOfCompletion 过滤）
-        SysDictData dictData = queryDictData(dictCode, vehicleCategory, stageOfCompletion);
+        SysDictData dictData = queryDictData(jsonKey, vehicleCategory, stageOfCompletion);
         if (dictData == null) {
-            log.debug("未找到字典数据, dictCode={}, vehicleCategory={}, stageOfCompletion={}",
-                    dictCode, vehicleCategory, stageOfCompletion);
+            log.debug("未找到字典数据, vehicleCategory={}, stageOfCompletion={}", vehicleCategory, stageOfCompletion);
             return null;
         }
 
@@ -188,34 +182,23 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
      * 优先精确匹配，其次模糊匹配（vehicleCategory 或 stageOfCompletion 为空）
      */
     private SysDictData queryDictData(
-            Long dictCode,
+            String jsonKey,
             String vehicleCategory,
             String stageOfCompletion) {
         try {
             // todo 校验实现
-            List<SysDictData> list = Collections.emptyList();//remoteDictService.getDictDataByType(dictCode).getData();
+            List<SysDictData> list = remoteDictService.getDictDataByType("vehicle_attribute").getData();
             if (list == null || list.isEmpty()) return null;
 
             // 精确匹配
             for (SysDictData d : list) {
-//                if (matches(d.getVehicleCategory(), vehicleCategory)
-//                        && matches(d.getStageOfCompletion(), stageOfCompletion)) {
-//                    return d;
-//                }
+                if (matches(d.getKeyMap(), jsonKey)) {
+                    return d;
+                }
             }
-
-            // 降级：仅匹配 vehicleCategory
-            for (SysDictData d : list) {
-//                if (matches(d.getVehicleCategory(), vehicleCategory)) {
-//                    return d;
-//                }
-            }
-
-            // 降级：返回第一条
             return list.get(0);
-
         } catch (Exception e) {
-            log.error("查询字典数据失败, dictCode={}, error={}", dictCode, e.getMessage(), e);
+            log.error("查询字典数据失败, error={}", e.getMessage(), e);
             return null;
         }
     }

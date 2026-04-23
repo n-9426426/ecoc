@@ -4,7 +4,6 @@ import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -73,17 +72,9 @@ public interface IVehicleInfoService {
      */
     public int permanentlyDeleteVehicleInfoByIds(Long[] vehicleIds);
 
-    /**
-     * excel数据导入
-     *
-     * @param file EXCEL文件
-     * @return 导入结果
-     */
-    public AjaxResult importExcel(MultipartFile file) throws Exception;
-
     public int updateStatus(VehicleInfo vehicleInfo);
 
-    public ValidationReport validateVehicleInfo(Long vehicleInfoId);
+    public List<ValidationReport> validateVehicleInfo(List<Long> vehicleInfoId);
 
     void getVehicleInfoFromMes(VehicleDto vehicleDto);
 }

@@ -10,7 +10,6 @@ import com.ruoyi.common.security.annotation.RequiresPermissions;
 import com.ruoyi.system.api.RemoteLoginService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.LoginBody;
-import com.ruoyi.system.api.enums.FileTypeEnum;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
@@ -19,7 +18,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -99,7 +97,7 @@ public class VehicleInfoController extends BaseController {
     @RequiresPermissions("vehicle:info:validation")
     @Log(title = "车辆信息管理", businessType = BusinessType.VALIDATION)
     @PostMapping("/validation")
-    public AjaxResult validation(@RequestBody Long vehicleInfoId) {
+    public AjaxResult validation(@RequestBody List<Long> vehicleInfoId) {
         return AjaxResult.success(vehicleInfoService.validateVehicleInfo(vehicleInfoId));
     }
 
@@ -147,29 +145,5 @@ public class VehicleInfoController extends BaseController {
     @PutMapping("/permanently")
     public AjaxResult permanently(@RequestBody Long[] vehicleIds) {
         return AjaxResult.success(vehicleInfoService.permanentlyDeleteVehicleInfoByIds(vehicleIds));
-    }
-
-    @Operation(summary = "导入excel")
-    @RequiresPermissions("vehicle:info:import")
-    @Log(title = "车辆信息管理", businessType = BusinessType.IMPORT)
-    @PostMapping("/upload/excel")
-    public AjaxResult uploadExcelFile(@RequestParam("file") MultipartFile file) {
-        try {
-            String fileName = file.getOriginalFilename();
-            if (file.isEmpty() || fileName == null) {
-                return AjaxResult.error(remoteTranslateService.translate("common.upload.file.empty", null));
-            }
-
-            String extension = fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
-
-            FileTypeEnum fileType = FileTypeEnum.getByExtension(extension);
-            if (!(fileType == FileTypeEnum.EXCEL)) {
-                return AjaxResult.error(remoteTranslateService.translate("common.upload.file.type.unsupported", null));
-            }
-            return vehicleInfoService.importExcel(file);
-        } catch (Exception e) {
-            log.error("文件导入失败", e);
-            return AjaxResult.error("文件导入失败: " + e.getMessage());
-        }
     }
 }

@@ -24,7 +24,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -195,54 +194,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     }
 
     @Override
-    public AjaxResult importExcel(MultipartFile file) throws Exception {
-        List<VehicleInfo> vehicleList = excelUtil.importExcel(
-                file.getInputStream(),
-                "vehicle_info",
-                VehicleInfo.class
-        );
-
-        if (vehicleList.isEmpty()) {
-            return AjaxResult.error(remoteTranslateService.translate("vehicle.import.data.empty", null));
-        }
-
-        int successCount = 0;
-        int failCount = 0;
-        StringBuilder failMsg = new StringBuilder();
-
-        List<ValidationReport> validationReports = new ArrayList<>();
-        for (VehicleInfo vehicle : vehicleList) {
-            try {
-                // 检查wvta是否已存在
-                VehicleInfo query = new VehicleInfo();
-                query.setWvtaNo(vehicle.getWvtaNo());
-                List<VehicleInfo> existList = this.selectVehicleInfoList(query);
-
-                if (!existList.isEmpty()) {
-                    failCount++;
-                    failMsg.append(remoteTranslateService.translate("vehicle.import.wvta.exists", vehicle.getWvtaNo()));
-                    continue;
-                }
-                insertVehicleInfo(vehicle);
-                successCount++;
-            } catch (Exception e) {
-                failCount++;
-                failMsg.append(StringUtils.format(remoteTranslateService.translate("vehicle.import.fail", null), vehicle.getWvtaNo(), e.getMessage()));
-            }
-        }
-
-        Map<String, Object> resultMap = new HashMap<String, Object>();
-        resultMap.put("total", vehicleList.size());
-        resultMap.put("successCount", successCount);
-        resultMap.put("failCount", failCount);
-        resultMap.put("failMsg", failMsg.toString());
-        resultMap.put("message", StringUtils.format(remoteTranslateService.translate("common.import.result", null), successCount, failCount));
-        resultMap.put("data", vehicleList);
-        resultMap.put("validationReports", validationReports);
-        return AjaxResult.success(resultMap);
-    }
-
-    @Override
     public int updateStatus(VehicleInfo vehicleInfo) {
         String updateBy = SecurityUtils.getUsername();
         return vehicleInfoMapper.updateStatus(updateBy, vehicleInfo.getVehicleId(), vehicleInfo.getStatus());
@@ -250,27 +201,31 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public ValidationReport validateVehicleInfo(Long vehicleInfoId) {
-        VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleInfoId);
-        List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_attribute").getData();
-        sysDictData = sysDictData.stream()
-                .filter(data -> vehicleInfo.getVehicleModel().equals(data.getDictTypeAffiliation()))
-                .collect(Collectors.toList());
-        SysDictData vehicleModel = remoteDictService.getDataByDictCode(vehicleInfo.getVehicleModel()).getData();
-        ValidationReport validationReport = vehicleValidationService.validate(vehicleInfo.getJson(), vehicleModel.getDictValue(), "C");
-        if (validationReport.isAllValid()) {
-            vehicleInfo.setValidationResult(1);
-        } else {
-            vehicleInfo.setValidationResult(2);
+    public List<ValidationReport> validateVehicleInfo(List<Long> vehicleInfoIds) {
+        List<ValidationReport> validationReports = new LinkedList<>();
+        for (Long vehicleInfoId : vehicleInfoIds) {
+            VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleInfoId);
+            List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_attribute").getData();
+            sysDictData = sysDictData.stream()
+                    .filter(data -> vehicleInfo.getVehicleModel().equals(data.getDictTypeAffiliation()))
+                    .collect(Collectors.toList());
+            SysDictData vehicleModel = remoteDictService.getDataByDictCode(vehicleInfo.getVehicleModel()).getData();
+            ValidationReport validationReport = vehicleValidationService.validate(vehicleInfo.getJson(), vehicleModel.getDictValue(), "C");
+            if (validationReport.isAllValid()) {
+                vehicleInfo.setValidationResult(1);
+            } else {
+                vehicleInfo.setValidationResult(2);
+            }
+            vehicleInfoMapper.updateVehicleInfo(vehicleInfo);
+            VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
+            vehicleLifecycle.setTime(new Date());
+            vehicleLifecycle.setVin(vehicleInfo.getVin());
+            vehicleLifecycle.setOperate("1");
+            vehicleLifecycle.setResult(validationReport.isAllValid() ? 0 : 1);
+            vehicleLifecycleMapper.insert(vehicleLifecycle);
         }
-        vehicleInfoMapper.updateVehicleInfo(vehicleInfo);
-        VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
-        vehicleLifecycle.setTime(new Date());
-        vehicleLifecycle.setVin(vehicleInfo.getVin());
-        vehicleLifecycle.setOperate("1");
-        vehicleLifecycle.setResult(validationReport.isAllValid() ? 0 : 1);
-        vehicleLifecycleMapper.insert(vehicleLifecycle);
-        return validationReport;
+
+        return validationReports;
     }
 
     @Override
