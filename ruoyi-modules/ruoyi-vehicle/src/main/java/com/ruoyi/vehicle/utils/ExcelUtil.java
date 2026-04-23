@@ -119,23 +119,12 @@ public class ExcelUtil {
 
     // ==================== 导入 ====================
 
-    /**
-     * 通用动态导入（自动解析语言，无需外部传入 lang）
-     *
-     * @param inputStream 上传文件流
-     * @param tableName   数据库中配置的 table_name
-     * @param clazz       目标实体类 Class
-     * @param<T>         实体类型
-     * @return 解析后的实体列表
-     */
     public <T> List<T> importExcel(InputStream inputStream,
                                    String tableName,
                                    Class<T> clazz) throws Exception {
-        // 1. 自动解析语言
         String lang = resolveCurrentLang();
         log.info("导入 Excel，tableName={}，lang={}", tableName, lang);
 
-        // 2. 读取列配置，建立列头名称 -> fieldName 的映射
         List<ExcelColumnConfig> configs = getConfigs(tableName);
         if (configs.isEmpty()) {
             throw new RuntimeException("未找到表 [" + tableName + "] 的列配置，请检查数据库 excel_column_config");
@@ -143,9 +132,9 @@ public class ExcelUtil {
 
         Map<String, String> headerFieldMap = configs.stream()
                 .collect(Collectors.toMap(
-                        c -> c.getColumnName(lang),   // 根据语言取对应列头
+                        c -> c.getColumnName(lang),
                         ExcelColumnConfig::getFieldName,
-                        (k1, k2) -> k1// 重复列头保留第一个
+                        (k1, k2) -> k1
                 ));
 
         List<T> result = new ArrayList<>();
@@ -153,13 +142,16 @@ public class ExcelUtil {
         try (Workbook workbook = new XSSFWorkbook(inputStream)) {
             Sheet sheet = workbook.getSheetAt(0);
 
-            // 3. 读第一行列头，建立 列索引 -> fieldName 映射
             Row headerRow = sheet.getRow(0);
             if (headerRow == null) {
                 throw new RuntimeException("Excel 格式错误：缺少列头行");
             }
 
+            // 已匹配：列索引 -> fieldName
             Map<Integer, String> indexFieldMap = new LinkedHashMap<>();
+            // 未匹配：列索引 -> 原始列头名称（用作 JSON key）
+            Map<Integer, String> unmappedIndexMap = new LinkedHashMap<>();
+
             for (int i = 0; i < headerRow.getLastCellNum(); i++) {
                 Cell cell = headerRow.getCell(i);
                 if (cell != null) {
@@ -168,28 +160,61 @@ public class ExcelUtil {
                     if (fieldName != null) {
                         indexFieldMap.put(i, fieldName);
                     } else {
-                        log.warn("导入时发现未配置的列头：{}，已跳过", headerName);
+                        log.warn("导入时发现未配置的列头：{}，将写入 json 字段", headerName);
+                        unmappedIndexMap.put(i, headerName);
                     }
                 }
             }
 
-            // 4. 逐行读取数据
             for (int rowIdx = 1; rowIdx <= sheet.getLastRowNum(); rowIdx++) {
                 Row row = sheet.getRow(rowIdx);
                 if (isEmptyRow(row)) continue;
 
                 T entity = clazz.getDeclaredConstructor().newInstance();
+
+                // 正常字段赋值
                 for (Map.Entry<Integer, String> entry : indexFieldMap.entrySet()) {
                     Cell cell  = row.getCell(entry.getKey());
                     String value = getCellValue(cell);
                     setFieldValue(entity, entry.getValue(), value);
                 }
+
+                // 未匹配列 -> 塞进 JSON，尝试 setJson
+                if (!unmappedIndexMap.isEmpty()) {
+                    Map<String, String> extraData = new LinkedHashMap<>();
+                    for (Map.Entry<Integer, String> entry : unmappedIndexMap.entrySet()) {
+                        Cell cell  = row.getCell(entry.getKey());
+                        String value = getCellValue(cell);
+                        extraData.put(entry.getValue(), value);
+                    }
+                    String jsonStr = new com.fasterxml.jackson.databind.ObjectMapper()
+                            .writeValueAsString(extraData);
+                    trySetJson(entity, jsonStr);
+                }
+
                 result.add(entity);
             }
         }
 
         log.info("导入完成，共解析 {} 条数据", result.size());
         return result;
+    }
+
+    /**
+     * 尝试将 json 字符串写入对象的 json 字段，字段不存在则静默跳过
+     */
+    private <T> void trySetJson(T entity, String jsonStr) {
+        try {
+            Field field = findField(entity.getClass(), "json");
+            if (field == null) {
+                log.debug("类 {} 不含 json 字段，跳过", entity.getClass().getSimpleName());
+                return;
+            }
+            field.setAccessible(true);
+            field.set(entity, jsonStr);
+        } catch (Exception e) {
+            log.warn("setJson 失败：{}", e.getMessage());
+        }
     }
 
     // ==================== 私有工具方法 ====================
@@ -235,14 +260,15 @@ public class ExcelUtil {
     }
 
     /**
-     * 向上查找字段（支持父类继承链）
+     * 向上遍历父类查找字段，找不到返回 null
      */
     private Field findField(Class<?> clazz, String fieldName) {
-        while (clazz != null && clazz != Object.class) {
+        Class<?> current = clazz;
+        while (current != null && current != Object.class) {
             try {
-                return clazz.getDeclaredField(fieldName);
+                return current.getDeclaredField(fieldName);
             } catch (NoSuchFieldException e) {
-                clazz = clazz.getSuperclass();
+                current = current.getSuperclass();
             }
         }
         return null;

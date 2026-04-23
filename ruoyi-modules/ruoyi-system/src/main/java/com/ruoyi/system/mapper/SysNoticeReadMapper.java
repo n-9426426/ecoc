@@ -1,6 +1,6 @@
 package com.ruoyi.system.mapper;
 
-import com.ruoyi.system.domain.SysNotice;
+import com.ruoyi.system.api.domain.SysNotice;
 import com.ruoyi.system.domain.SysNoticeRead;
 import org.apache.ibatis.annotations.Param;
 

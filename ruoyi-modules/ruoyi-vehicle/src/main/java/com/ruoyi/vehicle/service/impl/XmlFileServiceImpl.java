@@ -7,12 +7,12 @@ import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.RemoteFileService;
 import com.ruoyi.system.api.RemoteTranslateService;
-import com.ruoyi.vehicle.domain.VehicleInfo;
-import com.ruoyi.vehicle.domain.XmlFile;
-import com.ruoyi.vehicle.domain.XmlVersion;
+import com.ruoyi.vehicle.domain.*;
 import com.ruoyi.vehicle.domain.vo.DiffLineVO;
 import com.ruoyi.vehicle.domain.vo.DiffResultVO;
+import com.ruoyi.vehicle.mapper.VehicleLifecycleMapper;
 import com.ruoyi.vehicle.mapper.XmlFileMapper;
+import com.ruoyi.vehicle.mapper.XmlTemplateMapper;
 import com.ruoyi.vehicle.mapper.XmlVersionMapper;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.service.IXmlFileService;
@@ -66,6 +66,12 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     @Autowired
     private RemoteDictService remoteDictService;
+
+    @Autowired
+    private VehicleLifecycleMapper vehicleLifecycleMapper;
+
+    @Autowired
+    private XmlTemplateMapper xmlTemplateMapper;
 
     /**
      * 查询XML文件列表
@@ -427,6 +433,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
      * 校验XML文件
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean validateXml(Long id) {
         try {
             XmlFile xmlFile = xmlFileMapper.selectXmlFileById(id);
@@ -436,7 +443,16 @@ public class XmlFileServiceImpl implements IXmlFileService {
             File file = new File(xmlFile.getFilePath());
             // todo 校验
 
-            return true;
+            boolean validateResult = true;
+            xmlFile.setValidateResult(1);
+            xmlFileMapper.updateXmlFile(xmlFile);
+            VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
+            vehicleLifecycle.setTime(new Date());
+            vehicleLifecycle.setVin(xmlFile.getVin());
+            vehicleLifecycle.setOperate("3");
+            vehicleLifecycle.setResult(validateResult ? 0 : 1);
+            vehicleLifecycleMapper.insert(vehicleLifecycle);
+            return validateResult;
         } catch (Exception e) {
             log.error("校验XML文件失败", e);
             return false;
@@ -454,6 +470,15 @@ public class XmlFileServiceImpl implements IXmlFileService {
             VehicleInfo vehicle = vehicleInfoService.selectVehicleInfoById(vehicleId);
             if (vehicle == null) {
                 throw new RuntimeException("车辆信息不存在");
+            }
+            Map<String, Object> jsonMap = vehicle.getJsonMap();
+            if (jsonMap == null) {
+                jsonMap = new HashMap<>();
+            }
+
+            XmlTemplate xmlTemplate = matchTemplate(vehicle);
+            if (xmlTemplate == null) {
+                throw new RuntimeException("未找到匹配的XML模板，VIN=" + vehicle.getVin());
             }
 
             // 创建XML文档
@@ -483,7 +508,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             MultipartFile multipartFile = FileUtils.createMultipartFile(
                     xmlContent,
-                    "generated.xml",      // 文件名
+                    vehicle.getVin() + ".xml",      // 文件名
                     "application/xml"     // Content-Type
             );
 
@@ -503,6 +528,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             xmlFile.setCreateBy(SecurityUtils.getUsername());
             xmlFile.setCreateTime(new Date());
             xmlFile.setRemark("由车辆VIN: " + vehicle.getVin() + " 生成XML, 版本: " + xmlVersion);
+            xmlFile.setVin(vehicle.getVin());
             xmlFileMapper.insertXmlFile(xmlFile);
 
             // 保存版本记录
@@ -515,8 +541,15 @@ public class XmlFileServiceImpl implements IXmlFileService {
             version.setCreateBy(SecurityUtils.getUsername());
             version.setCreateTime(new Date());
             xmlVersionMapper.insertXmlVersion(version);
-
             xmlFileMapper.updateIsLatestToFalse("vehicle_" + vehicle.getVin());
+            vehicle.setUploadStatus(1);
+            vehicleInfoService.updateVehicleInfo(vehicle);
+            VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
+            vehicleLifecycle.setTime(new Date());
+            vehicleLifecycle.setVin(vehicle.getVin());
+            vehicleLifecycle.setOperate("3");
+            vehicleLifecycle.setResult(1);
+            vehicleLifecycleMapper.insert(vehicleLifecycle);
 
             log.info("成功生成XML文件: {}", newFileName);
             return xmlContent;
@@ -574,5 +607,37 @@ public class XmlFileServiceImpl implements IXmlFileService {
         }
         xmlVersionMapper.deleteXmlVersionByFileId(xmlIds);
         return xmlFileMapper.permanentlyDeleteXmlByIds(xmlIds);
+    }
+
+    /**
+     * 根据车辆信息匹配 xml_template
+     */
+    private XmlTemplate matchTemplate(VehicleInfo vehicle) {
+        // 查所有有效模板（status=0, deleted=0）
+        List<XmlTemplate> templates = new LinkedList<>();//xmlTemplateMapper.selectAllValid();
+        if (templates == null || templates.isEmpty()) {
+            return null;
+        }
+
+        String vehicleCountry = vehicle.getCountry();
+
+        for (XmlTemplate template : templates) {
+            // 匹配车型
+            if (!Objects.equals(template.getModelDictCode(), vehicle.getVehicleModel())) {
+                continue;
+            }
+            // 匹配国家（逗号分隔，包含即可）
+//            if (template.getCountry() != null && vehicleCountry != null) {
+//                List<String> templateCountries = Arrays.asList(template.getCountry().split(","));
+//                boolean countryMatch = templateCountries.stream()
+//                        .map(String::trim)
+//                        .anyMatch(c -> c.equalsIgnoreCase(vehicleCountry.trim()));
+//                if (!countryMatch) {
+//                    continue;
+//                }
+//            }
+            return template;
+        }
+        return null;
     }
 }

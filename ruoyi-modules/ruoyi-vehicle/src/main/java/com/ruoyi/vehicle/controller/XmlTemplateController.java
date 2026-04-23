@@ -44,7 +44,6 @@ public class XmlTemplateController extends BaseController {
      * 查询模板详情
      */
     @Operation(summary = "查询xml模板详情")
-    @Log(title = "xml模板", businessType = BusinessType.OTHER)
     @RequiresPermissions("vehicle:template:get")
     @GetMapping("/{templateId}")
     public AjaxResult getDetail(@PathVariable Long templateId) {
@@ -55,7 +54,7 @@ public class XmlTemplateController extends BaseController {
      * 新增模板
      */
     @Operation(summary = "新增xml模板")
-    @Log(title = "xml模板", businessType = BusinessType.INSERT)
+    @Log(title = "XML模板管理", businessType = BusinessType.INSERT)
     @RequiresPermissions("vehicle:template:add")
     @PostMapping
     public AjaxResult add(@RequestBody XmlTemplate template) {
@@ -66,7 +65,7 @@ public class XmlTemplateController extends BaseController {
      * 修改模板
      */
     @Operation(summary = "修改xml模板")
-    @Log(title = "xml模板", businessType = BusinessType.UPDATE)
+    @Log(title = "XML模板管理", businessType = BusinessType.UPDATE)
     @RequiresPermissions("vehicle:template:edit")
     @PutMapping
     public AjaxResult edit(@RequestBody XmlTemplate template) {
@@ -79,7 +78,7 @@ public class XmlTemplateController extends BaseController {
      * 请求方式：DELETE /vehicle/template/1,2,3
      */
     @Operation(summary = "批量删除xml模板")
-    @Log(title = "xml模板", businessType = BusinessType.DELETE)
+    @Log(title = "XML模板管理", businessType = BusinessType.DELETE)
     @RequiresPermissions("vehicle:template:delete")
     @DeleteMapping("/{templateIds}")
     public AjaxResult remove(@PathVariable List<Long> templateIds) {

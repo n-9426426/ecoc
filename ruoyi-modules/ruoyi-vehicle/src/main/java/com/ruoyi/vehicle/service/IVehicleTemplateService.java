@@ -43,4 +43,8 @@ public interface IVehicleTemplateService {
     List<VehicleTemplate> selectVehicleTemplateOption();
 
     List<VehicleTemplate> historyVersion(VehicleTemplate template);
+
+    Flux<ServerSentEvent<String>> importExcel(MultipartFile file);
+
+    List<VehicleTemplate> selectVehicleTemplateExpiringList();
 }

@@ -39,6 +39,7 @@ public class VehicleInfoController extends BaseController {
     private RemoteLoginService remoteLoginService;
 
     @Operation(summary = "MES数据推送至本系统")
+    @Log(title = "数据推送", businessType = BusinessType.INSERT)
     @PostMapping("/to-system")
     public AjaxResult MesToSystem(VehicleDto vehicleDto) {
         LoginBody body = new LoginBody();
@@ -76,7 +77,7 @@ public class VehicleInfoController extends BaseController {
 
     @Operation(summary = "更新车辆信息状态")
     @RequiresPermissions("system:role:edit")
-    @Log(title = "角色管理", businessType = BusinessType.UPDATE)
+    @Log(title = "车辆信息管理", businessType = BusinessType.UPDATE)
     @PutMapping("/changeStatus")
     public AjaxResult changeStatus(@RequestBody VehicleInfo vehicleInfo)
     {
@@ -94,9 +95,9 @@ public class VehicleInfoController extends BaseController {
         return AjaxResult.success(vehicleInfoService.insertVehicleInfo(vehicleInfo));
     }
 
-    @Operation(summary = "新增车辆信息")
+    @Operation(summary = "校验车辆信息")
     @RequiresPermissions("vehicle:info:validation")
-    @Log(title = "校验车辆信息", businessType = BusinessType.VALIDATION)
+    @Log(title = "车辆信息管理", businessType = BusinessType.VALIDATION)
     @PostMapping("/validation")
     public AjaxResult validation(@RequestBody Long vehicleInfoId) {
         return AjaxResult.success(vehicleInfoService.validateVehicleInfo(vehicleInfoId));
@@ -110,6 +111,8 @@ public class VehicleInfoController extends BaseController {
     @Log(title = "车辆信息管理", businessType = BusinessType.UPDATE)
     @PutMapping
     public AjaxResult edit(@RequestBody VehicleInfo vehicleInfo) {
+        vehicleInfo.setValidationResult(0);
+        vehicleInfo.setUploadStatus(0);
         return AjaxResult.success(vehicleInfoService.updateVehicleInfo(vehicleInfo));
     }
 

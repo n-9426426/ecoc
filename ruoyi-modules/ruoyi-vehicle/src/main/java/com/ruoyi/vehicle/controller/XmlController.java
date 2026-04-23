@@ -58,7 +58,7 @@ public class XmlController extends BaseController {
      */
     @Operation(summary = "导出XML文件列表")
     @RequiresPermissions("system:xml:export")
-    @Log(title = "XML文件", businessType = BusinessType.EXPORT)
+    @Log(title = "XML文件管理", businessType = BusinessType.EXPORT)
     @PostMapping("/export")
     public void export(HttpServletResponse response, @RequestBody XmlFile xmlFile) throws Exception {
         List<XmlFile> xmlFiles = xmlFileService.selectXmlFileList(xmlFile);
@@ -80,7 +80,7 @@ public class XmlController extends BaseController {
      */
     @Operation(summary = "上传XML文件")
     @RequiresPermissions("system:xml:add")
-    @Log(title = "XML文件", businessType = BusinessType.INSERT)
+    @Log(title = "XML文件管理", businessType = BusinessType.IMPORT)
     @PostMapping("/upload")
     public AjaxResult upload(@RequestParam("file") MultipartFile file,
                              @RequestParam("xmlId") Long xmlId) {
@@ -97,7 +97,7 @@ public class XmlController extends BaseController {
      */
     @Operation(summary = "修改XML文件")
     @RequiresPermissions("system:xml:edit")
-    @Log(title = "XML文件", businessType = BusinessType.UPDATE)
+    @Log(title = "XML文件管理", businessType = BusinessType.UPDATE)
     @PutMapping
     public AjaxResult edit(@RequestBody XmlFile xmlFile) {
         return toAjax(xmlFileService.updateXmlFile(xmlFile));
@@ -108,7 +108,7 @@ public class XmlController extends BaseController {
      */
     @Operation(summary = "批量删除XML文件")
     @RequiresPermissions("system:xml:remove")
-    @Log(title = "XML文件", businessType = BusinessType.DELETE)
+    @Log(title = "XML文件管理", businessType = BusinessType.DELETE)
     @DeleteMapping("/{ids}")
     public AjaxResult remove(@PathVariable Long[] ids) {
         return xmlFileService.deleteXmlFileByIds(ids);
@@ -134,6 +134,7 @@ public class XmlController extends BaseController {
      */
     @Operation(summary = "下载XML文件")
     @RequiresPermissions("system:xml:download")
+    @Log(title = "XML文件管理", businessType = BusinessType.EXPORT)
     @GetMapping("/download/{id}")
     public void download(@PathVariable Long id, HttpServletResponse response) {
         try {
@@ -170,6 +171,7 @@ public class XmlController extends BaseController {
      */
     @Operation(summary = "校验XML文件")
     @RequiresPermissions("system:xml:validate")
+    @Log(title = "XML文件管理", businessType = BusinessType.VALIDATION)
     @GetMapping("/validate/{id}")
     public AjaxResult validate(@PathVariable Long id) {
         boolean isValid = xmlFileService.validateXml(id);
@@ -211,7 +213,7 @@ public class XmlController extends BaseController {
      */
     @Operation(summary = "从数据库生成车辆信息管理XML文件")
     @RequiresPermissions("system:xml:generate")
-    @Log(title = "XML文件", businessType = BusinessType.CREATE)
+    @Log(title = "XML文件管理", businessType = BusinessType.CREATE)
     @PostMapping("/generate/{vehicleId}")
     public AjaxResult generateXml(@PathVariable Long vehicleId) {
         try {
@@ -227,7 +229,7 @@ public class XmlController extends BaseController {
      */
     @Operation(summary = "恢复xml文件")
     @RequiresPermissions("system:xml:restore")
-    @Log(title = "XML文件", businessType = BusinessType.RESTORE)
+    @Log(title = "XML文件管理", businessType = BusinessType.RESTORE)
     @PutMapping("/restore")
     public AjaxResult recover(@RequestBody Long[] xmlIds) {
         return xmlFileService.restoreXmlByIds(xmlIds);
@@ -238,7 +240,7 @@ public class XmlController extends BaseController {
      */
     @Operation(summary = "永久删除xml信息")
     @RequiresPermissions("system:xml:permanently")
-    @Log(title = "XML文件", businessType = BusinessType.PERMANENTLY_DELETE)
+    @Log(title = "XML文件管理", businessType = BusinessType.PERMANENTLY_DELETE)
     @PutMapping("/permanently")
     public AjaxResult permanently(@RequestBody Long[] xmlIds) {
         return AjaxResult.success(xmlFileService.permanentlyDeleteXmlByIds(xmlIds));

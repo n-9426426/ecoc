@@ -28,6 +28,10 @@ public class XmlTemplate extends BaseEntity {
 
     private Date updateTime;
 
+    private String country;
+
+    private Long energyType;
+
     private List<AttributeTreeNode> attributeTree;
 
     public Long getTemplateId() {
@@ -116,5 +120,21 @@ public class XmlTemplate extends BaseEntity {
 
     public void setAttributeTree(List<AttributeTreeNode> attributeTree) {
         this.attributeTree = attributeTree;
+    }
+
+    public String getCountry() {
+        return country;
+    }
+
+    public void setCountry(String country) {
+        this.country = country;
+    }
+
+    public Long getEnergyType() {
+        return energyType;
+    }
+
+    public void setEnergyType(Long energyType) {
+        this.energyType = energyType;
     }
 }

@@ -37,20 +37,44 @@ public class ChartDataController extends BaseController {
     }
 
     @Operation(summary = "报表统计面板：4个卡片")
-    @GetMapping("/statistics/card")
+    @PostMapping("/statistics/card")
     public AjaxResult statisticsCard(@RequestBody ChartDataStatisticsDto statisticsDto) {
         return AjaxResult.success(chartDataService.statisticsCard(statisticsDto));
     }
 
     @Operation(summary = "报表统计面板：XML 生成与提交流水线趋势")
-    @GetMapping("/statistics/trend")
+    @PostMapping("/statistics/trend")
     public AjaxResult statisticsTrend(@RequestBody ChartDataStatisticsDto statisticsDto) {
         return AjaxResult.success(chartDataService.statisticsTrend(statisticsDto));
     }
 
     @Operation(summary = "报表统计面板")
-    @GetMapping("/statistics/abnormal")
+    @PostMapping("/statistics/abnormal")
     public AjaxResult statisticsAbnormal(@RequestBody ChartDataStatisticsDto statisticsDto) {
         return AjaxResult.error("暂未实现");
+    }
+
+    @Operation(summary = "XML统计")
+    @PostMapping("/statistics/xml/{year}")
+    public AjaxResult statisticsXml(@PathVariable Integer year) {
+        return AjaxResult.success(chartDataService.statisticsXml(year));
+    }
+
+    /**
+     * 获取所有 vin 某月的日历数据
+     * GET /vehicle/lifecycle/calendar/all?year=2024&month=6
+     */
+    @GetMapping("/calendar/all")
+    public AjaxResult getAllCalendar(@RequestParam int year, @RequestParam int month) {
+        return AjaxResult.success(chartDataService.getAllVinCalendarByMonth(year, month));
+    }
+
+    /**
+     * 获取某 vin 某月的日历数据
+     * GET /vehicle/lifecycle/calendar?vin=xxx&year=2024&month=6
+     */
+    @GetMapping("/calendar")
+    public AjaxResult getCalendar(@RequestParam String vin, @RequestParam int year, @RequestParam int month) {
+        return AjaxResult.success(chartDataService.getCalendarByMonth(vin, year, month));
     }
 }

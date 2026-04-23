@@ -1,6 +1,6 @@
 package com.ruoyi.system.service.impl;
 
-import com.ruoyi.system.domain.SysNotice;
+import com.ruoyi.system.api.domain.SysNotice;
 import com.ruoyi.system.domain.SysNoticeRead;
 import com.ruoyi.system.mapper.SysNoticeReadMapper;
 import com.ruoyi.system.service.ISysNoticeReadService;

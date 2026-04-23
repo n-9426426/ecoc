@@ -10,8 +10,10 @@ import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.vehicle.domain.VehicleInfo;
+import com.ruoyi.vehicle.domain.VehicleLifecycle;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
+import com.ruoyi.vehicle.mapper.VehicleLifecycleMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMaterialMapper;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.service.IVehicleValidationService;
@@ -21,12 +23,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service("vehicleInfoService")
@@ -54,6 +54,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Autowired
     private ExcelUtil excelUtil;
+
+    @Autowired
+    private VehicleLifecycleMapper vehicleLifecycleMapper;
 
     /**
      * 查询车辆信息
@@ -98,19 +101,28 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
      * @return 结果
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public int insertVehicleInfo(VehicleInfo vehicleInfo) {
         if (selectVehicleInfoByWvtaNo(vehicleInfo.getWvtaNo()) != null) {
             throw new RuntimeException("数据已存在");
         }
-        if (!StringUtils.isBlank(vehicleInfo.getMaterialNo())) {
-            Long vehicleTemplateId = vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo());
-            vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
+        Long vehicleTemplateId = vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo());
+        if (vehicleTemplateId == null) {
+            throw new RuntimeException("该物料号对应的车辆模板不存在");
         }
+        vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
         vehicleInfo.setUploadStatus(0);
         vehicleInfo.setValidationResult(0);
         vehicleInfo.setCreateTime(DateUtils.getNowDate());
         vehicleInfo.setCreateBy(SecurityUtils.getUsername() == null ? "MES To System" : SecurityUtils.getUsername());
-        return vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+        int row = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+        VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
+        vehicleLifecycle.setTime(new Date());
+        vehicleLifecycle.setVin(vehicleInfo.getVin());
+        vehicleLifecycle.setOperate("0");
+        vehicleLifecycle.setResult(0);
+        vehicleLifecycleMapper.insert(vehicleLifecycle);
+        return row;
     }
 
     private VehicleInfo selectVehicleInfoByWvtaNo(String vin) {
@@ -237,6 +249,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public ValidationReport validateVehicleInfo(Long vehicleInfoId) {
         VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleInfoId);
         List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_attribute").getData();
@@ -250,6 +263,13 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         } else {
             vehicleInfo.setValidationResult(2);
         }
+        vehicleInfoMapper.updateVehicleInfo(vehicleInfo);
+        VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
+        vehicleLifecycle.setTime(new Date());
+        vehicleLifecycle.setVin(vehicleInfo.getVin());
+        vehicleLifecycle.setOperate("1");
+        vehicleLifecycle.setResult(validationReport.isAllValid() ? 0 : 1);
+        vehicleLifecycleMapper.insert(vehicleLifecycle);
         return validationReport;
     }
 

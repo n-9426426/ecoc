@@ -54,6 +54,13 @@ public class VehicleTemplateController extends BaseController {
     }
 
     @RequiresPermissions("vehicle:template:list")
+    @GetMapping("/expiring")
+    public TableDataInfo expiringList() {
+        List<VehicleTemplate> list = vehicleTemplateService.selectVehicleTemplateExpiringList();
+        return getDataTable(list);
+    }
+
+    @RequiresPermissions("vehicle:template:list")
     @GetMapping("/options")
     public AjaxResult optionSelect() {
         List<VehicleTemplate> list = vehicleTemplateService.selectVehicleTemplateOption();
@@ -73,7 +80,7 @@ public class VehicleTemplateController extends BaseController {
      * 新增
      */
     @RequiresPermissions("vehicle:template:add")
-    @Log(title = "车辆模板", businessType = BusinessType.INSERT)
+    @Log(title = "车辆模板管理", businessType = BusinessType.INSERT)
     @PostMapping
     public AjaxResult add(@RequestBody VehicleTemplate template) {
         return toAjax(vehicleTemplateService.insertVehicleTemplate(template));
@@ -83,7 +90,7 @@ public class VehicleTemplateController extends BaseController {
      * 编辑
      */
     @RequiresPermissions("vehicle:template:edit")
-    @Log(title = "车辆模板", businessType = BusinessType.UPDATE)
+    @Log(title = "车辆模板管理", businessType = BusinessType.UPDATE)
     @PutMapping
     public AjaxResult edit(@RequestBody VehicleTemplate template) {
         return toAjax(vehicleTemplateService.updateVehicleTemplate(template));
@@ -93,33 +100,42 @@ public class VehicleTemplateController extends BaseController {
      * 删除
      */
     @RequiresPermissions("vehicle:template:remove")
-    @Log(title = "车辆模板", businessType = BusinessType.DELETE)
+    @Log(title = "车辆模板管理", businessType = BusinessType.DELETE)
     @DeleteMapping("/{templateIds}")
     public AjaxResult remove(@PathVariable Long[] templateIds) {
         return toAjax(vehicleTemplateService.deleteVehicleTemplateByIds(templateIds));
     }
 
     /**
+     * 导入pdf
+     */
+    @RequiresPermissions("vehicle:template:import")
+    @Log(title = "车辆模板管理", businessType = BusinessType.IMPORT)
+    @PostMapping(value = "/import/pdf", produces =  MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> uploadPdfFile(@RequestParam("file") MultipartFile file) {
+        try {
+            if (!(validateFile(file) == FileTypeEnum.PDF)) {
+                throw new ServiceException(remoteTranslateService.translate("common.upload.file.type.unsupported", null));
+            }
+            return vehicleTemplateService.importPdf(file);
+        } catch (Exception e) {
+            log.error("文件导入失败", e);
+            throw new ServiceException("文件导入失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 导入
      */
     @RequiresPermissions("vehicle:template:import")
-    @Log(title = "车辆信息管理", businessType = BusinessType.IMPORT)
-    @PostMapping(value = "/import", produces =  MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<String>> uploadPdfFile(@RequestParam("file") MultipartFile file) {
+    @Log(title = "车辆模板管理", businessType = BusinessType.IMPORT)
+    @PostMapping(value = "/import/excel", produces =  MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> uploadExcelFile(@RequestParam("file") MultipartFile file) {
         try {
-            String fileName = file.getOriginalFilename();
-            if (file.isEmpty() || fileName == null) {
-                throw new ServiceException(remoteTranslateService.translate("common.upload.file.empty", null));
-            }
-
-            String extension = fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
-
-            FileTypeEnum fileType = FileTypeEnum.getByExtension(extension);
-            if (!(fileType == FileTypeEnum.PDF)) {
+            if (!(validateFile(file) == FileTypeEnum.EXCEL)) {
                 throw new ServiceException(remoteTranslateService.translate("common.upload.file.type.unsupported", null));
             }
-
-            return vehicleTemplateService.importPdf(file);
+            return vehicleTemplateService.importExcel(file);
         } catch (Exception e) {
             log.error("文件导入失败", e);
             throw new ServiceException("文件导入失败: " + e.getMessage());
@@ -130,7 +146,7 @@ public class VehicleTemplateController extends BaseController {
      * 导出
      */
     @RequiresPermissions("vehicle:template:export")
-    @Log(title = "车辆模板", businessType = BusinessType.EXPORT)
+    @Log(title = "车辆模板管理", businessType = BusinessType.EXPORT)
     @PostMapping("/export")
     public void export(HttpServletResponse response, @RequestBody VehicleTemplate template) throws Exception {
         List<VehicleTemplate> list = vehicleTemplateService.selectVehicleTemplateList(template);
@@ -141,7 +157,7 @@ public class VehicleTemplateController extends BaseController {
      * 启用/停用
      */
     @RequiresPermissions("vehicle:template:edit")
-    @Log(title = "车辆模板状态", businessType = BusinessType.UPDATE)
+    @Log(title = "车辆模板管理", businessType = BusinessType.UPDATE)
     @PutMapping("/status")
     public AjaxResult changeStatus(@RequestBody VehicleTemplate template) {
         return toAjax(vehicleTemplateService.updateStatus(template.getTemplateId(), template.getStatus()));
@@ -161,7 +177,7 @@ public class VehicleTemplateController extends BaseController {
      *   POST /vehicle/template/batchValidate (body: [1,2,3])
      */
     @RequiresPermissions("vehicle:template:validate")
-    @Log(title = "车辆模板校验", businessType = BusinessType.OTHER)
+    @Log(title = "车辆模板管理", businessType = BusinessType.VALIDATION)
     @PostMapping("/batchValidate")
     public AjaxResult batchValidate(@RequestBody(required = false) Long[] templateIds) {
         if (templateIds == null || templateIds.length == 0) {
@@ -202,5 +218,16 @@ public class VehicleTemplateController extends BaseController {
             vehicleTemplateService.sendError(taskId, data);
         }
         return AjaxResult.success();
+    }
+
+    private FileTypeEnum validateFile(MultipartFile file) {
+        String fileName = file.getOriginalFilename();
+        if (file.isEmpty() || fileName == null) {
+            throw new ServiceException(remoteTranslateService.translate("common.upload.file.empty", null));
+        }
+
+        String extension = fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
+
+        return FileTypeEnum.getByExtension(extension);
     }
 }

@@ -1,4 +1,4 @@
-package com.ruoyi.system.domain;
+package com.ruoyi.system.api.domain;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.ruoyi.common.core.web.domain.BaseEntity;

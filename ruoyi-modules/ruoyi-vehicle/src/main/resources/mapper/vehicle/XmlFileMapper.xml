@@ -85,7 +85,7 @@
                 AND xl.vehicle_material_no = #{vehicleMaterialNo}
             </if>
             <if test="country != null and country != ''">
-                AND xl.country = #{country}
+                AND FIND_IN_SET(#{country}, xl.country)
             </if>
             <if test="uploadResult != null and uploadResult != ''">
                 AND xl.upload_result = #{uploadResult}
@@ -101,6 +101,12 @@
             </if>
             <if test="issueDateEndTime != null and issueDateEndTime != ''">
                 AND date_format(issue_date,'%y%m%d') &lt;= date_format(#{issueDateEndTime},'%y%m%d')
+            </if>
+            <if test="createdStartTime != null and createdStartTime != ''">
+                AND date_format(create_time,'%y%m%d') &gt;= date_format(#{createdStartTime},'%y%m%d')
+            </if>
+            <if test="createdEndTime != null and createdEndTime != ''">
+                AND date_format(create_time,'%y%m%d') &lt;= date_format(#{createdEndTime},'%y%m%d')
             </if>
             <if test="validateResult != null">
                 AND xl.validate_result = #{validateResult}

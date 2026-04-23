@@ -94,4 +94,10 @@ public class XmlFile extends BaseEntity {
 
     /** 校验结果（0=未校验 1=通过 2=不通过） */
     private Integer validateResult;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date createdStartTime;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date createdEndTime;
 }

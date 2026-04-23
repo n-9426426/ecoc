@@ -62,4 +62,9 @@ public class VehicleTemplate extends BaseEntity {
     private Integer isLast;
 
     private String uuid;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date overdueDate;
+
+    private String templateVersion;
 }

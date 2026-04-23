@@ -67,5 +67,8 @@ public enum BusinessType
      */
     CLEAN,
 
+    /**
+     * 校验
+     */
     VALIDATION,
 }

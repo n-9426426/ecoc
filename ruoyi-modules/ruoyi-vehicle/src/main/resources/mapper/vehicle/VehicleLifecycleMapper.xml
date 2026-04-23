@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ruoyi.vehicle.mapper.VehicleLifecycleMapper">
+
+    <resultMap id="BaseResultMap" type="com.ruoyi.vehicle.domain.VehicleLifecycle">
+        <id     column="id"      property="id"/>
+        <result column="vin"     property="vin"/>
+        <result column="time"    property="time"/>
+        <result column="operate" property="operate"/>
+        <result column="result"  property="result"/>
+    </resultMap>
+
+    <!-- 新增 -->
+    <insert id="insert" parameterType="com.ruoyi.vehicle.domain.VehicleLifecycle"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO vehicle_lifecycle (vin, time, operate, result)
+        VALUES (#{vin}, #{time}, #{operate}, #{result})
+    </insert>
+
+    <!-- 查询某 vin 在时间范围内的所有记录，按 time 升序 -->
+    <select id="selectByVinAndDateRange" resultMap="BaseResultMap">
+        SELECT id, vin, time, operate, result
+        FROM vehicle_lifecycle
+        WHERE vin = #{vin} and time &gt;= #{startTime}
+          AND time &lt;= #{endTime}
+        ORDER BY time ASC
+    </select>
+
+    <!-- 查询截至某时刻之前（含）最新的一条记录 -->
+    <select id="selectLatestBeforeTime" resultMap="BaseResultMap">
+        SELECT id, vin, time, operate, result
+        FROM vehicle_lifecycle
+        WHERE vin = #{vin} and time &lt;= #{endTime}
+        ORDER BY time DESC
+            LIMIT 1
+    </select>
+
+    <select id="selectAllVins" resultType="java.lang.String">
+        SELECT DISTINCT vin
+        FROM vehicle_lifecycle
+        WHERE vin IS NOT NULL
+        ORDER BY vin
+    </select>
+
+    <select id="selectLatestPerOperateBeforeTime" resultType="com.ruoyi.vehicle.domain.VehicleLifecycle">
+        SELECT vl.*
+        FROM vehicle_lifecycle vl
+                 INNER JOIN (
+            SELECT operate, MAX(time) AS max_time
+            FROM vehicle_lifecycle
+            WHERE vin = #{vin}
+              AND time &lt;= #{time}
+            GROUP BY operate
+        ) latest ON vl.operate = latest.operate AND vl.time = latest.max_time
+        WHERE vl.vin = #{vin}
+    </select>
+
+</mapper>

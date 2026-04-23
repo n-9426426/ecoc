@@ -5,13 +5,16 @@ import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.uuid.UUID;
 import com.ruoyi.common.security.utils.SecurityUtils;
+import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.RemoteFileService;
+import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.domain.VehicleTemplateMaterial;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMaterialMapper;
 import com.ruoyi.vehicle.service.IVehicleTemplateService;
 import com.ruoyi.vehicle.service.IVehicleValidationService;
+import com.ruoyi.vehicle.utils.ExcelUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +25,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -36,6 +40,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 /**
  * 车辆模板 ServiceImpl
@@ -50,6 +55,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
     @Value("${ocr.callback.url}")
     private String callbackUrl;
+
+    @Autowired
+    private ExcelUtil excelUtil;
 
     @Autowired
     private RemoteFileService remoteFileService;
@@ -68,10 +76,18 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     private final Map<String, Sinks.Many<ServerSentEvent<String>>> sinks = new ConcurrentHashMap<>();
+    @Autowired
+    private RemoteDictService remoteDictService;
 
     @Override
     public List<VehicleTemplate> selectVehicleTemplateList(VehicleTemplate template) {
         return templateMapper.selectVehicleTemplateList(template);
+    }
+
+    @Override
+    public List<VehicleTemplate> selectVehicleTemplateExpiringList() {
+        List<VehicleTemplate> vehicleTemplates = templateMapper.selectExpiringTemplates();
+        return vehicleTemplates;
     }
 
     @Override
@@ -101,7 +117,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRES_NEW)
     public int insertVehicleTemplate(VehicleTemplate template) {
         template.setUuid(UUID.randomUUID().toString());
         template.setVersion("1.0");
@@ -212,10 +228,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         return materialMapper.batchInsert(materialList);
     }
 
+    @Override
     public Flux<ServerSentEvent<String>> importPdf(MultipartFile file) {
         String taskId = UUID.randomUUID().toString();
-
-        // ✅ 创建热流Sink
         Sinks.Many<ServerSentEvent<String>> sink = Sinks.many().unicast().onBackpressureBuffer();
         sinks.put(taskId, sink);
 
@@ -275,6 +290,55 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         }
 
         // 返回 Flux，连接断开时自动清理
+        return sink.asFlux()
+                .doOnCancel(() -> {
+                    log.info("客户端断开连接, taskId: {}", taskId);
+                    sinks.remove(taskId);
+                })
+                .doOnComplete(() -> {
+                    log.info("SSE完成, taskId: {}", taskId);
+                    sinks.remove(taskId);
+                });
+    }
+
+    @Override
+    public Flux<ServerSentEvent<String>> importExcel(MultipartFile file) {
+        String taskId = UUID.randomUUID().toString();
+        Sinks.Many<ServerSentEvent<String>> sink = Sinks.many().unicast().onBackpressureBuffer();
+        sinks.put(taskId, sink);
+
+        try {
+            List<VehicleTemplate> vehicleTemplates = excelUtil.importExcel(file.getInputStream(), "vehicle_template", VehicleTemplate.class);
+            List<SysDictData> vehicleModels = remoteDictService.getDictDataByType("vehicle_model").getData();
+            // 建立 label -> dictCode 映射，避免双重循环
+            Map<String, String> labelToCodeMap = vehicleModels.stream()
+                    .collect(Collectors.toMap(
+                            SysDictData::getDictLabel,
+                            SysDictData::getDictValue,
+                            (k1, k2) -> k1
+                    ));
+
+            // 遍历替换 vehicleType
+            vehicleTemplates.forEach(template -> {
+                String vehicleType = template.getVehicleType();
+                if (vehicleType != null && labelToCodeMap.containsKey(vehicleType)) {
+                    template.setVehicleType(labelToCodeMap.get(vehicleType));
+                } else {
+                    log.warn("vehicleType [{}] 未在字典 vehicle_model 中找到对应 dictCode", vehicleType);
+                }
+                template.setUuid(UUID.randomUUID().toString());
+                template.setVersion("1.0");
+                template.setStatus("0");
+                template.setValidateResult("0");
+                template.setCreateBy(SecurityUtils.getUsername());
+                template.setCreateTime(DateUtils.getNowDate());
+                templateMapper.insertVehicleTemplate(template);
+            });
+        } catch (Exception e) {
+            log.error("文件导入失败, taskId={}", taskId, e);
+            return null;
+        }
+
         return sink.asFlux()
                 .doOnCancel(() -> {
                     log.info("客户端断开连接, taskId: {}", taskId);

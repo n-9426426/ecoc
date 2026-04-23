@@ -30,4 +30,6 @@ public interface VehicleTemplateMapper {
     String selectVersionByCoc(@Param("cocTemplateNo") String cocTemplateNo);
 
     int updateAllTemplateNotIsLast(@Param("cocTemplateNo") String cocTemplateNo);
+
+    List<VehicleTemplate> selectExpiringTemplates();
 }

@@ -24,74 +24,60 @@
         <result property="filepath"       column="filepath"/>
         <result property="isLast"         column="is_last"/>
         <result property="uuid"           column="uuid"/>
+        <result property="overdueDate"    column="overdue_date"/>
+        <result property="templateVersion" column="template_version"/>
     </resultMap>
 
     <!-- ==================== 公共查询列 ==================== -->
     <sql id="selectVehicleTemplateVo">
-        SELECT template_id,
-        wvta_coc_no,
-        coc_template_no,
-        model_no,
-        version,
-        vehicle_type,
-        status,
-        validate_result,
-        validate_time,
-        validate_msg,
-        json,
-        remark,
-        create_by,
-        create_time,
-        update_by,
-        update_time,
-        filepath
+        SELECT template_id, wvta_coc_no, coc_template_no, model_no, version, vehicle_type, status, validate_result, validate_time,
+        validate_msg, json, remark, create_by, create_time, update_by, update_time, filepath, is_last, overdue_date, template_version
         FROM vehicle_template
     </sql>
 
     <!-- ==================== 查询列表 ==================== -->
-    <select id="selectVehicleTemplateList"
-            parameterType="com.ruoyi.vehicle.domain.VehicleTemplate"
-            resultMap="VehicleTemplateResult">
+    <select id="selectVehicleTemplateList" parameterType="com.ruoyi.vehicle.domain.VehicleTemplate" resultMap="VehicleTemplateResult">
         <include refid="selectVehicleTemplateVo"/>
         WHERE del_flag = '0'
-        <if test="isLast != null">
-            and is_last = #{isLast}
-        </if>
-        <if test="templateIds != null and templateIds.size() > 0">
-            AND template_id in
-            <foreach item="templateId" collection="templateIds" open="(" separator="," close=")">
-                #{templateId}
-            </foreach>
-        </if>
-        <if test="wvtaCocNo != null and wvtaCocNo != ''">
-            AND wvta_coc_no LIKE CONCAT('%', #{wvtaCocNo}, '%')
-        </if>
-        <if test="cocTemplateNo != null and cocTemplateNo != ''">
-            AND coc_template_no LIKE CONCAT('%', #{cocTemplateNo}, '%')
-        </if>
-        <if test="modelNo != null and modelNo != ''">
-            AND model_no LIKE CONCAT('%', #{modelNo}, '%')
-        </if>
-        <if test="vehicleType != null and vehicleType != ''">
-            AND vehicle_type = #{vehicleType}
-        </if>
-        <if test="status != null and status != ''">
-            AND status = #{status}
-        </if>
-        <if test="uuid != null and uuid != ''" >
-            and uuid = #{uuid}
-        </if>
-        <if test="version != null and version != ''" >
-            and version = #{version}
-        </if>
-        <if test="validateResult != null and validateResult != ''">
-            AND validate_result = #{validateResult}
-        </if>
+            <if test="isLast != null">
+                and is_last = #{isLast}
+            </if>
+            <if test="templateIds != null and templateIds.size() > 0">
+                AND template_id in
+                <foreach item="templateId" collection="templateIds" open="(" separator="," close=")">
+                    #{templateId}
+                </foreach>
+            </if>
+            <if test="wvtaCocNo != null and wvtaCocNo != ''">
+                AND wvta_coc_no LIKE CONCAT('%', #{wvtaCocNo}, '%')
+            </if>
+            <if test="cocTemplateNo != null and cocTemplateNo != ''">
+                AND coc_template_no LIKE CONCAT('%', #{cocTemplateNo}, '%')
+            </if>
+            <if test="modelNo != null and modelNo != ''">
+                AND model_no LIKE CONCAT('%', #{modelNo}, '%')
+            </if>
+            <if test="vehicleType != null and vehicleType != ''">
+                AND vehicle_type = #{vehicleType}
+            </if>
+            <if test="status != null and status != ''">
+                AND status = #{status}
+            </if>
+            <if test="uuid != null and uuid != ''" >
+                and uuid = #{uuid}
+            </if>
+            <if test="version != null and version != ''" >
+                and version = #{version}
+            </if>
+            <if test="validateResult != null and validateResult != ''">
+                AND validate_result = #{validateResult}
+            </if>
+
         ORDER BY create_time DESC
     </select>
 
     <select id="selectVehicleTemplateOption" resultMap="VehicleTemplateResult">
-        select template_id, coc_template_no, version
+        select template_id, coc_template_no, version, template_version
         from vehicle_template
         where status = '0' and del_flag = '0'
         order by create_time desc
@@ -112,8 +98,9 @@
             useGeneratedKeys="true"
             keyProperty="templateId">
         INSERT INTO vehicle_template (
-        wvta_coc_no, coc_template_no,model_no, version, vehicle_type, status, validate_result, json, remark, del_flag, create_by, create_time, uuid)
-        VALUES (#{wvtaCocNo}, #{cocTemplateNo}, #{modelNo}, #{version}, #{vehicleType}, #{status}, #{validateResult}, #{json}, #{remark}, '0', #{createBy}, #{createTime}, #{uuid})
+        wvta_coc_no, coc_template_no,model_no, version, vehicle_type, status, validate_result, json, remark, del_flag, create_by, create_time, uuid, overdue_date, template_version)
+        VALUES (#{wvtaCocNo}, #{cocTemplateNo}, #{modelNo}, #{version}, #{vehicleType}, #{status}, #{validateResult}, #{json}, #{remark}, '0', #{createBy}, #{createTime}, #{uuid},
+                #{overdueDate}, #{templateVersion})
     </insert>
 
     <!-- ==================== 修改 ==================== -->
@@ -141,6 +128,12 @@
             </if>
             <if test="remark != null">
                 remark = #{remark},
+            </if>
+            <if test="overdueDate != null">
+                overdue_date = #{overdueDate}
+            </if>
+            <if test="templateVersion != null and templateVersion != ''">
+                template_version = #{templateVersion}
             </if>
             <if test="updateBy != null">
                 update_by = #{updateBy},
@@ -228,5 +221,17 @@
         UPDATE vehicle_template set is_last = 0
         where coc_template_no = #{cocTemplateNo}
     </update>
+
+    <!-- ==================== 查询即将过期的模板（最新版本） ==================== -->
+    <select id="selectExpiringTemplates" resultMap="VehicleTemplateResult">
+        SELECT vt.template_id, vt.wvta_coc_no, vt.coc_template_no, vt.model_no, vt.version, vt.vehicle_type, vt.status, vt.validate_result,
+            vt.validate_time, vt.validate_msg, vt.json, vt.remark, vt.create_by, vt.create_time, vt.update_by, vt.update_time, vt.filepath,
+            vt.is_last, vt.uuid, vt.overdue_date, vt.template_version
+        FROM vehicle_template vt
+        INNER JOIN sys_dict_data sdd ON sdd.dict_type = 'vehicle_expired_reminder' AND sdd.status = '0'
+        WHERE vt.del_flag = '0' AND vt.is_last = 1 AND vt.overdue_date IS NOT NULL
+            AND TIMESTAMPDIFF(MICROSECOND, NOW(), vt.overdue_date) / 1000 &lt;= CAST(sdd.dict_value AS SIGNED)
+            AND vt.overdue_date > NOW()
+    </select>
 
 </mapper>

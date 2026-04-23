@@ -15,9 +15,9 @@
         SELECT
             YEAR(create_time)                                           AS year,
             MONTH(create_time)                                          AS month,
-            COUNT(CASE WHEN upload_result IN ('1', '3') THEN 1 END)     AS total,
-            SUM(CASE WHEN upload_result = '1' THEN 1 ELSE 0 END)        AS submit_number,
-            SUM(CASE WHEN upload_result = '3' THEN 1 ELSE 0 END)        AS pass_number
+            COUNT(CASE WHEN upload_result IN ('3', '4') THEN 1 END)     AS total,
+            SUM(CASE WHEN upload_result = '3' THEN 1 ELSE 0 END)        AS submit_number,
+            SUM(CASE WHEN upload_result = '4' THEN 1 ELSE 0 END)        AS pass_number
         FROM xml_file
         WHERE
             deleted = 0 and is_latest = 1
@@ -59,8 +59,9 @@
     </resultMap>
 
     <select id="selectVehicleModelVoList" resultMap="VehicleModelVo">
-        SELECT YEAR(create_time)  AS year, MONTH(create_time) AS month, model_code AS model_code, COUNT(*) AS total
-        FROM xml_file
+        SELECT YEAR(create_time)  AS year, MONTH(create_time) AS month, sdd.dict_label AS vehicle_model, COUNT(*) AS total
+        FROM xml_file xf
+        left join (select dict_code, dict_label, dict_value from sys_dict_data where dict_type = 'vehicle_model') sdd on xf.model_code = sdd.dict_code
         WHERE deleted = 0 and is_latest = 1
             <choose>
                 <when test="month != null">
@@ -107,7 +108,7 @@
     </select>
 
     <select id="selectStatisticsXmlPassNumber" resultType="java.lang.Integer">
-        SELECT COUNT(case when upload_result = 3 then 1 end)
+        SELECT COUNT(case when upload_result = 4 then 1 end)
         FROM xml_file
         WHERE deleted = 0 and is_latest = 1
             <if test="startTime != null">
@@ -136,6 +137,18 @@
             </if>
     </select>
 
+    <select id="selectStatisticsVehicleWaitNumber" resultType="java.lang.Integer">
+        select count(*)
+        from vehicle_info
+        where deleted = 0 and upload_status = 0 and status = 0
+            <if test="startTime != null">
+                AND create_time >= #{startTime}
+            </if>
+            <if test="endTime != null">
+                AND create_time &lt; #{endTime}
+            </if>
+    </select>
+
     <select id="selectStatisticsVehicleFailNumber" resultType="java.lang.Integer">
         SELECT COUNT(*)
         FROM vehicle_info vi
@@ -160,7 +173,7 @@
     </select>
 
     <select id="selectStatisticsXmlRejectNumber" resultType="java.lang.Integer">
-        SELECT COUNT(case when upload_result = 2 then 1 end)
+        SELECT COUNT(case when upload_result = 5 then 1 end)
         FROM xml_file
         WHERE deleted = 0 and is_latest = 1
             <if test="startTime != null">
@@ -252,5 +265,20 @@
                     , day ASC
                 </when>
             </choose>
+    </select>
+
+    <select id="selectLatestPerOperateBeforeTime" resultType="com.ruoyi.vehicle.domain.VehicleLifecycle">
+        SELECT vl.*
+        FROM vehicle_lifecycle vl
+                 INNER JOIN (
+            SELECT operate, MAX(time) AS max_time
+            FROM vehicle_lifecycle
+            WHERE vin = #{vin}
+              AND time &lt;= #{time}
+              AND deleted = 0
+            GROUP BY operate
+        ) latest ON vl.operate = latest.operate AND vl.time = latest.max_time
+        WHERE vl.vin = #{vin}
+          AND vl.deleted = 0
     </select>
 </mapper>

@@ -8,6 +8,8 @@ public class ChartDataXmlTotalVo {
 
     private Integer month;
 
+    private Integer day;
+
     private Integer total;
 
     private Integer submitNumber;

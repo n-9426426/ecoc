@@ -1,6 +1,6 @@
 package com.ruoyi.system.service;
 
-import com.ruoyi.system.domain.SysNotice;
+import com.ruoyi.system.api.domain.SysNotice;
 
 import java.util.List;
 

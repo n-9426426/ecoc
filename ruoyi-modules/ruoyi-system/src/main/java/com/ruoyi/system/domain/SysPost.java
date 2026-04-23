@@ -45,8 +45,6 @@ public class SysPost extends BaseEntity
         this.postId = postId;
     }
 
-    @NotBlank(message = "组编码不能为空")
-    @Size(min = 0, max = 64, message = "组编码长度不能超过64个字符")
     public String getPostCode()
     {
         return postCode;
