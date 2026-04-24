@@ -97,6 +97,10 @@ public class VehicleInfo extends BaseEntity {
 
     private String validationReportJson;
 
+    private String engineNumber;
+
+    private String motorNumber;
+
     public Map<String, Object> getJsonMap() {
         if (jsonMap != null) {
             return jsonMap;

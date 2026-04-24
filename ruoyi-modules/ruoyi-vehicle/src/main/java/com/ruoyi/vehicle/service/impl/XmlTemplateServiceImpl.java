@@ -101,9 +101,11 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
         }
 
         template.setUuid(dbTemplate.getUuid());
-        template.setVersion(String.valueOf(new BigDecimal(template.getVersion()).add(new BigDecimal(1))));
+        template.setVersion(String.valueOf(new BigDecimal(template.getVersion() == null ? "0.0" : template.getVersion()).add(new BigDecimal(1))));
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(new Date());
+        template.setTemplateCode(UUID.randomUUID().toString().replace("-", ""));
+        template.setDeleted(0);
         templateMapper.updateAllIsLast(dbTemplate.getUuid());
         templateMapper.insert(template);
 

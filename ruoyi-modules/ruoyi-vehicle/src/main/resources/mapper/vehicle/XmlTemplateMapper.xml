@@ -94,7 +94,7 @@
     </update>
 
     <select id="selectTemplateAll" resultMap="XmlTemplateResult">
-        SELECT * FROM xml_template where deleted = 0 and status = 0
+        SELECT * FROM xml_template where deleted = 0 and status = 0 order by create_time desc
     </select>
 
     <update id="updateAllIsLast">

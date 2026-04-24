@@ -118,7 +118,7 @@
                 AND xl.deleted = 0
             </if>
         </where>
-        order by xl.update_time desc, xl.create_time desc
+        order by xl.create_time desc
     </select>
 
     <select id="selectXmlFileById" parameterType="Long" resultMap="XmlFileResult">

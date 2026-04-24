@@ -21,10 +21,16 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 车辆信息校验 ServiceImpl
  * 基于 FinalRuleParser + FinalRuleExecutor 实现完整规则校验
+ * 重构要点：
+ * - jsonKey 直接匹配 SysDictData.keyMap（不再解析 dict_code）
+ * - 一次性查询字典数据，构建本地索引
+ * - 上下文字段名使用 dict_label（非原始 key）
+ * - 支持 vehicleCategory/stageOfCompletion 条件匹配（通配符）
  */
 @Slf4j
 @Service("vehicleValidationService")
@@ -42,9 +48,6 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
     // 接口实现
     // ==========================================
 
-    /**
-     * 根据 vehicleId 从数据库读取 JSON 并校验
-     */
     @Override
     public ValidationReport validateByVehicleId(Long vehicleId) {
         VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
@@ -53,20 +56,13 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
             return ValidationReport.fail("未找到车辆信息, vehicleId=" + vehicleId);
         }
 
-        String vehicleCategory = extractVehicleCategory(vehicleInfo);
-        String stageOfCompletion = extractStageOfCompletion(vehicleInfo);
+        String vehicleCategory = extractVehicleCategoryFromJson(vehicleInfo.getJson());
+        String stageOfCompletion = extractStageOfCompletionFromJson(vehicleInfo.getJson());
         return validate(vehicleInfo.getJson(), vehicleCategory, stageOfCompletion);
     }
 
-    /**
-     * 校验车辆信息 JSON 中的所有字段
-     */
     @Override
-    public ValidationReport validate(
-            String jsonStr,
-            String vehicleCategory,
-            String stageOfCompletion) {
-
+    public ValidationReport validate(String jsonStr, String vehicleCategory, String stageOfCompletion) {
         ValidationReport report = ValidationReport.builder()
                 .vehicleCategory(vehicleCategory)
                 .stageOfCompletion(stageOfCompletion)
@@ -88,23 +84,21 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
         // 2. 解析列表字段（axleList、bodyworkList 等）
         Map<String, List<Map<String, Object>>> listFields = VehicleFieldParser.parseListFieldsFromMap(jsonMap, remoteDictService);
 
-        // 3. 构建上下文（所有字段值 + 车型 + 阶段 + 列表字段）
+        // 3. 构建上下文（字段名已转换为 dict_label）
         Map<String, Object> context = buildContext(jsonMap, listFields, vehicleCategory, stageOfCompletion);
 
         // 4. 遍历每个字段逐一校验
         for (Map.Entry<String, Object> entry : jsonMap.entrySet()) {
-            FieldValidationResult result = validateSingleField(
-                    entry.getKey(),
-                    entry.getValue(),
-                    context,
-                    vehicleCategory,
-                    stageOfCompletion);
+            String jsonKey = entry.getKey();
+            Object value = entry.getValue();
 
+            FieldValidationResult result = validateSingleField(jsonKey, value, context, vehicleCategory, stageOfCompletion);
             if (result != null) {
                 report.addFieldResult(result);
             }
         }
 
+        report.setAllValid(report.getFieldResults().stream().allMatch(FieldValidationResult::isValid));
         log.info("校验完成, vehicleCategory={}, stageOfCompletion={}, allValid={}",
                 vehicleCategory, stageOfCompletion, report.isAllValid());
 
@@ -115,9 +109,6 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
     // 私有方法 - 字段校验
     // ==========================================
 
-    /**
-     * 校验单个字段
-     */
     private FieldValidationResult validateSingleField(
             String jsonKey,
             Object value,
@@ -125,48 +116,51 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
             String vehicleCategory,
             String stageOfCompletion) {
 
-        // 2. 查询字典数据（含 rule、rangeRule、vehicleCategory、stageOfCompletion 过滤）
         SysDictData dictData = queryDictData(jsonKey, vehicleCategory, stageOfCompletion);
         if (dictData == null) {
-            log.debug("未找到字典数据, vehicleCategory={}, stageOfCompletion={}", vehicleCategory, stageOfCompletion);
+            log.debug("未找到字典数据, jsonKey={}, vehicleCategory={}, stageOfCompletion={}",
+                    jsonKey, vehicleCategory, stageOfCompletion);
             return null;
         }
 
-        // 3. 解析规则
-        List<RuleItem> rules = FinalRuleParser.parseRules(
-                dictData.getRule(),
-                dictData.getRangeRule());
-
+        List<RuleItem> rules = FinalRuleParser.parseRules(dictData.getRule(), dictData.getRangeRule());
         if (rules.isEmpty()) {
             return null;
         }
 
-        // 4. 执行校验
+        // ⚠️ 注意：此处传入的是原始 jsonKey，但 context 中字段名已是 dict_label
+        // FinalRuleExecutor 内部会从 context 查 dict_label 字段（正确）
         return FinalRuleExecutor.execute(jsonKey, value, rules, context);
     }
 
     // ==========================================
-    // 私有方法 - 上下文构建
+    // 私有方法 - 上下文构建（关键：key 转 dict_label）
     // ==========================================
 
-    /**
-     * 构建校验上下文
-     * 包含：所有普通字段值 + 列表字段 + vehicleCategory + stageOfCompletion
-     */
     private Map<String, Object> buildContext(
             Map<String, Object> jsonMap,
             Map<String, List<Map<String, Object>>> listFields,
             String vehicleCategory,
             String stageOfCompletion) {
 
-        Map<String, Object> context = new HashMap<>(jsonMap);
+        Map<String, Object> context = new HashMap<>();
 
-        // 注入列表字段（供 COUNT / SUM 聚合规则使用）
+        // ✅ 将 jsonMap 的 key（如 "20.98.12"）映射为 dict_label（如 "BrakedAxleIndicator"）
+        Map<String, SysDictData> keyMapIndex = buildKeyMapIndex();
+        for (Map.Entry<String, Object> entry : jsonMap.entrySet()) {
+            String jsonKey = entry.getKey();
+            Object value = entry.getValue();
+
+            String fieldName = resolveDictLabel(jsonKey, keyMapIndex);
+            context.put(fieldName, value);
+        }
+
+        // 注入列表字段（VehicleFieldParser 已转为 dict_label，无需重复转换）
         if (listFields != null) {
             context.putAll(listFields);
         }
 
-        // 注入车型和阶段（供条件规则使用）
+        // 注入上下文变量
         context.put("vehicleCategory", vehicleCategory);
         context.put("stageOfCompletion", stageOfCompletion);
 
@@ -174,54 +168,105 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
     }
 
     // ==========================================
-    // 私有方法 - 字典查询
+    // 私有方法 - 字典查询（核心重构）
     // ==========================================
 
     /**
-     * 根据 dictCode + vehicleCategory + stageOfCompletion 查询字典数据
-     * 优先精确匹配，其次模糊匹配（vehicleCategory 或 stageOfCompletion 为空）
+     * 根据 jsonKey + vehicleCategory + stageOfCompletion 查询字典数据
+     * 匹配顺序：
+     * 1. 精确匹配 keyMap
+     * 2. 通配匹配（vehicleCategory/stageOfCompletion）
+     * 3. dictLabel 匹配（兜底）
      */
-    private SysDictData queryDictData(
-            String jsonKey,
-            String vehicleCategory,
-            String stageOfCompletion) {
+    private SysDictData queryDictData(String jsonKey, String vehicleCategory, String stageOfCompletion) {
         try {
-            // todo 校验实现
-            List<SysDictData> list = remoteDictService.getDictDataByType("vehicle_attribute").getData();
-            if (list == null || list.isEmpty()) return null;
+            List<SysDictData> allDict = remoteDictService.getDictDataByType("vehicle_attribute").getData();
+            if (allDict == null || allDict.isEmpty()) {
+                return null;
+            }
 
-            // 精确匹配
-            for (SysDictData d : list) {
-                if (d.getKeyMap() == null) {
-                    continue;
-                }
-                if (matches(d.getKeyMap(), jsonKey)) {
+            // 构建 keyMap -> List<SysDictData> 索引
+            Map<String, List<SysDictData>> keyMapMap = allDict.stream()
+                    .filter(d -> d.getKeyMap() != null && !d.getKeyMap().trim().isEmpty())
+                    .collect(Collectors.groupingBy(SysDictData::getKeyMap));
+
+            // 1. 精确匹配 keyMap
+            List<SysDictData> candidates = keyMapMap.get(jsonKey);
+            if (candidates != null && !candidates.isEmpty()) {
+                return findBestMatch(candidates, vehicleCategory, stageOfCompletion);
+            }
+
+            // 2. dictLabel 匹配（兜底，兼容旧数据）
+            for (SysDictData d : allDict) {
+                if (d.getDictLabel() != null && d.getDictLabel().equals(jsonKey)) {
                     return d;
                 }
             }
-            for (SysDictData d : list) {
-                if (matches(d.getDictLabel(), jsonKey)) {
-                    return d;
-                }
-            }
+
             return null;
         } catch (Exception e) {
-            log.error("查询字典数据失败, error={}", e.getMessage(), e);
+            log.error("查询字典数据失败", e);
             return null;
         }
     }
 
     /**
-     * 字段匹配（null 或空表示通配）
+     * 从多个候选中选择最佳匹配（按 vehicleCategory/stageOfCompletion 匹配度打分）
      */
-    private boolean matches(String key, String targetValue) {
-        if (key == null || key.trim().isEmpty()) return true;
-        return key.trim().equals(targetValue);
+    private SysDictData findBestMatch(List<SysDictData> candidates, String vehicleCategory, String stageOfCompletion) {
+        SysDictData best = null;
+        int bestScore = -1;
+
+        for (SysDictData d : candidates) {
+            int score = 0;
+            if (matchesWildcard(d.getDictTypeAffiliationStr(), vehicleCategory)) score += 2;
+//            if (matchesWildcard(d.getStageOfCompletion(), stageOfCompletion)) score += 1;
+
+            if (score > bestScore) {
+                bestScore = score;
+                best = d;
+            }
+        }
+
+        return best;
+    }
+
+    /**
+     * 通配符匹配：支持 "*" 和 "prefix*"
+     */
+    private boolean matchesWildcard(String pattern, String value) {
+        if (pattern == null || pattern.trim().isEmpty() || "*".equals(pattern.trim())) {
+            return true;
+        }
+        if (value == null) return false;
+        pattern = pattern.trim();
+        value = value.trim();
+        if (pattern.endsWith("*")) {
+            return value.startsWith(pattern.substring(0, pattern.length() - 1));
+        }
+        return pattern.equals(value);
     }
 
     // ==========================================
-    // 私有方法 - JSON 解析
+    // 私有方法 - 工具方法（复用 VehicleFieldParser 逻辑）
     // ==========================================
+
+    private Map<String, SysDictData> buildKeyMapIndex() {
+        try {
+            List<SysDictData> all = remoteDictService.getDictDataByType("vehicle_attribute").getData();
+            return all == null ? new HashMap<>() : all.stream()
+                    .filter(d -> d.getKeyMap() != null && !d.getKeyMap().isEmpty())
+                    .collect(Collectors.toMap(SysDictData::getKeyMap, d -> d, (e1, e2) -> e1));
+        } catch (Exception e) {
+            log.error("构建 keyMap 索引失败", e);
+            return new HashMap<>();
+        }
+    }
+
+    private String resolveDictLabel(String key, Map<String, SysDictData> keyMapIndex) {
+        SysDictData d = keyMapIndex.get(key);
+        return d != null && d.getDictLabel() != null ? d.getDictLabel() : key;
+    }
 
     private Map<String, Object> parseJson(String jsonStr) {
         try {
@@ -232,59 +277,29 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
         }
     }
 
-    // ==========================================
-    // 私有方法 - 字段提取
-    // ==========================================
-
-    /**
-     * 从 jsonKey 中提取 dictCode
-     * 约定格式：field_{dictCode} 或 直接为数字字符串
-     */
-    private Long extractDictCode(String jsonKey) {
-        if (jsonKey == null) return null;
+    // 从 JSON 字符串中提取 vehicleCategory 和 stageOfCompletion（避免重复解析）
+    private String extractVehicleCategoryFromJson(String jsonStr) {
+        if (jsonStr == null) return null;
         try {
-            // 格式1：直接是数字
-            return Long.parseLong(jsonKey);
-        } catch (NumberFormatException e) {
-            // 格式2：field_123456
-            String[] parts = jsonKey.split("_");
-            String last = parts[parts.length - 1];
-            try {
-                return Long.parseLong(last);
-            } catch (NumberFormatException ex) {
-                return null;
-            }
-        }
-    }
-
-    /**
-     * 从 VehicleInfo 中提取 vehicleCategory
-     */
-    private String extractVehicleCategory(VehicleInfo vehicleInfo) {
-        if (vehicleInfo == null) return null;
-        try {
-            Map<String, Object> jsonMap = parseJson(vehicleInfo.getJson());
-            if (jsonMap == null) return null;
-            Object val = jsonMap.get("vehicleCategory");
-            return val == null ? null : val.toString();
+            Map<String, Object> map = parseJson(jsonStr);
+            if (map == null) return null;
+            Object v = map.get("vehicleCategory");
+            return v == null ? null : v.toString();
         } catch (Exception e) {
-            log.warn("提取 vehicleCategory 失败: {}", e.getMessage());
+            log.warn("提取 vehicleCategory 失败", e);
             return null;
         }
     }
 
-    /**
-     * 从 VehicleInfo 中提取 stageOfCompletion
-     */
-    private String extractStageOfCompletion(VehicleInfo vehicleInfo) {
-        if (vehicleInfo == null) return null;
+    private String extractStageOfCompletionFromJson(String jsonStr) {
+        if (jsonStr == null) return null;
         try {
-            Map<String, Object> jsonMap = parseJson(vehicleInfo.getJson());
-            if (jsonMap == null) return null;
-            Object val = jsonMap.get("stageOfCompletion");
-            return val == null ? null : val.toString();
+            Map<String, Object> map = parseJson(jsonStr);
+            if (map == null) return null;
+            Object v = map.get("stageOfCompletion");
+            return v == null ? null : v.toString();
         } catch (Exception e) {
-            log.warn("提取 stageOfCompletion 失败: {}", e.getMessage());
+            log.warn("提取 stageOfCompletion 失败", e);
             return null;
         }
     }

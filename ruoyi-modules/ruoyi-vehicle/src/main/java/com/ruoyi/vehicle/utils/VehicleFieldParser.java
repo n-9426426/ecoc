@@ -10,10 +10,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 列表字段解析工具类
- * JSON 的 key 格式为 "20.98.12"，最后一位是 dict_code
+ * JSON 的 key 格式为 "20.98.12"，需匹配 sys_dict_data.keyMap 字段
  * 通过判断 value 是否为 List 类型来识别列表字段
  */
 public class VehicleFieldParser {
@@ -23,20 +24,25 @@ public class VehicleFieldParser {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * 从 JSON 字符串中解析所有列表字段
+     * 从 JSON Map 中解析所有列表字段
      *
-     * @param jsonMap   已解析的 JSON Map（key 格式为 "20.98.12"）
-     * @param remoteDictService 字典表服务，用于通过 dict_code 查字段名
+     * @param jsonMap           已解析的 JSON Map（key 格式为 "20.98.12"）
+     * @param remoteDictService 字典服务，一次性查询 vehicle_attribute 类型所有字典数据
      * @return key=dict_label（字段名）, value=列表内容
      */
     @SuppressWarnings("unchecked")
-    public static Map<String, List<Map<String, Object>>> parseListFieldsFromMap(Map<String, Object> jsonMap, RemoteDictService remoteDictService) {
+    public static Map<String, List<Map<String, Object>>> parseListFieldsFromMap(
+            Map<String, Object> jsonMap,
+            RemoteDictService remoteDictService) {
 
         Map<String, List<Map<String, Object>>> result = new HashMap<>();
 
         if (jsonMap == null || jsonMap.isEmpty()) {
             return result;
         }
+
+        // ✅ 第一步：一次性查询所有字典数据，构建 keyMap → SysDictData 的本地映射表
+        Map<String, SysDictData> keyMapIndex = buildKeyMapIndex(remoteDictService);
 
         for (Map.Entry<String, Object> entry : jsonMap.entrySet()) {
             String key = entry.getKey();
@@ -52,25 +58,15 @@ public class VehicleFieldParser {
                 continue;
             }
 
-            // 提取 dict_code（key 最后一段数字）
-            Long dictCode = extractDictCode(key);
-            if (dictCode == null) {
-                log.warn("无法解析 dict_code, key={}", key);
-                continue;
-            }
-
-            // 查字典表获取字段名（dict_label）
-            SysDictData dictData = remoteDictService.getDataByDictCode(dictCode).getData();
-            String listKey = (dictData != null && dictData.getDictLabel() != null)
-                    ? dictData.getDictLabel()
-                    : key; // 查不到时用原始 key 兜底
+            // ✅ 直接用完整 key 匹配 keyMapIndex
+            String listKey = resolveDictLabel(key, keyMapIndex);
 
             // 解析列表中每个元素（每个元素也是一个 Map）
             List<Map<String, Object>> parsedList = new ArrayList<>();
             for (Object item : rawList) {
                 if (item instanceof Map) {
-                    // 列表元素的 key 同样是 dict_code 格式，转换为 dict_label
-                    Map<String, Object> convertedItem = convertItemKeys((Map<String, Object>) item, remoteDictService);
+                    Map<String, Object> convertedItem = convertItemKeys(
+                            (Map<String, Object>) item, keyMapIndex);
                     parsedList.add(convertedItem);
                 }
             }
@@ -85,10 +81,15 @@ public class VehicleFieldParser {
     }
 
     /**
-     * 将列表元素中的 key（dict_code 格式）转换为 dict_label
+     * 将列表元素中的 key 通过 keyMapIndex 转换为 dict_label
      * 例如: {"20.98.12": "Y"} → {"BrakedAxleIndicator": "Y"}
+     *
+     * @param item        列表元素 Map
+     * @param keyMapIndex 本地字典索引（keyMap → SysDictData）
      */
-    private static Map<String, Object> convertItemKeys(Map<String, Object> item, RemoteDictService remoteDictService) {
+    private static Map<String, Object> convertItemKeys(
+            Map<String, Object> item,
+            Map<String, SysDictData> keyMapIndex) {
 
         Map<String, Object> converted = new HashMap<>();
 
@@ -96,17 +97,8 @@ public class VehicleFieldParser {
             String key = entry.getKey();
             Object value = entry.getValue();
 
-            Long dictCode = extractDictCode(key);
-            if (dictCode == null) {
-                converted.put(key, value);
-                continue;
-            }
-
-            SysDictData dictData = remoteDictService.getDataByDictCode(dictCode).getData();
-            String fieldName = (dictData != null && dictData.getDictLabel() != null)
-                    ? dictData.getDictLabel()
-                    : key;
-
+            // ✅ 用完整 key 匹配 keyMapIndex
+            String fieldName = resolveDictLabel(key, keyMapIndex);
             converted.put(fieldName, value);
         }
 
@@ -114,16 +106,55 @@ public class VehicleFieldParser {
     }
 
     /**
-     * 从 key 中提取最后一段数字作为 dict_code
-     * 例如: "20.98.12" → 12
+     * 构建 keyMap → SysDictData 的本地索引
+     * 一次性查询所有 vehicle_attribute 类型字典数据，避免循环内频繁 RPC 调用
+     *
+     * @param remoteDictService 字典远程服务
+     * @return keyMap 到 SysDictData 的映射 Map
      */
-    private static Long extractDictCode(String key) {
-        if (key == null || key.isEmpty()) return null;
-        String[] parts = key.split("\\.");
+    private static Map<String, SysDictData> buildKeyMapIndex(RemoteDictService remoteDictService) {
         try {
-            return Long.parseLong(parts[parts.length - 1]);
-        } catch (NumberFormatException e) {
-            return null;
+            List<SysDictData> allDictData = remoteDictService
+                    .getDictDataByType("vehicle_attribute")
+                    .getData();
+
+            if (allDictData == null || allDictData.isEmpty()) {
+                log.warn("vehicle_attribute 字典数据为空");
+                return new HashMap<>();
+            }
+
+            // ✅ 以 keyMap 字段为 key 建立索引（过滤 keyMap 为空的记录）
+            return allDictData.stream()
+                    .filter(d -> d.getKeyMap() != null && !d.getKeyMap().isEmpty())
+                    .collect(Collectors.toMap(
+                            SysDictData::getKeyMap,
+                            d -> d,
+                            (existing, duplicate) -> {
+                                log.warn("存在重复 keyMap: {}", existing.getKeyMap());
+                                return existing; // 保留第一个
+                            }
+                    ));
+
+        } catch (Exception e) {
+            log.error("查询 vehicle_attribute 字典数据失败", e);
+            return new HashMap<>();
         }
+    }
+
+    /**
+     * 根据 JSON key 从 keyMapIndex 中解析 dict_label
+     * 若找不到则返回原始 key 作为兜底
+     *
+     * @param key         JSON 原始 key（如 "20.98.12"）
+     * @param keyMapIndex 本地字典索引
+     * @return dict_label 或原始 key
+     */
+    private static String resolveDictLabel(String key, Map<String, SysDictData> keyMapIndex) {
+        SysDictData dictData = keyMapIndex.get(key);
+        if (dictData != null && dictData.getDictLabel() != null) {
+            return dictData.getDictLabel();
+        }
+        log.warn("未找到 keyMap 对应字典数据，使用原始 key 兜底: {}", key);
+        return key;
     }
 }

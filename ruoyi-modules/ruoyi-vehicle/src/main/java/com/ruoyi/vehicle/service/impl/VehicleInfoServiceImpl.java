@@ -210,13 +210,13 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                     .filter(data -> vehicleInfo.getVehicleModel().equals(data.getDictTypeAffiliation()))
                     .collect(Collectors.toList());
             SysDictData vehicleModel = remoteDictService.getDataByDictCode(vehicleInfo.getVehicleModel()).getData();
-            ValidationReport validationReport = vehicleValidationService.validate(vehicleInfo.getJson(), vehicleModel.getDictValue(), "C");
+            ValidationReport validationReport = vehicleValidationService.validate(vehicleInfo.getJson(), vehicleModel.getDictValue(), null);
             if (validationReport.isAllValid()) {
                 vehicleInfo.setValidationResult(1);
             } else {
                 vehicleInfo.setValidationResult(2);
                 try {
-                    vehicleInfo.setValidationReportJson(objectMapper.writeValueAsString(validationReport));
+                    vehicleInfo.setValidationReportJson(objectMapper.writeValueAsString(validationReport.getFailedFields()));
                 } catch (JsonProcessingException e) {
                     log.error("对象转 JSON 失败", e);
                     throw new RuntimeException("校验报告保存失败");

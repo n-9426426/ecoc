@@ -177,7 +177,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 ValidationReport report = vehicleValidationService.validate(
                         template.getJson(),
                         template.getVehicleType(),
-                        null // stageOfCompletion 可从 JSON 中提取
+                        null
                 );
 
                 reports.add(report);
@@ -187,7 +187,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 update.setTemplateId(templateId);
                 update.setValidateResult(report.isAllValid() ? "1" : "2");
                 try {
-//                    update.setValidateMsg(objectMapper.writeValueAsString(report.getFailedFields()));
+                    update.setValidateMsg(objectMapper.writeValueAsString(report.getFailedFields()));
                 } catch (Exception e) {
                     update.setValidateMsg("序列化失败");
                 }
