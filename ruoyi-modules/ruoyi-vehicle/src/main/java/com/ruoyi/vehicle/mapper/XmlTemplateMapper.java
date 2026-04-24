@@ -22,4 +22,6 @@ public interface XmlTemplateMapper {
     int deleteByIds(@Param("templateIds") List<Long> templateIds);
 
     List<XmlTemplate> selectTemplateAll();
+
+    int updateAllIsLast(String uuid);
 }

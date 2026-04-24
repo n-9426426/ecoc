@@ -32,6 +32,12 @@ public class XmlTemplate extends BaseEntity {
 
     private Long energyType;
 
+    private String version;
+
+    private String uuid;
+
+    private Integer isLast;
+
     private List<AttributeTreeNode> attributeTree;
 
     public Long getTemplateId() {
@@ -136,5 +142,29 @@ public class XmlTemplate extends BaseEntity {
 
     public void setEnergyType(Long energyType) {
         this.energyType = energyType;
+    }
+
+    public String getVersion() {
+        return version;
+    }
+
+    public void setVersion(String version) {
+        this.version = version;
+    }
+
+    public String getUuid() {
+        return uuid;
+    }
+
+    public void setUuid(String uuid) {
+        this.uuid = uuid;
+    }
+
+    public Integer getIsLast() {
+        return isLast;
+    }
+
+    public void setIsLast(Integer isLast) {
+        this.isLast = isLast;
     }
 }

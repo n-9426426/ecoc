@@ -62,7 +62,7 @@ public class FinalRuleExecutor {
 
         try {
             switch (rule.getType()) {
-
+                case NULL: return null;
                 case VALUE_IS_PRESENT:
                     if (isAbsent(actualValue)) {
                         return buildViolation(rule, fieldName, actualValue,
@@ -109,23 +109,51 @@ public class FinalRuleExecutor {
                     }
                     break;
 
+                case MANDATORY_IF_ANY:
+                    return checkMandatoryIfAny(fieldName, actualValue, rule, context);
+
+                case MANDATORY_IF_ALL:
+                    return checkMandatoryIfAll(fieldName, actualValue, rule, context);
+
                 case MANDATORY_IF:
-                    if (rule.getConditionChain() != null
-                            && rule.getConditionChain().evaluate(context)
-                            && isAbsent(actualValue)) {
-                        return buildViolation(rule, fieldName, actualValue,
-                                "Field is required when condition is met",
-                                "满足条件时该字段为必填");
+                    if (rule.getRefFieldName() != null) {
+                        Object refValue = context.get(rule.getRefFieldName());
+                        boolean refAbsent = isAbsent(refValue);
+
+                        // PRESENT → 引用字段有值时条件成立；ABSENT → 引用字段为空时条件成立
+                        boolean conditionMet = "PRESENT".equals(rule.getRefFieldCondition()) != refAbsent;
+
+                        if (conditionMet && isAbsent(actualValue)) {
+                            String state = "PRESENT".equals(rule.getRefFieldCondition()) ? "has value" : "is absent";
+                            return buildViolation(rule, fieldName, actualValue,
+                                    "Field is required because @" + rule.getRefFieldName() + " " + state,
+                                    "@" + rule.getRefFieldName() + " " + ("PRESENT".equals(rule.getRefFieldCondition()) ? "有值" : "为空") + "，当前字段必须填写");
+                        }
+                        return null;
                     }
                     break;
 
+                case FORBIDDEN_IF_ALL:
+                    return checkForbiddenIfAll(fieldName, actualValue, rule, context);
+
+                case FORBIDDEN_IF_ANY:
+                    return checkForbiddenIfAny(fieldName, actualValue, rule, context);
+
                 case FORBIDDEN_IF:
-                    if (rule.getConditionChain() != null
-                            && rule.getConditionChain().evaluate(context)
-                            && !isAbsent(actualValue)) {
-                        return buildViolation(rule, fieldName, actualValue,
-                                "Field must be absent when condition is met",
-                                "满足条件时该字段必须为空");
+                    if (rule.getRefFieldName() != null) {
+                        Object refValue = context.get(rule.getRefFieldName());
+                        boolean refAbsent = isAbsent(refValue);
+
+                        // 同样逻辑：判断引用字段是否满足条件
+                        boolean conditionMet = "PRESENT".equals(rule.getRefFieldCondition()) != refAbsent;
+
+                        if (conditionMet && !isAbsent(actualValue)) {
+                            String state = "PRESENT".equals(rule.getRefFieldCondition()) ? "has value" : "is absent";
+                            return buildViolation(rule, fieldName, actualValue,
+                                    "Field must be absent because @" + rule.getRefFieldName() + " " + state,
+                                    "@" + rule.getRefFieldName() + " " + ("PRESENT".equals(rule.getRefFieldCondition()) ? "有值" : "为空") + "，当前字段必须为空");
+                        }
+                        return null;
                     }
                     break;
 
@@ -163,6 +191,66 @@ public class FinalRuleExecutor {
     }
 
     // ==========================================
+    // 条件必填 / 条件禁填
+    // ==========================================
+
+    private static RuleViolation checkMandatoryIfAny(String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+        ConditionChain chain = rule.getConditionChain();
+        if (chain == null) return null;
+        // ANY：任一条件满足即触发
+        if (chain.evaluate(context) && isAbsent(actualValue)) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "Field is required when any condition is met",
+                    "任一条件满足时该字段为必填");
+        }
+        return null;
+    }
+
+    private static RuleViolation checkMandatoryIfAll(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        ConditionChain chain = rule.getConditionChain();
+        if (chain == null) return null;
+        // ALL：全部条件满足才触发
+        if (chain.evaluate(context) && isAbsent(actualValue)) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "Field is required when all conditions are met",
+                    "所有条件满足时该字段为必填");
+        }
+        return null;
+    }
+
+    private static RuleViolation checkForbiddenIfAll(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        ConditionChain chain = rule.getConditionChain();
+        if (chain == null) return null;
+        if (chain.evaluate(context) && !isAbsent(actualValue)) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "Field must be absent when all conditions are met",
+                    "所有条件满足时该字段必须为空");
+        }
+        return null;
+    }
+
+    private static RuleViolation checkForbiddenIfAny(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        if (rule.getConditionChain() == null) {
+            return null;
+        }
+        // 所有条件都满足时 → 当前字段必须为空
+        if (rule.getConditionChain().evaluate(context)) {
+            if (!isAbsent(actualValue)) {
+                return buildViolation(rule, fieldName, actualValue,
+                        "Field must be absent because ALL conditions are met",
+                        "所有条件均满足，当前字段必须为空");
+            }
+        }
+        return null;
+    }
+
+    // ==========================================
     // 聚合校验
     // ==========================================
 
@@ -178,9 +266,9 @@ public class FinalRuleExecutor {
         long count = list.stream()
                 .filter(item -> {
                     if (!(item instanceof Map)) return false;
-                    @SuppressWarnings("unchecked")
                     Map<String, Object> itemMap = (Map<String, Object>) item;
-                    return condExpr != null && condExpr.evaluate(itemMap);
+                    if (condExpr == null) return true; // 无条件，全部计数
+                    return condExpr.evaluate(itemMap);
                 })
                 .count();
 
@@ -284,15 +372,18 @@ public class FinalRuleExecutor {
         if (isAbsent(actualValue)) return null;
         double val = toDouble(actualValue);
 
-        if (rule.getRangeMin() != null && val < rule.getRangeMin()) {
+        Double min = rule.getRangeMin();
+        Double max = rule.getRangeMax();
+
+        if (min != null && min.compareTo(val) > 0) {
             return buildViolation(rule, fieldName, actualValue,
-                    "Value " + val + " is less than min " + rule.getRangeMin(),
-                    "值 " + val + " 小于最小值 " + rule.getRangeMin());
+                    "Value " + val + " is less than min " + min,
+                    "值 " + val + " 小于最小值 " + min);
         }
-        if (rule.getRangeMax() != null && val > rule.getRangeMax()) {
+        if (max != null && max.compareTo(val) < 0) {
             return buildViolation(rule, fieldName, actualValue,
-                    "Value " + val + " exceeds max " + rule.getRangeMax(),
-                    "值 " + val + " 超过最大值 " + rule.getRangeMax());
+                    "Value " + val + " exceeds max " + max,
+                    "值 " + val + " 超过最大值 " + max);
         }
         return null;
     }
@@ -304,18 +395,18 @@ public class FinalRuleExecutor {
         int len = String.valueOf(actualValue).length();
 
         // 从 rawRule 中取 minLength / maxLength（已存入 rangeMin/rangeMax）
-        Double minLen = rule.getRangeMin();
-        Double maxLen = rule.getRangeMax();
+        Integer minLen = rule.getMinLength();
+        Integer maxLen = rule.getMaxLength();
 
-        if (minLen != null && len < minLen.intValue()) {
+        if (minLen != null && minLen.compareTo(len) > 0) {
             return buildViolation(rule, fieldName, actualValue,
-                    "Length " + len + " is less than minLength " + minLen.intValue(),
-                    "字符串长度 " + len + " 小于最小长度 " + minLen.intValue());
+                    "Length " + len + " is less than minLength " + minLen,
+                    "字符串长度 " + len + " 小于最小长度 " + minLen);
         }
-        if (maxLen != null && len > maxLen.intValue()) {
+        if (maxLen != null && maxLen.compareTo(len) < 0) {
             return buildViolation(rule, fieldName, actualValue,
-                    "Length " + len + " exceeds maxLength " + maxLen.intValue(),
-                    "字符串长度 " + len + " 超过最大长度 " + maxLen.intValue());
+                    "Length " + len + " exceeds maxLength " + maxLen,
+                    "字符串长度 " + len + " 超过最大长度 " + maxLen);
         }
         return null;
     }
@@ -327,8 +418,7 @@ public class FinalRuleExecutor {
         try {
             BigDecimal bd = new BigDecimal(String.valueOf(actualValue)).stripTrailingZeros();
             int totalDigits = bd.precision();
-            int maxDigits = rule.getRangeMax() != null
-                    ? rule.getRangeMax().intValue() : Integer.MAX_VALUE;
+            int maxDigits = rule.getTotalDigits() != null ? rule.getTotalDigits() : Integer.MAX_VALUE;
             if (totalDigits > maxDigits) {
                 return buildViolation(rule, fieldName, actualValue,
                         "Total digits " + totalDigits + " exceeds " + maxDigits,
@@ -347,8 +437,7 @@ public class FinalRuleExecutor {
         try {
             BigDecimal bd = new BigDecimal(String.valueOf(actualValue));
             int scale = Math.max(bd.scale(), 0);
-            int maxScale = rule.getRangeMax() != null
-                    ? rule.getRangeMax().intValue() : Integer.MAX_VALUE;
+            int maxScale = rule.getFractionDigits() != null ? rule.getFractionDigits() : Integer.MAX_VALUE;
             if (scale > maxScale) {
                 return buildViolation(rule, fieldName, actualValue,
                         "Fraction digits " + scale + " exceeds " + maxScale,

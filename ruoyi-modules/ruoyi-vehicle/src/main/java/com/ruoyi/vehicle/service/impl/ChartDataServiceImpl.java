@@ -179,6 +179,8 @@ public class ChartDataServiceImpl implements IChartDataService {
                         .operate(i)
                         .status(status)
                         .time(operateTime)
+                        // todo 结果
+                        .result(0)
                         .build());
             }
 

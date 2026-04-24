@@ -1,5 +1,7 @@
 package com.ruoyi.vehicle.service.impl;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.StringUtils;
@@ -17,7 +19,6 @@ import com.ruoyi.vehicle.mapper.VehicleLifecycleMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMaterialMapper;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.service.IVehicleValidationService;
-import com.ruoyi.vehicle.utils.ExcelUtil;
 import com.ruoyi.vehicle.utils.JsonDictConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,10 +53,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     private JsonDictConverter jsonDictConverter;
 
     @Autowired
-    private ExcelUtil excelUtil;
-
-    @Autowired
     private VehicleLifecycleMapper vehicleLifecycleMapper;
+
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
      * 查询车辆信息
@@ -215,7 +215,14 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 vehicleInfo.setValidationResult(1);
             } else {
                 vehicleInfo.setValidationResult(2);
+                try {
+                    vehicleInfo.setValidationReportJson(objectMapper.writeValueAsString(validationReport));
+                } catch (JsonProcessingException e) {
+                    log.error("对象转 JSON 失败", e);
+                    throw new RuntimeException("校验报告保存失败");
+                }
             }
+            validationReports.add(validationReport);
             vehicleInfoMapper.updateVehicleInfo(vehicleInfo);
             VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
             vehicleLifecycle.setTime(new Date());

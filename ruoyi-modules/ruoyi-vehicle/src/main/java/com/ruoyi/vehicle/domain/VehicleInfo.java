@@ -95,6 +95,8 @@ public class VehicleInfo extends BaseEntity {
 
     private String cocTemplateNo;
 
+    private String validationReportJson;
+
     public Map<String, Object> getJsonMap() {
         if (jsonMap != null) {
             return jsonMap;

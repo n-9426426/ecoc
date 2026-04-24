@@ -30,13 +30,17 @@
 		<result property="vehicleModelStr"    column="vehicle_model_str"    />
 		<result property="vehicleTemplateFilepath" column="vehicle_template_filepath"/>
 		<result property="cocTemplateNo"      column="coc_template_no"      />
+		<result property="validationReportJson" column="validation_report_json"/>
+		<result property="engineNumber" column="engine_number"/>
+		<result property="motorNumber" column="motor_number"/>
 	</resultMap>
 
 	<sql id="selectVehicleInfoVo">
 		select vehicle_id, vin, vehicle_model, factory_code, factory_name, material_no,
 			   upload_status, validation_result, status, country, color, secondary_color,
 			   certificate_version, wvta_no, issue_date, json, xml_template_id, vehicle_template_id,
-			   deleted, create_by, create_time, update_by, update_time, remark,
+			   deleted, create_by, create_time, update_by, update_time, remark, validation_report_json,
+			   engine_number, motor_number,
 			   sdd.dict_label as vehicleModelStr, vt.filepath as vehicleTemplateFilepath, vt.coc_template_no as coc_template_no
 		from vehicle_info vi
 		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
@@ -132,6 +136,9 @@
 		<if test="xmlTemplateId != null">xml_template_id, </if>
 		<if test="vehicleTemplateId != null and vehicleTemplateId != ''">vehicle_template_id, </if>
 		<if test="remark != null and remark != ''">remark, </if>
+		<if test="validationReportJson != null and validationReportJson != ''">validation_report_json,</if>
+	    <if test="engineNumber != null and engineNumber != ''">engine_number,</if>
+	    <if test="motorNumber != null and motorNumber != ''">motor_number,</if>
 		<if test="createBy != null and createBy != ''">create_by, </if>
 		create_time
 		) values (
@@ -153,6 +160,9 @@
 		<if test="xmlTemplateId != null">#{xmlTemplateId}, </if>
 		<if test="vehicleTemplateId != null and vehicleTemplateId != ''">#{vehicleTemplateId}, </if>
 		<if test="remark != null and remark != ''">#{remark}, </if>
+		<if test="validationReportJson != null and validationReportJson != ''">#{validationReportJson},</if>
+		<if test="engineNumber != null and engineNumber != ''">#{engineNumber},</if>
+		<if test="motorNumber != null and motorNumber != ''">#{motorNumber},</if>
 		<if test="createBy != null and createBy != ''">#{createBy}, </if>
 		sysdate()
 		)
@@ -179,6 +189,9 @@
 			<if test="xmlTemplateId != null">xml_template_id = #{xmlTemplateId}, </if>
 			<if test="vehicleTemplateId != null and vehicleTemplateId != ''">vehicle_template_id = #{vehicleTemplateId}, </if>
 			<if test="remark != null">remark = #{remark}, </if>
+			<if test="validationReportJson != null and validationReportJson != ''">validation_report_json = #{validationReportJson},</if>
+			<if test="engineNumber != null and engineNumber != ''">engine_number = #{engineNumber},</if>
+			<if test="motorNumber != null and motorNumber != ''">motor_number = #{motorNumber},</if>
 			<if test="updateBy != null and updateBy != ''">update_by = #{updateBy}, </if>
 			update_time = sysdate()
 		</set>

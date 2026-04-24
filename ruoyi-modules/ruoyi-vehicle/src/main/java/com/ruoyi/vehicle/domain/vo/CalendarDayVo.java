@@ -39,5 +39,7 @@ public class CalendarDayVo {
 
         @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         private Date time;
+
+        private Integer result;
     }
 }

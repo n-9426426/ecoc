@@ -17,6 +17,8 @@
         <result property="updateTime" column="update_time"/>
         <result property="deleted" column="deleted"/>
         <result property="energyType" column="energy_type"/>
+        <result property="version" column="version"/>
+        <result property="isLast" column="is_last"/>
     </resultMap>
 
     <!-- 查询列表 -->
@@ -36,6 +38,12 @@
             <if test="status != null">
                 AND status = #{status}
             </if>
+            <if test="uuid != null and uuid != ''">
+                and uuid = #{uuid}
+            </if>
+            <if test="isLast != null">
+                and is_last = #{isLast}
+            </if>
         </where>
         ORDER BY create_time DESC
     </select>
@@ -49,10 +57,10 @@
     <!-- 插入 -->
     <insert id="insert" parameterType="com.ruoyi.vehicle.domain.XmlTemplate" useGeneratedKeys="true" keyProperty="templateId">
         INSERT INTO xml_template (
-        template_code, template_name, model_dict_code, status, remark, create_by, create_time, deleted, country, energy_type
+        template_code, template_name, model_dict_code, status, remark, create_by, create_time, deleted, country, energy_type, version
         ) VALUES (
         #{templateCode}, #{templateName}, #{modelDictCode}, #{status}, #{remark},
-        #{createBy}, #{createTime}, #{deleted}, #{country}, #{energyType}
+        #{createBy}, #{createTime}, #{deleted}, #{country}, #{energyType}, #{version}
         )
     </insert>
 
@@ -68,7 +76,8 @@
             <if test="updateBy != null">update_by = #{updateBy},</if>
             <if test="updateTime != null">update_time = #{updateTime},</if>
             <if test="country != null and country != ''">country = #{country},</if>
-            <if test="energy_type != null">energy_type = #{energyType}</if>
+            <if test="energy_type != null">energy_type = #{energyType},</if>
+            <if test="version != null and version != ''">version = #{version}</if>
         </set>
         WHERE template_id = #{templateId} AND deleted = 0
     </update>
@@ -87,4 +96,10 @@
     <select id="selectTemplateAll" resultMap="XmlTemplateResult">
         SELECT * FROM xml_template where deleted = 0 and status = 0
     </select>
+
+    <update id="updateAllIsLast">
+        update xml_template
+        SET is_last = 1
+        where uuid = #{uuid}
+    </update>
 </mapper>

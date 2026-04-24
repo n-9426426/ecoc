@@ -1,5 +1,6 @@
 package com.ruoyi.common.core.model;
 
+import com.ruoyi.common.core.enums.CompareOperator;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -8,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -15,8 +17,8 @@ import java.util.regex.Pattern;
  * 单个条件表达式
  * 支持：
  *   field = value
- *   field IS PRESENT
- *   field IS ABSENT
+ *   field != value, >, <, >=, <=
+ *   field IS PRESENT / IS ABSENT
  *   @field（字段有值即满足）
  */
 @Slf4j
@@ -26,69 +28,114 @@ import java.util.regex.Pattern;
 @AllArgsConstructor
 public class ConditionExpression {
 
-    // field = value
-    private static final Pattern EQ_PATTERN =
-            Pattern.compile("^([\\w.]+)\\s*=\\s*(.+)$");
+    // field op value（支持 =, !=, >, <, >=, <=）
+    private static final Pattern COMPARISON_PATTERN =
+            Pattern.compile("^@?([\\w.]+)\\s+([=<>!]+)\\s+([^\\s,)]+)$");
+
     // field IS PRESENT / IS ABSENT
     private static final Pattern IS_PATTERN =
-            Pattern.compile("^([\\w.]+)\\s+IS\\s+(PRESENT|ABSENT)$", Pattern.CASE_INSENSITIVE);
-    // @field
+            Pattern.compile("^@?([\\w.]+)\\s+IS\\s+(PRESENT|ABSENT)$", Pattern.CASE_INSENSITIVE);
+
+    // @field（无运算符）
     private static final Pattern REF_PATTERN =
             Pattern.compile("^@([\\w.]+)$");
 
     private String fieldName;
-    private String operator;   // "=", "IS_PRESENT", "IS_ABSENT", "REF"
+    private CompareOperator operator;   // ✅ 改为 CompareOperator 类型
     private String expectValue;
 
     public static ConditionExpression parse(String expr) {
         expr = expr.trim();
+        if (expr.isEmpty()) {
+            throw new IllegalArgumentException("空条件表达式");
+        }
 
-        Matcher m = IS_PATTERN.matcher(expr);
+        // 1. 尝试匹配：field op value（支持 @field 或 field）
+        Matcher m = COMPARISON_PATTERN.matcher(expr);
         if (m.matches()) {
+            String field = m.group(1);
+            String opStr = m.group(2);
+            String val = m.group(3);
+
+            CompareOperator op;
+            try {
+                op = CompareOperator.fromSymbol(opStr);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("不支持的运算符: " + opStr, e);
+            }
+
             return ConditionExpression.builder()
-                    .fieldName(m.group(1))
-                    .operator("IS_" + m.group(2).toUpperCase())
+                    .fieldName(field)
+                    .operator(op)
+                    .expectValue(val)
                     .build();
         }
 
-        m = EQ_PATTERN.matcher(expr);
+        // 2. 尝试匹配：field IS PRESENT / IS ABSENT
+        m = IS_PATTERN.matcher(expr);
         if (m.matches()) {
+            String field = m.group(1);
+            String condition = m.group(2);
+            CompareOperator op = "PRESENT".equalsIgnoreCase(condition)
+                    ? CompareOperator.IS_PRESENT
+                    : CompareOperator.IS_ABSENT;
             return ConditionExpression.builder()
-                    .fieldName(m.group(1).trim())
-                    .operator("=")
-                    .expectValue(m.group(2).trim())
+                    .fieldName(field)
+                    .operator(op)
                     .build();
         }
 
+        // 3. 尝试匹配：@field（字段存在即满足）
         m = REF_PATTERN.matcher(expr);
         if (m.matches()) {
+            String field = m.group(1);
             return ConditionExpression.builder()
-                    .fieldName(m.group(1))
-                    .operator("REF")
+                    .fieldName(field)
+                    .operator(CompareOperator.REF)  // ✅ 需在 CompareOperator 中添加 REF
                     .build();
         }
 
-        log.warn("无法解析条件表达式: {}", expr);
-        return null;
+        throw new IllegalArgumentException("无法解析条件表达式: '" + expr + "'");
     }
 
     public boolean evaluate(Map<String, Object> context) {
-        if (this.fieldName == null || this.operator == null) return false;
-        Object val = context.get(this.fieldName);
+        if (this.fieldName == null || this.operator == null) {
+            return false;
+        }
 
-        switch (this.operator) {
-            case "IS_PRESENT":
-                return !isAbsent(val);
-            case "IS_ABSENT":
-                return isAbsent(val);
-            case "=":
-                return this.expectValue != null
-                        && this.expectValue.equals(val == null ? null : val.toString());
-            case "REF":
-                return !isAbsent(val);
-            default:
-                log.warn("未知条件运算符: {}", this.operator);
+        Object actual = context.get(this.fieldName);
+
+        // 处理 IS_PRESENT / IS_ABSENT / REF
+        if (this.operator == CompareOperator.IS_PRESENT) {
+            return !isAbsent(actual);
+        }
+        if (this.operator == CompareOperator.IS_ABSENT) {
+            return isAbsent(actual);
+        }
+        if (this.operator == CompareOperator.REF) {
+            return !isAbsent(actual);
+        }
+
+        // 处理数值/字符串比较（=, !=, >, <, >=, <=）
+        if (this.expectValue == null) {
+            return false;
+        }
+
+        try {
+            // 尝试转数值比较（优先）
+            double actualNum = Double.parseDouble(actual == null ? "0" : actual.toString());
+            double expectedNum = Double.parseDouble(this.expectValue);
+            return this.operator.apply(actualNum, expectedNum);
+        } catch (NumberFormatException e) {
+            // 降级为字符串比较（仅 EQ/NEQ 安全）
+            if (this.operator == CompareOperator.EQ) {
+                return Objects.equals(this.expectValue, actual == null ? null : actual.toString());
+            } else if (this.operator == CompareOperator.NEQ) {
+                return !Objects.equals(this.expectValue, actual == null ? null : actual.toString());
+            } else {
+                log.warn("非数值字段使用数值比较运算符 {}，降级失败", this.operator.getSymbol());
                 return false;
+            }
         }
     }
 

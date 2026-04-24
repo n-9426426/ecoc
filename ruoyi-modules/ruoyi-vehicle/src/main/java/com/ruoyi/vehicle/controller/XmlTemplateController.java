@@ -19,24 +19,24 @@ import java.util.List;
 public class XmlTemplateController extends BaseController {
 
     @Autowired
-    private IXmlTemplateService vehicleTemplateService;
+    private IXmlTemplateService xmlTemplateService;
 
     /**
      * 查询模板列表
      */
     @Operation(summary = "查询xml模板列表")
-    @RequiresPermissions("vehicle:template:query")
+    @RequiresPermissions("xml:template:query")
     @GetMapping("/list")
     public AjaxResult list(XmlTemplate query) {
-        List<XmlTemplateVo> list = vehicleTemplateService.selectTemplateList(query);
+        List<XmlTemplateVo> list = xmlTemplateService.selectTemplateList(query);
         return AjaxResult.success(list);
     }
 
     @Operation(summary = "查询xml模板（不带分页）")
-    @RequiresPermissions("vehicle:template:query")
+    @RequiresPermissions("xml:template:query")
     @GetMapping("/optionselect")
     public AjaxResult optionselect() {
-        List<XmlTemplateVo> list = vehicleTemplateService.selectTemplateAll();
+        List<XmlTemplateVo> list = xmlTemplateService.selectTemplateAll();
         return AjaxResult.success(list);
     }
 
@@ -44,10 +44,10 @@ public class XmlTemplateController extends BaseController {
      * 查询模板详情
      */
     @Operation(summary = "查询xml模板详情")
-    @RequiresPermissions("vehicle:template:get")
+    @RequiresPermissions("xml:template:get")
     @GetMapping("/{templateId}")
     public AjaxResult getDetail(@PathVariable Long templateId) {
-        return AjaxResult.success(vehicleTemplateService.selectTemplateDetail(templateId));
+        return AjaxResult.success(xmlTemplateService.selectTemplateDetail(templateId));
     }
 
     /**
@@ -55,10 +55,10 @@ public class XmlTemplateController extends BaseController {
      */
     @Operation(summary = "新增xml模板")
     @Log(title = "XML模板管理", businessType = BusinessType.INSERT)
-    @RequiresPermissions("vehicle:template:add")
+    @RequiresPermissions("xml:template:add")
     @PostMapping
     public AjaxResult add(@RequestBody XmlTemplate template) {
-        return toAjax(vehicleTemplateService.insertTemplate(template));
+        return toAjax(xmlTemplateService.insertTemplate(template));
     }
 
     /**
@@ -66,10 +66,10 @@ public class XmlTemplateController extends BaseController {
      */
     @Operation(summary = "修改xml模板")
     @Log(title = "XML模板管理", businessType = BusinessType.UPDATE)
-    @RequiresPermissions("vehicle:template:edit")
+    @RequiresPermissions("xml:template:edit")
     @PutMapping
     public AjaxResult edit(@RequestBody XmlTemplate template) {
-        return toAjax(vehicleTemplateService.updateTemplate(template));
+        return toAjax(xmlTemplateService.updateTemplate(template));
     }
 
     /**
@@ -79,9 +79,15 @@ public class XmlTemplateController extends BaseController {
      */
     @Operation(summary = "批量删除xml模板")
     @Log(title = "XML模板管理", businessType = BusinessType.DELETE)
-    @RequiresPermissions("vehicle:template:delete")
+    @RequiresPermissions("xml:template:delete")
     @DeleteMapping("/{templateIds}")
     public AjaxResult remove(@PathVariable List<Long> templateIds) {
-        return toAjax(vehicleTemplateService.deleteTemplates(templateIds));
+        return toAjax(xmlTemplateService.deleteTemplates(templateIds));
+    }
+
+    @RequiresPermissions("xml:template:history")
+    @PostMapping("/history")
+    public AjaxResult historyVersion(@RequestBody XmlTemplate template) {
+        return AjaxResult.success(xmlTemplateService.historyVersion(template));
     }
 }

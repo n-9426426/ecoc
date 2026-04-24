@@ -192,11 +192,19 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
 
             // 精确匹配
             for (SysDictData d : list) {
+                if (d.getKeyMap() == null) {
+                    continue;
+                }
                 if (matches(d.getKeyMap(), jsonKey)) {
                     return d;
                 }
             }
-            return list.get(0);
+            for (SysDictData d : list) {
+                if (matches(d.getDictLabel(), jsonKey)) {
+                    return d;
+                }
+            }
+            return null;
         } catch (Exception e) {
             log.error("查询字典数据失败, error={}", e.getMessage(), e);
             return null;
@@ -206,9 +214,9 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
     /**
      * 字段匹配（null 或空表示通配）
      */
-    private boolean matches(String dictValue, String targetValue) {
-        if (dictValue == null || dictValue.trim().isEmpty()) return true;
-        return dictValue.trim().equals(targetValue);
+    private boolean matches(String key, String targetValue) {
+        if (key == null || key.trim().isEmpty()) return true;
+        return key.trim().equals(targetValue);
     }
 
     // ==========================================

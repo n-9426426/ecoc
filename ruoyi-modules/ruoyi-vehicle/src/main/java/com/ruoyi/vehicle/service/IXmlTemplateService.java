@@ -1,7 +1,6 @@
 package com.ruoyi.vehicle.service;
 
 
-
 import com.ruoyi.vehicle.domain.XmlTemplate;
 import com.ruoyi.vehicle.domain.vo.XmlTemplateVo;
 
@@ -25,4 +24,6 @@ public interface IXmlTemplateService {
     int deleteTemplates(List<Long> templateIds);
 
     List<XmlTemplateVo> selectTemplateAll();
+
+    List<XmlTemplate> historyVersion(XmlTemplate template);
 }

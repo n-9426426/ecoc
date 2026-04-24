@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -73,7 +74,10 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int insertTemplate(XmlTemplate template) {
-        template.setTemplateCode(UUID.randomUUID().toString().replace("-", ""));
+        if (template.getUuid() == null) {
+            template.setTemplateCode(UUID.randomUUID().toString().replace("-", ""));
+        }
+        template.setVersion("1.0");
         template.setDeleted(0);
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(new Date());
@@ -96,13 +100,12 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
             throw new ServiceException("模板不存在");
         }
 
-        // 2. 更新主表
-        template.setUpdateBy(SecurityUtils.getUsername());
-        template.setUpdateTime(new Date());
-        templateMapper.updateById(template);
-
-        // 3. 逻辑删除旧属性路径
-        attributeMapper.deleteByTemplateIds(Collections.singletonList(template.getTemplateId()));
+        template.setUuid(dbTemplate.getUuid());
+        template.setVersion(String.valueOf(new BigDecimal(template.getVersion()).add(new BigDecimal(1))));
+        template.setCreateBy(SecurityUtils.getUsername());
+        template.setCreateTime(new Date());
+        templateMapper.updateAllIsLast(dbTemplate.getUuid());
+        templateMapper.insert(template);
 
         // 4. 保存新属性树（全量替换）
         if (template.getAttributeTree() != null && !template.getAttributeTree().isEmpty()) {
@@ -147,6 +150,16 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
         // 1. 查询模板列表（XML中过滤 deleted=0）
         List<XmlTemplate> templateList = templateMapper.selectTemplateAll();
         return getXmlTemplateVos(templateList);
+    }
+
+    @Override
+    public List<XmlTemplate> historyVersion(XmlTemplate template) {
+        Long templateId = template.getTemplateId();
+        XmlTemplate xmlTemplate = templateMapper.selectById(templateId);
+        XmlTemplate query = new XmlTemplate();
+        query.setIsLast(0);
+        query.setUuid(xmlTemplate.getUuid());
+        return templateMapper.selectTemplateList(query);
     }
 
     private List<XmlTemplateVo> getXmlTemplateVos(List<XmlTemplate> templateList) {

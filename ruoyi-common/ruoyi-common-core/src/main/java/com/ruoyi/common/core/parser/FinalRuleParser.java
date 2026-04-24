@@ -17,8 +17,7 @@ import java.util.regex.Pattern;
 public class FinalRuleParser {
 
     // ===== 规则编号前缀 =====
-    private static final Pattern RULE_ID_PATTERN =
-            Pattern.compile("^R(\\w+)\\s*:\\s*(.*)$");
+    private static final Pattern RULE_ID_PATTERN = Pattern.compile("^R(\\w+)\\s*:\\s*(.*)$");
 
     // ===== 嵌套条件（最高优先级）=====
     // VALUE IS PRESENT IF ANY ... IF ALL ...
@@ -28,26 +27,49 @@ public class FinalRuleParser {
                     "VALUE\\s+(IS\\s+PRESENT|IS\\s+ABSENT|=\\s+/[^/]+/)\\s+IF\\s+ANY\\s+(.+?)\\s+IF\\s+ALL\\s+(.+)",
                     Pattern.CASE_INSENSITIVE);
 
+    // VALUE IS PRESENT IF @字段名 IS PRESENT
+    // VALUE IS PRESENT IF @字段名 IS ABSENT
+    private static final Pattern VALUE_IS_PRESENT_IF_REF_PATTERN =
+            Pattern.compile(
+                    "VALUE\\s+IS\\s+PRESENT\\s+IF\\s+@(\\w+)\\s+IS\\s+(PRESENT|ABSENT)",
+                    Pattern.CASE_INSENSITIVE);
+
+    // VALUE IS ABSENT IF @字段名 IS PRESENT
+    private static final Pattern VALUE_IS_ABSENT_IF_REF_PATTERN =
+            Pattern.compile(
+                    "VALUE\\s+IS\\s+ABSENT\\s+IF\\s+@(\\w+)\\s+IS\\s+(PRESENT|ABSENT)",
+                    Pattern.CASE_INSENSITIVE);
+
     // ===== 条件规则 =====
-    private static final Pattern MANDATORY_IF_ANY_PATTERN =
-            Pattern.compile("VALUE\\s+IS\\s+PRESENT\\s+IF\\s+ANY\\s+(.+)",
-                    Pattern.CASE_INSENSITIVE);
     private static final Pattern FORBIDDEN_IF_ALL_PATTERN =
-            Pattern.compile("VALUE\\s+IS\\s+ABSENT\\s+IF\\s+ALL\\s+(.+)",
+            Pattern.compile(
+                    "VALUE\\s+IS\\s+ABSENT\\s+IF\\s+ALL\\s+(.+)",
                     Pattern.CASE_INSENSITIVE);
+
     private static final Pattern MANDATORY_IF_ALL_PATTERN =
-            Pattern.compile("VALUE\\s+IS\\s+PRESENT\\s+IF\\s+ALL\\s+(.+)",
+            Pattern.compile(
+                    "VALUE\\s+IS\\s+PRESENT\\s+IF\\s+ALL\\s+(.+)",
+                    Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern FORBIDDEN_IF_ANY_PATTERN =
+            Pattern.compile(
+                    "VALUE\\s+IS\\s+ABSENT\\s+IF\\s+ANY\\s+(.+)",
+                    Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern MANDATORY_IF_ANY_PATTERN =
+            Pattern.compile(
+                    "VALUE\\s+IS\\s+PRESENT\\s+IF\\s+ANY\\s+(.+)",
                     Pattern.CASE_INSENSITIVE);
 
     // ===== 聚合函数 =====
     private static final Pattern COUNT_PATTERN =
             Pattern.compile(
-                    "COUNT\\s*\\(([^,]+),\\s*([^)]+)\\)\\s*(>=|<=|>|<|=|!=)\\s*(\\d+)",
+                    "COUNT\\s*\\(@?([^,]+?),\\s*@?([^)]+?)\\)\\s*(>=|<=|>|<|=|!=)\\s*(\\d+)",
                     Pattern.CASE_INSENSITIVE);
 
     private static final Pattern SUM_PATTERN =
             Pattern.compile(
-                    "SUM\\s*\\(([^,]+),\\s*([^)]+)\\)\\s*(>=|<=|>|<|=|!=)\\s*(VALUE|\\d+(?:\\.\\d+)?)",
+                    "SUM\\s*\\(@?([^,]+?),\\s*@?([^)]+?)\\)\\s*(>=|<=|>|<|=|!=)\\s*(VALUE|\\d+(?:\\.\\d+)?)",
                     Pattern.CASE_INSENSITIVE);
 
     // ===== 枚举 =====
@@ -82,6 +104,7 @@ public class FinalRuleParser {
         List<RuleItem> items = new ArrayList<>();
 
         if (ruleStr != null && !ruleStr.trim().isEmpty()) {
+            ruleStr = unescapeHtml(ruleStr);
             for (String line : ruleStr.split("\\n")) {
                 line = line.trim();
                 if (line.isEmpty()) continue;
@@ -92,8 +115,8 @@ public class FinalRuleParser {
 
         if (rangeStr != null && !rangeStr.trim().isEmpty()) {
             ValueRangeConstraint constraint = ValueRangeParser.parse(rangeStr);
-            RuleItem rangeItem = buildRangeRuleItem(constraint);
-            if (rangeItem != null) items.add(rangeItem);
+            List<RuleItem> rangeItems = buildRangeRuleItems(constraint);
+            if (!rangeItems.isEmpty()) items.addAll(rangeItems);
         }
 
         return items;
@@ -131,34 +154,30 @@ public class FinalRuleParser {
     private static RuleItem parseRuleBody(String body) {
 
         // 1. 嵌套条件：VALUE ... IF ANY ... IF ALL ...
-        Matcher m = NESTED_ANY_ALL_PATTERN.matcher(body);
+        RuleItem nestedItem = parseNestedAnyAll(body);
+        if (nestedItem != null) {
+            return nestedItem;
+        }
+
+        Matcher m = VALUE_IS_PRESENT_IF_REF_PATTERN.matcher(body);
         if (m.matches()) {
-            String opPart = m.group(1).trim();
-            String anyCond = m.group(2).trim();
-            String allCond = m.group(3).trim();
-
-            String operator;
-            String compareValue = null;
-            if (opPart.equalsIgnoreCase("IS PRESENT")) {
-                operator = "IS_PRESENT";
-            } else if (opPart.equalsIgnoreCase("IS ABSENT")) {
-                operator = "IS_ABSENT";
-            } else {
-                // = /regex/
-                operator = "REGEX";
-                compareValue = opPart.replaceAll("^=\\s*/|/$", "").trim();
-            }
-
-            NestedConditionRule nested = NestedConditionRule.builder()
-                    .operator(operator)
-                    .compareValue(compareValue)
-                    .anyChain(ConditionChain.parseAny(anyCond))
-                    .allChain(ConditionChain.parseAll(allCond))
-                    .build();
-
+            String refCondition = m.group(2).trim().toUpperCase();
             return RuleItem.builder()
-                    .type(RuleItemType.NESTED_CONDITION)
-                    .nestedCondition(nested)
+                    .type(RuleItemType.MANDATORY_IF)
+                    .refFieldName(m.group(1).trim())
+                    .refFieldCondition(refCondition)
+                    .compareValue(m.group(2).trim().toUpperCase())
+                    .build();
+        }
+
+        m = VALUE_IS_ABSENT_IF_REF_PATTERN.matcher(body);
+        if (m.matches()) {
+            String refCondition = m.group(2).trim().toUpperCase();
+            return RuleItem.builder()
+                    .type(RuleItemType.FORBIDDEN_IF)
+                    .refFieldName(m.group(1).trim())
+                    .refFieldCondition(refCondition)
+                    .compareValue(m.group(2).trim().toUpperCase())
                     .build();
         }
 
@@ -166,7 +185,7 @@ public class FinalRuleParser {
         m = MANDATORY_IF_ANY_PATTERN.matcher(body);
         if (m.matches()) {
             return RuleItem.builder()
-                    .type(RuleItemType.MANDATORY_IF)
+                    .type(RuleItemType.MANDATORY_IF_ANY)
                     .conditionChain(ConditionChain.parseAny(m.group(1).trim()))
                     .build();
         }
@@ -175,7 +194,7 @@ public class FinalRuleParser {
         m = FORBIDDEN_IF_ALL_PATTERN.matcher(body);
         if (m.matches()) {
             return RuleItem.builder()
-                    .type(RuleItemType.FORBIDDEN_IF)
+                    .type(RuleItemType.FORBIDDEN_IF_ALL)
                     .conditionChain(ConditionChain.parseAll(m.group(1).trim()))
                     .build();
         }
@@ -184,7 +203,17 @@ public class FinalRuleParser {
         m = MANDATORY_IF_ALL_PATTERN.matcher(body);
         if (m.matches()) {
             return RuleItem.builder()
-                    .type(RuleItemType.MANDATORY_IF)
+                    .type(RuleItemType.MANDATORY_IF_ALL)
+                    .conditionChain(ConditionChain.parseAll(m.group(1).trim()))
+                    .build();
+        }
+
+        // 3. FORBIDDEN_IF ANY
+        m = FORBIDDEN_IF_ANY_PATTERN.matcher(body);
+        if (m.matches()) {
+            String condition = m.group(1).trim().replace("@", "");
+            return RuleItem.builder()
+                    .type(RuleItemType.FORBIDDEN_IF_ANY)
                     .conditionChain(ConditionChain.parseAll(m.group(1).trim()))
                     .build();
         }
@@ -192,12 +221,16 @@ public class FinalRuleParser {
         // 5. COUNT
         m = COUNT_PATTERN.matcher(body);
         if (m.matches()) {
+            String listField = m.group(1).trim().replace("@", "");
+            String targetField = m.group(2).trim().replace("@", "");
+            String operator = m.group(3).trim();
+            String thresholdStr = m.group(4).trim();
             AggregateFunction af = AggregateFunction.builder()
                     .functionType(AggregateFunction.Type.COUNT)
-                    .listField(m.group(1).trim())
-                    .condition(m.group(2).trim())
-                    .operator(com.ruoyi.common.core.enums.CompareOperator.fromSymbol(m.group(3)))
-                    .threshold(Double.parseDouble(m.group(4)))
+                    .listField(listField)
+                    .condition(targetField)
+                    .operator(com.ruoyi.common.core.enums.CompareOperator.fromSymbol(operator))
+                    .threshold(Double.parseDouble(thresholdStr))
                     .build();
             return RuleItem.builder()
                     .type(RuleItemType.COUNT_AGGREGATE)
@@ -208,14 +241,17 @@ public class FinalRuleParser {
         // 6. SUM
         m = SUM_PATTERN.matcher(body);
         if (m.matches()) {
-            String thresholdStr = m.group(4);
+            String listField = m.group(1).trim().replace("@", "");
+            String targetField = m.group(2).trim().replace("@", "");
+            String operator = m.group(3).trim();
+            String thresholdStr = m.group(4).trim();
             Double threshold = "VALUE".equalsIgnoreCase(thresholdStr)
                     ? null : Double.parseDouble(thresholdStr);
             AggregateFunction af = AggregateFunction.builder()
                     .functionType(AggregateFunction.Type.SUM)
-                    .listField(m.group(1).trim())
-                    .field(m.group(2).trim())
-                    .operator(com.ruoyi.common.core.enums.CompareOperator.fromSymbol(m.group(3)))
+                    .listField(listField)
+                    .field(targetField)
+                    .operator(com.ruoyi.common.core.enums.CompareOperator.fromSymbol(operator))
                     .threshold(threshold)
                     .build();
             return RuleItem.builder()
@@ -292,31 +328,138 @@ public class FinalRuleParser {
     /**
      * 将 ValueRangeConstraint 转换为 RuleItem
      */
-    private static RuleItem buildRangeRuleItem(ValueRangeConstraint c) {
-        if (c == null) return null;
+    public static List<RuleItem> buildRangeRuleItems(ValueRangeConstraint c) {
+        List<RuleItem> items = new ArrayList<>();
+        if (c == null) return items;
 
-        RuleItemType type;
+        // 1. 数值范围
         if (c.getMin() != null || c.getMax() != null) {
-            type = RuleItemType.NUMERIC_RANGE;
-        } else if (c.getMinLength() != null && c.getMaxLength() != null) {
-            type = RuleItemType.LENGTH_RANGE;
+            items.add(RuleItem.builder()
+                    .type(RuleItemType.NUMERIC_RANGE)
+                    .rangeMin(c.getMin())
+                    .rangeMax(c.getMax())
+                    .rawRule(c.toString())
+                    .build());
+        }
+
+        // 2. totalDigits
+        if (c.getTotalDigits() != null) {
+            items.add(RuleItem.builder()
+                    .type(RuleItemType.TOTAL_DIGITS)
+                    .totalDigits(c.getTotalDigits())
+                    .rawRule(c.toString())
+                    .build());
+        }
+
+        // 3. fractionDigits
+        if (c.getFractionDigits() != null) {
+            items.add(RuleItem.builder()
+                    .type(RuleItemType.FRACTION_DIGITS)
+                    .fractionDigits(c.getFractionDigits())
+                    .rawRule(c.toString())
+                    .build());
+        }
+
+        // 4. 长度约束
+        if (c.getMinLength() != null && c.getMaxLength() != null) {
+            items.add(RuleItem.builder()
+                    .type(RuleItemType.LENGTH_RANGE)
+                    .minLength(c.getMinLength())
+                    .maxLength(c.getMaxLength())
+                    .rawRule(c.toString())
+                    .build());
         } else if (c.getMaxLength() != null) {
-            type = RuleItemType.MAX_LENGTH;
+            items.add(RuleItem.builder()
+                    .type(RuleItemType.MAX_LENGTH)
+                    .maxLength(c.getMaxLength())
+                    .rawRule(c.toString())
+                    .build());
         } else if (c.getMinLength() != null) {
-            type = RuleItemType.MIN_LENGTH;
-        } else if (c.getTotalDigits() != null) {
-            type = RuleItemType.TOTAL_DIGITS;
-        } else if (c.getFractionDigits() != null) {
-            type = RuleItemType.FRACTION_DIGITS;
-        } else {
+            items.add(RuleItem.builder()
+                    .type(RuleItemType.MIN_LENGTH)
+                    .minLength(c.getMinLength())
+                    .rawRule(c.toString())
+                    .build());
+        }
+
+        return items;
+    }
+
+    private static String unescapeHtml(String str) {
+        if (str == null) return null;
+        return str
+                .replace("&gt;",  ">")
+                .replace("&lt;",  "<")
+                .replace("&amp;", "&")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'");
+    }
+
+    private static RuleItem parseNestedAnyAll(String body) {
+        // Step 1: 匹配开头 "VALUE ... IF ANY"
+        Pattern startPattern = Pattern.compile(
+                "^VALUE\\s+(IS\\s+PRESENT|IS\\s+ABSENT|=\\s+/[^/]+/)\\s+IF\\s+ANY\\s*",
+                Pattern.CASE_INSENSITIVE);
+        Matcher startMatcher = startPattern.matcher(body);
+        if (!startMatcher.find()) {
+            return null;
+        }
+        String opPart = startMatcher.group(1).trim();
+        int afterAnyPos = startMatcher.end();
+
+        // Step 2: 从 afterAnyPos 开始，寻找 " IF ALL "（注意前后空格）
+        String rest = body.substring(afterAnyPos);
+        int allIndex = findIfAllIndex(rest);
+        if (allIndex == -1) {
             return null;
         }
 
-        return RuleItem.builder()
-                .type(type)
-                .rangeMin(c.getMin())
-                .rangeMax(c.getMax())
-                .rawRule(c.toString())
+        String anyCond = rest.substring(0, allIndex).trim();
+        String allCond = rest.substring(allIndex + " IF ALL ".length()).trim(); // 跳过 " IF ALL "
+
+        // Step 3: 解析 operator
+        String operator;
+        String compareValue = null;
+        if (opPart.equalsIgnoreCase("IS PRESENT")) {
+            operator = "IS_PRESENT";
+        } else if (opPart.equalsIgnoreCase("IS ABSENT")) {
+            operator = "IS_ABSENT";
+        } else {
+            operator = "REGEX";
+            compareValue = opPart.replaceAll("^=\\s*/|/$", "").trim();
+        }
+
+        // Step 4: 构建条件链（关键：允许逗号分隔的多条件）
+        ConditionChain anyChain = ConditionChain.parseAny(anyCond);
+        ConditionChain allChain = ConditionChain.parseAll(allCond);
+
+        NestedConditionRule nested = NestedConditionRule.builder()
+                .operator(operator)
+                .compareValue(compareValue)
+                .anyChain(anyChain)
+                .allChain(allChain)
                 .build();
+
+        return RuleItem.builder()
+                .type(RuleItemType.NESTED_CONDITION)
+                .nestedCondition(nested)
+                .build();
+    }
+
+    // 辅助方法：安全查找 " IF ALL "（支持前后空格、大小写）
+    private static int findIfAllIndex(String str) {
+        // 优先匹配 " IF ALL "（带空格）
+        int idx = str.indexOf(" IF ALL ");
+        if (idx != -1) return idx;
+        // 次匹配 "IF ALL"（无空格，但需边界）
+        idx = str.indexOf("IF ALL");
+        if (idx > 0 && idx < str.length() - 8) {
+            char before = str.charAt(idx - 1);
+            char after = str.charAt(idx + 8);
+            if (Character.isWhitespace(before) && Character.isWhitespace(after)) {
+                return idx;
+            }
+        }
+        return -1;
     }
 }

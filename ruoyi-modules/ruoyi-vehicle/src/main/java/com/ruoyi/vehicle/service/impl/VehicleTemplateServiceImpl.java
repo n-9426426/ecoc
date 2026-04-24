@@ -86,8 +86,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
     @Override
     public List<VehicleTemplate> selectVehicleTemplateExpiringList() {
-        List<VehicleTemplate> vehicleTemplates = templateMapper.selectExpiringTemplates();
-        return vehicleTemplates;
+        return templateMapper.selectExpiringTemplates();
     }
 
     @Override

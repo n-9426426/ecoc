@@ -27,6 +27,10 @@ public class VehicleDto implements Serializable {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date issueDate;
 
+    private String engineNumber;
+
+    private String motorNumber;
+
     private String username;
 
     private String password;

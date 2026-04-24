@@ -22,8 +22,13 @@ public enum RuleItemType {
     VALUE_COMPARE,          // VALUE >= x, VALUE = x 等
 
     // ===== 条件触发 =====
-    MANDATORY_IF,           // VALUE IS PRESENT IF ANY ...
-    FORBIDDEN_IF,           // VALUE IS ABSENT IF ALL ...
+    MANDATORY_IF,           // VALUE IS PRESENT IF @fieldName IS PRESENT/ABSENT（单字段引用）
+    FORBIDDEN_IF,           // VALUE IS ABSENT IF @fieldName IS PRESENT/ABSENT（单字段引用）
+
+    MANDATORY_IF_ANY,       // VALUE IS PRESENT IF ANY @field = value（任一满足则必填）
+    MANDATORY_IF_ALL,       // VALUE IS PRESENT IF ALL @field = value（全部满足则必填）
+    FORBIDDEN_IF_ALL,       // VALUE IS ABSENT IF ALL @field = value（全部满足则禁填）
+    FORBIDDEN_IF_ANY,       // VALUE IS ABSENT IF ANY @field = value（任一满足则禁填）
 
     // ===== 聚合 =====
     COUNT_AGGREGATE,        // COUNT(list, cond) >= n
@@ -38,5 +43,6 @@ public enum RuleItemType {
     MIN_LENGTH,             // minLength=x
     MAX_LENGTH,             // maxLength=x
     TOTAL_DIGITS,           // totalDigits=n
-    FRACTION_DIGITS         // fractionDigits=n
+    FRACTION_DIGITS,         // fractionDigits=n
+    NULL
 }

@@ -35,6 +35,14 @@ public class RuleItem {
     /** 数值范围最大值（NUMERIC_RANGE 用） */
     private Double rangeMax;
 
+    private Integer minLength;
+
+    private Integer maxLength;
+
+    private Integer totalDigits;
+
+    private Integer fractionDigits;
+
     /** 枚举值列表（VALUE_IN 用） */
     private List<String> enumValues;
 
@@ -58,4 +66,10 @@ public class RuleItem {
 
     /** 自定义中文错误提示 */
     private String errorMessageZh;
+
+    /** @字段名引用（不含@符号） */
+    private String refFieldName;
+
+    /** 引用字段的期望状态：PRESENT 或 ABSENT */
+    private String refFieldCondition;
 }
