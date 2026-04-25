@@ -174,8 +174,7 @@ public class XmlController extends BaseController {
     @Log(title = "XML文件管理", businessType = BusinessType.VALIDATION)
     @GetMapping("/validate/{id}")
     public AjaxResult validate(@PathVariable Long id) {
-        boolean isValid = xmlFileService.validateXml(id);
-        return isValid ? success("校验通过") : error("校验失败，XML格式不正确");
+        return AjaxResult.success(xmlFileService.validateXml(id));
     }
 
     /**

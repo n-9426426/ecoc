@@ -1,5 +1,6 @@
 package com.ruoyi.vehicle.service;
 
+import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.vehicle.domain.XmlFile;
 import com.ruoyi.vehicle.domain.vo.DiffResultVO;
@@ -59,7 +60,7 @@ public interface IXmlFileService {
     /**
      * 校验XML文件
      */
-    boolean validateXml(Long id);
+    ValidationReport validateXml(Long id);
 
     /**
      * 从数据库生成XML文件

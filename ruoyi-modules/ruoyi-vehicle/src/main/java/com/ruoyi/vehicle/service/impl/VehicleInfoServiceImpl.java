@@ -251,4 +251,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         }
         insertVehicleInfo(vehicleInfo);
     }
+
+    @Override
+    public VehicleInfo selectVehicleInfoByVin(String vin) {
+        return vehicleInfoMapper.selectVehicleInfoByVin(vin);
+    }
 }

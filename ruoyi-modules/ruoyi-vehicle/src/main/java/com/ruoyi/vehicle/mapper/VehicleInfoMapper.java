@@ -75,7 +75,9 @@ public interface VehicleInfoMapper {
      */
     public int permanentlyDeleteVehicleInfoById(Long vehicleId);
 
-    VehicleInfo selectVehicleInfoByWvtaNo(String vin);
+    VehicleInfo selectVehicleInfoByWvtaNo(@Param("wvtaNo") String wvtaNo);
 
     int updateStatus( @Param("updateBy") String updateBy, @Param("vehicleId") Long vehicleId, @Param("status") Integer status);
+
+    VehicleInfo selectVehicleInfoByVin(@Param("vin") String vin);
 }

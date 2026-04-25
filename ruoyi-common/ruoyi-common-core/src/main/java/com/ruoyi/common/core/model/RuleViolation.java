@@ -1,5 +1,6 @@
 package com.ruoyi.common.core.model;
 
+import com.ruoyi.common.core.enums.RuleItemType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -31,4 +32,6 @@ public class RuleViolation {
 
     /** 原始规则字符串 */
     private String rawRule;
+
+    private RuleItemType ruleType;
 }

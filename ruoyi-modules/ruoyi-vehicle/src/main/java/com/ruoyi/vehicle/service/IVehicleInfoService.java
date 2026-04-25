@@ -77,4 +77,6 @@ public interface IVehicleInfoService {
     public List<ValidationReport> validateVehicleInfo(List<Long> vehicleInfoId);
 
     void getVehicleInfoFromMes(VehicleDto vehicleDto);
+
+    VehicleInfo selectVehicleInfoByVin(String vin);
 }

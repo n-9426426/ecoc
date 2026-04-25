@@ -497,6 +497,7 @@ public class FinalRuleExecutor {
                 .messageEn(rule.getErrorMessageEn() != null ? rule.getErrorMessageEn() : messageEn)
                 .messageZh(rule.getErrorMessageZh() != null ? rule.getErrorMessageZh() : messageZh)
                 .rawRule(rule.getRawRule())
+                .ruleType(rule.getType())
                 .build();
     }
 }
