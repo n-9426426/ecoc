@@ -92,6 +92,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
     @Autowired
     private XmlTemplateAttributeMapper xmlTemplateAttributeMapper;
 
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+
     /**
      * 查询XML文件列表
      */
@@ -634,7 +636,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
 
             // 回写校验结果
-            xmlFile.setValidateResult(validateResult ? 1 : 0);
+            xmlFile.setValidateResult(validateResult ? 1 : 2);
+            xmlFile.setUploadResult(validateResult ? "2" : "1");
+            xmlFile.setValidationReportJson(objectMapper.writeValueAsString(finalReport));
             xmlFileMapper.updateXmlFile(xmlFile);
 
             // 记录生命周期

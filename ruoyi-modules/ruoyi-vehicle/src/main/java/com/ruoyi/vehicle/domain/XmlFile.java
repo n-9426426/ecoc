@@ -100,4 +100,6 @@ public class XmlFile extends BaseEntity {
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date createdEndTime;
+
+    private String validationReportJson;
 }

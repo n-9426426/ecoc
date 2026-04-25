@@ -30,6 +30,7 @@
         <result property="uploadDate" column="upload_date"/>
         <result property="issueDate" column="issue_date"/>
         <result property="validateResult" column="validate_result"/>
+        <result property="validationReportJson" column="validation_report_json"/>
     </resultMap>
 
     <sql id="selectXmlFileVo">
@@ -38,7 +39,8 @@
                xl.pdf_path, xl.status, xl.deleted, xl.create_by, xl.create_time, xl.update_by,
                xl.update_time, xl.remark, xl.xml_template_id, xl.model_code, xl.factory_code,
                xl.vehicle_material_no, xl.country, xl.upload_result, xl.upload_date, xl.issue_date,
-               xl.validate_result,xt.template_name xml_template_name, sdd.dict_label model_name
+               xl.validate_result,xt.template_name xml_template_name, xl.validation_report_json,
+               sdd.dict_label model_name
         from xml_file xl
         left join xml_template xt on xl.xml_template_id = xt.template_id
         left join sys_dict_data sdd on sdd.dict_value = xl.model_code
@@ -155,6 +157,7 @@
             <if test="uploadDate != null">upload_date,</if>
             <if test="issueDate != null">issue_date,</if>
             <if test="validateResult != null">validate_result,</if>
+            <if test="validationReportJson">validation_report_json,</if>
             create_time
         </trim>
         <trim prefix="values (" suffix=")" suffixOverrides=",">
@@ -177,6 +180,7 @@
             <if test="uploadDate != null">#{uploadDate},</if>
             <if test="issueDate != null">#{issueDate},</if>
             <if test="validateResult != null">#{validateResult},</if>
+            <if test="validationReportJson != null and validationReportJson != ''">#{validationReportJson},</if>
             sysdate()
         </trim>
     </insert>
@@ -202,6 +206,7 @@
             <if test="uploadDate != null">upload_date = #{uploadDate},</if>
             <if test="issueDate != null">issue_date = #{issueDate},</if>
             <if test="validateResult != null">validate_result = #{validateResult},</if>
+            <if test="validationReportJson != null and validationReportJson != ''">validation_report_json = #{validationReportJson},</if>
             update_time = sysdate()
         </trim>
         where id = #{id}
