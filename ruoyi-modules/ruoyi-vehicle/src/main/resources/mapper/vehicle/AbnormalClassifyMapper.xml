@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ruoyi.vehicle.mapper.AbnormalClassifyMapper">
+
+    <!-- 结果集映射 -->
+    <resultMap id="BaseResultMap" type="com.ruoyi.vehicle.domain.AbnormalClassify">
+        <id column="id" property="id"/>
+        <result column="entry_id"   property="entryId"/>
+        <result column="entry_type" property="entryType"/>
+        <result column="rule_type"  property="ruleType"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <!-- 通用列-->
+    <sql id="Base_Column_List">
+        select id, entry_id, entry_type, rule_type, create_time
+        from abnormal_classify
+    </sql>
+
+    <!-- 批量插入 -->
+    <insert id="batchInsert" parameterType="java.util.List">
+        INSERT INTO `abnormal_classify`
+        (
+        `entry_id`,
+        `entry_type`,
+        `rule_type`,
+        `create_time`
+        )
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (
+            #{item.entryId},
+            #{item.entryType},
+            #{item.ruleType},
+            sysdate()
+            )
+        </foreach>
+    </insert>
+
+    <select id="selectByCondition"
+            parameterType="com.ruoyi.vehicle.domain.AbnormalClassify"
+            resultMap="BaseResultMap">
+        <include refid="Base_Column_List"/>
+        <where>
+            <if test="entryType != null and entryType != ''">
+                AND entry_type = #{entryType}
+            </if>
+            <if test="ruleType != null and ruleType != ''">
+                AND rule_type = #{ruleType}
+            </if>
+            <!-- Date类型只判断null，切勿加 != ''的判断 -->
+            <if test="createTimeStart != null">
+                AND create_time &gt;= #{createTimeStart}
+            </if>
+            <if test="createTimeEnd != null">
+                AND create_time &lt;= #{createTimeEnd}
+            </if>
+        </where>
+        ORDER BY create_time DESC
+    </select>
+
+</mapper>

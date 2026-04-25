@@ -281,4 +281,103 @@
         WHERE vl.vin = #{vin}
           AND vl.deleted = 0
     </select>
+
+    <resultMap type="com.ruoyi.vehicle.domain.vo.AbnormalStatisticsVo" id="AbnormalStatisticsVo">
+        <result property="count" column="count"/>
+        <result property="abnormal" column="abnormal"/>
+    </resultMap>
+
+    <select id="selectStatisticsAbnormal" resultMap="AbnormalStatisticsVo">
+        SELECT
+        ac.rule_type AS abnormal,
+        COUNT(*)     AS count
+        FROM abnormal_classify ac
+        <choose>
+            <!-- ① Vehicle Template -->
+            <when test="abnormalType == 'Vehicle Template'">
+                INNER JOIN xml_template xt
+                ON ac.entry_id    = CAST(xt.template_id AS CHAR)
+                AND ac.entry_type = 'Vehicle Template'
+                WHERE xt.deleted = 0
+                <if test="startTime != null">
+                    AND xt.create_time &gt;= #{startTime}
+                </if>
+                <if test="endTime != null">
+                    AND xt.create_time &lt; #{endTime}
+                </if>
+                <if test="vehicleModel != null">
+                    AND xt.template_id = #{vehicleModel}
+                </if>
+                <!-- issueStartTime / issueEndTime / factoryCode / country / uploadStatus:
+                     xml_template 表无对应字段，不适用 -->
+            </when>
+
+            <!-- ② Vehicle Info -->
+            <when test="abnormalType == 'Vehicle Info'">
+                INNER JOIN vehicle_info vi
+                ON ac.entry_id    = CAST(vi.id AS CHAR)
+                AND ac.entry_type = 'Vehicle Info'
+                WHERE vi.deleted = 0
+                <if test="startTime != null">
+                    AND vi.create_time &gt;= #{startTime}
+                </if>
+                <if test="endTime != null">
+                    AND vi.create_time &lt; #{endTime}
+                </if>
+                <if test="issueStartTime != null">
+                    AND vi.issue_date &gt;= #{issueStartTime}
+                </if>
+                <if test="issueEndTime != null">
+                    AND vi.issue_date &lt; #{issueEndTime}
+                </if>
+                <if test="factoryCode != null and factoryCode != ''">
+                    AND vi.factory_code = #{factoryCode}
+                </if>
+                <if test="vehicleModel != null">
+                    AND vi.vehicle_model = #{vehicleModel}
+                </if>
+                <if test="country != null and country != ''">
+                    AND vi.country like concat('%',#{country},'%')
+                </if>
+                <if test="uploadStatus != null">
+                    AND vi.upload_status = #{uploadStatus}
+                </if>
+            </when>
+
+            <!-- ③ XML File（默认） -->
+            <otherwise>
+                INNER JOIN xml_file xf
+                ON ac.entry_id    = CAST(xf.id AS CHAR)
+                AND ac.entry_type = 'XML File'
+                WHERE xf.deleted = 0
+                AND xf.is_latest = 1
+                <if test="startTime != null">
+                    AND xf.create_time &gt;= #{startTime}
+                </if>
+                <if test="endTime != null">
+                    AND xf.create_time &lt; #{endTime}
+                </if>
+                <if test="issueStartTime != null">
+                    AND xf.issue_date &gt;= #{issueStartTime}
+                </if>
+                <if test="issueEndTime != null">
+                    AND xf.issue_date &lt; #{issueEndTime}
+                </if>
+                <if test="factoryCode != null and factoryCode != ''">
+                    AND xf.factory_code = #{factoryCode}
+                </if>
+                <if test="vehicleModel != null">
+                    AND xf.model_code = #{vehicleModel}
+                </if>
+                <if test="country != null and country != ''">
+                    AND xf.country like concat('%',#{country},'%')
+                </if>
+                <if test="uploadStatus != null">
+                    AND xf.upload_result = #{uploadStatus}
+                </if>
+            </otherwise>
+        </choose>
+        GROUP BY ac.rule_type
+        ORDER BY count DESC
+    </select>
 </mapper>

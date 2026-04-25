@@ -79,16 +79,16 @@
 			<if test="country != null and country != ''">
 				AND country like concat('%', #{country}, '%')
 			</if>
-			<if test="issueDateBeginTime != null and issueDateBeginTime != ''">
+			<if test="issueDateBeginTime != null">
 				AND date_format(issue_date,'%y%m%d') &gt;= date_format(#{issueDateBeginTime},'%y%m%d')
 			</if>
-			<if test="issueDateEndTime != null and issueDateEndTime != ''">
+			<if test="issueDateEndTime != null">
 				AND date_format(issue_date,'%y%m%d') &lt;= date_format(#{issueDateEndTime},'%y%m%d')
 			</if>
-			<if test="createdBeginTime != null and createdBeginTime != ''">
+			<if test="createdBeginTime != null">
 				AND date_format(create_time,'%y%m%d') &gt;= date_format(#{createdBeginTime},'%y%m%d')
 			</if>
-			<if test="createdEndTime != null and createdEndTime != ''">
+			<if test="createdEndTime != null">
 				AND date_format(create_time,'%y%m%d') &lt;= date_format(#{createdEndTime},'%y%m%d')
 			</if>
 			<if test="wvtaNo != null and wvtaNo != ''">

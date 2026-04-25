@@ -92,22 +92,22 @@
             <if test="uploadResult != null and uploadResult != ''">
                 AND xl.upload_result = #{uploadResult}
             </if>
-            <if test="uploadDateBeginTime != null and uploadDateBeginTime != ''">
+            <if test="uploadDateBeginTime != null">
                 AND date_format(upload_date,'%y%m%d') &gt;= date_format(#{uploadDateBeginTime},'%y%m%d')
             </if>
-            <if test="uploadDateEndTime != null and uploadDateEndTime != ''">
+            <if test="uploadDateEndTime != null">
                 AND date_format(upload_date,'%y%m%d') &lt;= date_format(#{uploadDateEndTime},'%y%m%d')
             </if>
-            <if test="issueDateBeginTime != null and issueDateBeginTime != ''">
+            <if test="issueDateBeginTime != null">
                 AND date_format(issue_date,'%y%m%d') &gt;= date_format(#{issueDateBeginTime},'%y%m%d')
             </if>
-            <if test="issueDateEndTime != null and issueDateEndTime != ''">
+            <if test="issueDateEndTime != null">
                 AND date_format(issue_date,'%y%m%d') &lt;= date_format(#{issueDateEndTime},'%y%m%d')
             </if>
-            <if test="createdStartTime != null and createdStartTime != ''">
+            <if test="createdStartTime != null">
                 AND date_format(create_time,'%y%m%d') &gt;= date_format(#{createdStartTime},'%y%m%d')
             </if>
-            <if test="createdEndTime != null and createdEndTime != ''">
+            <if test="createdEndTime != null">
                 AND date_format(create_time,'%y%m%d') &lt;= date_format(#{createdEndTime},'%y%m%d')
             </if>
             <if test="validateResult != null">

@@ -3,10 +3,7 @@ package com.ruoyi.vehicle.service.impl;
 import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.vehicle.domain.VehicleLifecycle;
 import com.ruoyi.vehicle.domain.dto.ChartDataStatisticsDto;
-import com.ruoyi.vehicle.domain.vo.CalendarDayVo;
-import com.ruoyi.vehicle.domain.vo.ChartDataXmlTotalVo;
-import com.ruoyi.vehicle.domain.vo.VehicleModelVo;
-import com.ruoyi.vehicle.domain.vo.VinCalendarVo;
+import com.ruoyi.vehicle.domain.vo.*;
 import com.ruoyi.vehicle.mapper.ChartDataMapper;
 import com.ruoyi.vehicle.mapper.VehicleLifecycleMapper;
 import com.ruoyi.vehicle.service.IChartDataService;
@@ -206,5 +203,11 @@ public class ChartDataServiceImpl implements IChartDataService {
         }
 
         return result;
+    }
+
+    @Override
+    public  List<AbnormalStatisticsVo> statisticsAbnormal(ChartDataStatisticsDto statisticsDto) {
+        initChartDataStatisticsDtoDate(statisticsDto);
+        return chartDataMapper.selectStatisticsAbnormal(statisticsDto);
     }
 }

@@ -51,7 +51,7 @@ public class ChartDataController extends BaseController {
     @Operation(summary = "报表统计面板")
     @PostMapping("/statistics/abnormal")
     public AjaxResult statisticsAbnormal(@RequestBody ChartDataStatisticsDto statisticsDto) {
-        return AjaxResult.error("暂未实现");
+        return AjaxResult.success(chartDataService.statisticsAbnormal(statisticsDto));
     }
 
     @Operation(summary = "XML统计")

@@ -1,6 +1,9 @@
 package com.ruoyi.vehicle.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ruoyi.common.core.enums.RuleItemType;
+import com.ruoyi.common.core.model.FieldValidationResult;
+import com.ruoyi.common.core.model.RuleViolation;
 import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.uuid.UUID;
@@ -8,8 +11,10 @@ import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.RemoteFileService;
 import com.ruoyi.system.api.domain.SysDictData;
+import com.ruoyi.vehicle.domain.AbnormalClassify;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.domain.VehicleTemplateMaterial;
+import com.ruoyi.vehicle.mapper.AbnormalClassifyMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMaterialMapper;
 import com.ruoyi.vehicle.service.IVehicleTemplateService;
@@ -76,8 +81,12 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
     private final Map<String, Sinks.Many<ServerSentEvent<String>>> sinks = new ConcurrentHashMap<>();
+
     @Autowired
     private RemoteDictService remoteDictService;
+
+    @Autowired
+    private AbnormalClassifyMapper abnormalClassifyMapper;
 
     @Override
     public List<VehicleTemplate> selectVehicleTemplateList(VehicleTemplate template) {
@@ -164,6 +173,8 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
         List<ValidationReport> reports = new ArrayList<>();
         List<VehicleTemplate> updateList = new ArrayList<>();
+        List<AbnormalClassify> abnormalClassifies = new ArrayList<>();
+        AbnormalClassify abnormalClassify;
 
         for (Long templateId : templateIds) {
             try {
@@ -179,6 +190,16 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                         template.getVehicleType(),
                         null
                 );
+
+                for (FieldValidationResult fieldValidationResult: report.getFieldResults()) {
+                    for (RuleViolation ruleViolation: fieldValidationResult.getViolations()) {
+                        abnormalClassify = new AbnormalClassify();
+                        abnormalClassify.setEntryId(String.valueOf(templateId));
+                        abnormalClassify.setEntryType("Vehicle Template");
+                        abnormalClassify.setRuleType(RuleItemType.getRuleType(ruleViolation.getRuleType()));
+                        abnormalClassifies.add(abnormalClassify);
+                    }
+                }
 
                 reports.add(report);
 
@@ -199,6 +220,10 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                         .allValid(false)
                         .error("校验异常：" + e.getMessage()).build());
             }
+        }
+
+        if (!abnormalClassifies.isEmpty()) {
+            abnormalClassifyMapper.batchInsert(abnormalClassifies);
         }
 
         // 批量回写校验结果

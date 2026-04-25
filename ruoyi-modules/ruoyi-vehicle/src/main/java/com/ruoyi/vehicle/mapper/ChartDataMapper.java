@@ -1,6 +1,7 @@
 package com.ruoyi.vehicle.mapper;
 
 import com.ruoyi.vehicle.domain.dto.ChartDataStatisticsDto;
+import com.ruoyi.vehicle.domain.vo.AbnormalStatisticsVo;
 import com.ruoyi.vehicle.domain.vo.ChartDataXmlTotalVo;
 import com.ruoyi.vehicle.domain.vo.VehicleModelVo;
 import org.apache.ibatis.annotations.Param;
@@ -30,4 +31,6 @@ public interface ChartDataMapper {
     Integer selectStatisticsXmlRejectNumber(ChartDataStatisticsDto statisticsDto);
 
     List<ChartDataXmlTotalVo> selectStatisticsTrend(ChartDataStatisticsDto statisticsDto);
+
+    List<AbnormalStatisticsVo> selectStatisticsAbnormal(ChartDataStatisticsDto statisticsDto);
 }

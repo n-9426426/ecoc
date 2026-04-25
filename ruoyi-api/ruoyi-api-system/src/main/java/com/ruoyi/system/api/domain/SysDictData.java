@@ -60,6 +60,8 @@ public class SysDictData extends BaseEntity
 
     private Boolean isVehicle = true;
 
+    private String keyMapJson;
+
     public Long getDictCode()
     {
         return dictCode;
@@ -246,5 +248,13 @@ public class SysDictData extends BaseEntity
 
     public void setIsVehicle(Boolean isVehicle) {
         this.isVehicle = isVehicle;
+    }
+
+    public String getKeyMapJson() {
+        return keyMapJson;
+    }
+
+    public void setKeyMapJson(String keyMapJson) {
+        this.keyMapJson = keyMapJson;
     }
 }

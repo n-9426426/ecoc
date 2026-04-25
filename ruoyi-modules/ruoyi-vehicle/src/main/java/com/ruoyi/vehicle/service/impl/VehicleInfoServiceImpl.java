@@ -2,6 +2,9 @@ package com.ruoyi.vehicle.service.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ruoyi.common.core.enums.RuleItemType;
+import com.ruoyi.common.core.model.FieldValidationResult;
+import com.ruoyi.common.core.model.RuleViolation;
 import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.StringUtils;
@@ -11,9 +14,11 @@ import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.SysDictData;
+import com.ruoyi.vehicle.domain.AbnormalClassify;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.VehicleLifecycle;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
+import com.ruoyi.vehicle.mapper.AbnormalClassifyMapper;
 import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
 import com.ruoyi.vehicle.mapper.VehicleLifecycleMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMaterialMapper;
@@ -54,6 +59,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Autowired
     private VehicleLifecycleMapper vehicleLifecycleMapper;
+
+    @Autowired
+    private AbnormalClassifyMapper abnormalClassifyMapper;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -203,6 +211,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     @Transactional(rollbackFor = Exception.class)
     public List<ValidationReport> validateVehicleInfo(List<Long> vehicleInfoIds) {
         List<ValidationReport> validationReports = new LinkedList<>();
+        List<AbnormalClassify> abnormalClassifies = new ArrayList<>();
+        AbnormalClassify abnormalClassify;
         for (Long vehicleInfoId : vehicleInfoIds) {
             VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleInfoId);
             List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_attribute").getData();
@@ -230,6 +240,20 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             vehicleLifecycle.setOperate("1");
             vehicleLifecycle.setResult(validationReport.isAllValid() ? 0 : 1);
             vehicleLifecycleMapper.insert(vehicleLifecycle);
+
+            for (FieldValidationResult fieldValidationResult: validationReport.getFieldResults()) {
+                for (RuleViolation ruleViolation: fieldValidationResult.getViolations()) {
+                    abnormalClassify = new AbnormalClassify();
+                    abnormalClassify.setEntryId(String.valueOf(vehicleInfoId));
+                    abnormalClassify.setEntryType("Vehicle Info");
+                    abnormalClassify.setRuleType(RuleItemType.getRuleType(ruleViolation.getRuleType()));
+                    abnormalClassifies.add(abnormalClassify);
+                }
+            }
+        }
+
+        if (!abnormalClassifies.isEmpty()) {
+            abnormalClassifyMapper.batchInsert(abnormalClassifies);
         }
 
         return validationReports;

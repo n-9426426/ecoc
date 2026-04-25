@@ -1,6 +1,7 @@
 package com.ruoyi.vehicle.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ruoyi.common.core.enums.RuleItemType;
 import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.model.FieldValidationResult;
 import com.ruoyi.common.core.model.RuleViolation;
@@ -91,6 +92,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     @Autowired
     private XmlTemplateAttributeMapper xmlTemplateAttributeMapper;
+
+    @Autowired
+    private AbnormalClassifyMapper abnormalClassifyMapper;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -550,7 +554,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
     public ValidationReport validateXml(Long id) {
         // 前置：结构校验错误列表（校验1、2）
         List<FieldValidationResult> structureResults = new ArrayList<>();
-
+        List<AbnormalClassify> abnormalClassifies = new ArrayList<>();
+        AbnormalClassify abnormalClassify;
         try {
             // 1. 查询文件记录
             XmlFile xmlFile = xmlFileMapper.selectXmlFileById(id);
@@ -608,6 +613,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             // 先放校验1+2的结果
             for (FieldValidationResult r : structureResults) {
+                for (RuleViolation ruleViolation: r.getViolations()) {
+                    ruleViolation.setRuleType(RuleItemType.STRUCTURE);
+                }
                 finalReport.addFieldResult(r);
             }
 
@@ -649,6 +657,19 @@ public class XmlFileServiceImpl implements IXmlFileService {
             vehicleLifecycle.setResult(validateResult ? 0 : 1);
             vehicleLifecycleMapper.insert(vehicleLifecycle);
 
+            for (FieldValidationResult fieldValidationResult: finalReport.getFieldResults()) {
+                for (RuleViolation ruleViolation: fieldValidationResult.getViolations()) {
+                    abnormalClassify = new AbnormalClassify();
+                    abnormalClassify.setEntryId(String.valueOf(id));
+                    abnormalClassify.setEntryType("XML File");
+                    abnormalClassify.setRuleType(RuleItemType.getRuleType(ruleViolation.getRuleType()));
+                    abnormalClassifies.add(abnormalClassify);
+                }
+            }
+
+            if (!abnormalClassifies.isEmpty()) {
+                abnormalClassifyMapper.batchInsert(abnormalClassifies);
+            }
             return finalReport;
 
         } catch (Exception e) {
