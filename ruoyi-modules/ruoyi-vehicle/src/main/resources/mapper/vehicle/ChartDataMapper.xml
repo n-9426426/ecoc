@@ -296,7 +296,7 @@
             <!-- ① Vehicle Template -->
             <when test="abnormalType == 'Vehicle Template'">
                 INNER JOIN xml_template xt
-                ON ac.entry_id    = CAST(xt.template_id AS CHAR)
+                ON ac.entry_id = CAST(xf.id AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci
                 AND ac.entry_type = 'Vehicle Template'
                 WHERE xt.deleted = 0
                 <if test="startTime != null">
@@ -315,7 +315,7 @@
             <!-- ② Vehicle Info -->
             <when test="abnormalType == 'Vehicle Info'">
                 INNER JOIN vehicle_info vi
-                ON ac.entry_id    = CAST(vi.id AS CHAR)
+                ON ac.entry_id = CAST(xf.id AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci
                 AND ac.entry_type = 'Vehicle Info'
                 WHERE vi.deleted = 0
                 <if test="startTime != null">
@@ -347,7 +347,7 @@
             <!-- ③ XML File（默认） -->
             <otherwise>
                 INNER JOIN xml_file xf
-                ON ac.entry_id    = CAST(xf.id AS CHAR)
+                ON ac.entry_id = CAST(xf.id AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci
                 AND ac.entry_type = 'XML File'
                 WHERE xf.deleted = 0
                 AND xf.is_latest = 1
