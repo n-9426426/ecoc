@@ -3,8 +3,11 @@ package com.ruoyi.vehicle.service;
 import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.vehicle.domain.VehicleInfo;
+import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 
 public interface IVehicleInfoService {
@@ -79,4 +82,12 @@ public interface IVehicleInfoService {
     void getVehicleInfoFromMes(VehicleDto vehicleDto);
 
     VehicleInfo selectVehicleInfoByVin(String vin);
+
+    void importVehicleInfoFromExcel(MultipartFile file) throws IOException;
+
+    List<String> selectAllMaterialNos();
+
+    Long selectVehicleTemplateIdByMaterialNo(String materialNo);
+
+    VehicleTemplate selectVehicleTemplateById(Long templateId);
 }

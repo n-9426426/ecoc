@@ -23,6 +23,7 @@ import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -220,6 +221,36 @@ public class XmlController extends BaseController {
             return success(xmlContent);
         } catch (Exception e) {
             return error("生成失败: " + e.getMessage());
+        }
+    }
+
+    @Operation(summary = "批量生成XML文件")
+    @RequiresPermissions("system:xml:generate")
+    @Log(title = "XML文件管理", businessType = BusinessType.CREATE)
+    @PostMapping("/generate/batch")
+    public AjaxResult batchGenerateXml(@RequestBody List<Long> vehicleIds) {
+        if (vehicleIds == null || vehicleIds.isEmpty()) {
+            return error("请选择需要生成的车辆");
+        }
+        List<String> successList = new ArrayList<>();
+        List<String> failList = new ArrayList<>();
+
+        for (Long vehicleId : vehicleIds) {
+            try {
+                xmlFileService.generateXmlFromDatabase(vehicleId);
+                successList.add(String.valueOf(vehicleId));
+            } catch (Exception e) {
+                failList.add("vehicleId=" + vehicleId + "：" + e.getMessage());
+            }
+        }
+
+        if (failList.isEmpty()) {
+            return success("全部生成成功，共" + successList.size() + "条");
+        } else if (successList.isEmpty()) {
+            return error("全部生成失败：\n" + String.join("\n", failList));
+        } else {
+            return success("部分生成成功，成功" + successList.size() + "条，失败"
+                    + failList.size() + "条：\n" + String.join("\n", failList));
         }
     }
 

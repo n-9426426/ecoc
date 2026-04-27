@@ -75,5 +75,10 @@
         order by vt.version desc
         limit 1
     </select>
+    <select id="selectAllMaterialNos" resultType="java.lang.String">
+        select distinct material_no
+        from vehicle_template_material
+        order by material_no
+    </select>
 
 </mapper>

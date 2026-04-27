@@ -101,6 +101,12 @@ public class VehicleInfo extends BaseEntity {
 
     private String motorNumber;
 
+    /** VIN批量查询列表 */
+    private List<String> vinList;
+
+    /** 车型代码批量查询列表 */
+    private List<String> vehicleModelList;
+
     public Map<String, Object> getJsonMap() {
         if (jsonMap != null) {
             return jsonMap;
@@ -117,4 +123,5 @@ public class VehicleInfo extends BaseEntity {
             return Collections.emptyMap();
         }
     }
+
 }

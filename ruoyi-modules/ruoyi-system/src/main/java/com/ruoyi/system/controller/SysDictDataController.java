@@ -1,5 +1,6 @@
 package com.ruoyi.system.controller;
 
+import com.ruoyi.common.core.domain.R;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
@@ -7,8 +8,10 @@ import com.ruoyi.common.core.web.page.TableDataInfo;
 import com.ruoyi.common.log.annotation.Log;
 import com.ruoyi.common.log.enums.BusinessType;
 import com.ruoyi.common.security.annotation.RequiresPermissions;
+import com.ruoyi.common.security.utils.DictUtils;
 import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.domain.SysDictData;
+import com.ruoyi.system.mapper.SysDictDataMapper;
 import com.ruoyi.system.service.ISysDictDataService;
 import com.ruoyi.system.service.ISysDictTypeService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,7 +23,7 @@ import java.util.List;
 
 /**
  * 数据字典信息
- * 
+ *
  * @author ruoyi
  */
 @RestController
@@ -29,9 +32,12 @@ public class SysDictDataController extends BaseController
 {
     @Autowired
     private ISysDictDataService dictDataService;
-    
+
     @Autowired
     private ISysDictTypeService dictTypeService;
+
+    @Autowired
+    private SysDictDataMapper dictDataMapper;
 
     @RequiresPermissions("system:dict:list")
     @GetMapping("/list")
@@ -100,5 +106,25 @@ public class SysDictDataController extends BaseController
     {
         dictDataService.deleteDictDataByIds(dictCodes);
         return success();
+    }
+
+    @GetMapping("/data/type/{dictType}/value/{dictValue}")
+    public R<SysDictData> getDictDataByTypeAndValue(
+            @PathVariable("dictType") String dictType,
+            @PathVariable("dictValue") String dictValue) {
+        // 直接从缓存取，性能更好
+        List<SysDictData> list = DictUtils.getDictCache(dictType);
+        if (list == null || list.isEmpty()) {
+            // 缓存没有就查库
+            list = dictDataMapper.selectDictDataByType(dictType);
+        }
+        if (list == null || list.isEmpty()) {
+            return R.fail("字典类型不存在：" + dictType);
+        }
+        return list.stream()
+                .filter(d -> dictValue.equals(d.getDictValue()))
+                .findFirst()
+                .map(R::ok)
+                .orElse(R.fail("字典值不存在：" + dictValue));
     }
 }

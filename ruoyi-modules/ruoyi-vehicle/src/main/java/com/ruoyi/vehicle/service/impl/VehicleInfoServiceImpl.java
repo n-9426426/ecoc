@@ -17,22 +17,32 @@ import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.vehicle.domain.AbnormalClassify;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.VehicleLifecycle;
+import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
-import com.ruoyi.vehicle.mapper.AbnormalClassifyMapper;
-import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
-import com.ruoyi.vehicle.mapper.VehicleLifecycleMapper;
-import com.ruoyi.vehicle.mapper.VehicleTemplateMaterialMapper;
+import com.ruoyi.vehicle.mapper.*;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.service.IVehicleValidationService;
 import com.ruoyi.vehicle.utils.JsonDictConverter;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
+
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+
 
 @Service("vehicleInfoService")
 public class VehicleInfoServiceImpl implements IVehicleInfoService {
@@ -62,6 +72,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Autowired
     private AbnormalClassifyMapper abnormalClassifyMapper;
+
+    @Autowired
+    private VehicleTemplateMapper vehicleTemplateMapper;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -110,25 +123,44 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int insertVehicleInfo(VehicleInfo vehicleInfo) {
-        if (selectVehicleInfoByWvtaNo(vehicleInfo.getWvtaNo()) != null) {
-            throw new RuntimeException("数据已存在");
+        // VIN判重
+        if (vehicleInfoMapper.selectVehicleInfoByVin(vehicleInfo.getVin()) != null) {
+            throw new RuntimeException("VIN[" + vehicleInfo.getVin() + "]已存在");
         }
-        Long vehicleTemplateId = vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo());
+
+        // 通过物料号查模板
+        Long vehicleTemplateId = vehicleTemplateMaterialMapper
+                .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo());
         if (vehicleTemplateId == null) {
             throw new RuntimeException("该物料号对应的车辆模板不存在");
         }
+
+        // 查模板详情，自动填充关联字段
+        VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(vehicleTemplateId);
+        if (template == null) {
+            throw new RuntimeException("模板不存在，templateId=" + vehicleTemplateId);
+        }
+
         vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
+        vehicleInfo.setWvtaNo(template.getWvtaCocNo());
+        vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
+        vehicleInfo.setJson(template.getJson());
         vehicleInfo.setUploadStatus(0);
         vehicleInfo.setValidationResult(0);
+        vehicleInfo.setDeleted(0);
         vehicleInfo.setCreateTime(DateUtils.getNowDate());
-        vehicleInfo.setCreateBy(SecurityUtils.getUsername() == null ? "MES To System" : SecurityUtils.getUsername());
+        vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null
+                ? SecurityUtils.getUsername() : "MES To System");
+
         int row = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
         vehicleLifecycle.setTime(new Date());
         vehicleLifecycle.setVin(vehicleInfo.getVin());
         vehicleLifecycle.setOperate("0");
         vehicleLifecycle.setResult(0);
         vehicleLifecycleMapper.insert(vehicleLifecycle);
+
         return row;
     }
 
@@ -143,12 +175,30 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
      * @return 结果
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public int updateVehicleInfo(VehicleInfo vehicleInfo) {
+        if (StringUtils.isNotBlank(vehicleInfo.getMaterialNo())) {
+            Long vehicleTemplateId = vehicleTemplateMaterialMapper
+                    .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo());
+            if (vehicleTemplateId == null) {
+                throw new RuntimeException("该物料号对应的车辆模板不存在");
+            }
+            VehicleTemplate template = vehicleTemplateMapper
+                    .selectVehicleTemplateById(vehicleTemplateId);
+            if (template == null) {
+                throw new RuntimeException("模板不存在，templateId=" + vehicleTemplateId);
+            }
+            vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
+            vehicleInfo.setWvtaNo(template.getWvtaCocNo());
+            vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
+            vehicleInfo.setJson(template.getJson());
+        }
+        // 去掉这里强制重置，交给调用方自己决定
+        vehicleInfo.setVin(null);
         vehicleInfo.setUpdateTime(DateUtils.getNowDate());
         vehicleInfo.setUpdateBy(SecurityUtils.getUsername());
         return vehicleInfoMapper.updateVehicleInfo(vehicleInfo);
     }
-
     /**
      * 批量删除车辆信息
      *
@@ -279,5 +329,189 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     @Override
     public VehicleInfo selectVehicleInfoByVin(String vin) {
         return vehicleInfoMapper.selectVehicleInfoByVin(vin);
+    }
+
+    @Override
+    public void importVehicleInfoFromExcel(MultipartFile file) throws IOException {
+        Workbook workbook = new XSSFWorkbook(file.getInputStream());
+        Sheet sheet = workbook.getSheetAt(0);
+
+        // 第一行是表头，从第二行开始读数据
+        int lastRowNum = sheet.getLastRowNum();
+        if (lastRowNum < 1) {
+            throw new RuntimeException("Excel中没有数据行");
+        }
+
+        // 预加载字典，避免每行都调用远程接口
+        List<SysDictData> vehicleModelDicts = remoteDictService
+                .getDictDataByType("vehicle_model").getData();
+        List<SysDictData> countryDicts = remoteDictService
+                .getDictDataByType("country").getData();
+
+        List<String> errorMsgs = new ArrayList<>();
+
+        for (int rowIndex = 1; rowIndex <= lastRowNum; rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) continue;
+
+            // 读取各列：VIN、车型代码、工厂代码、整车物料号、颜色、双色的次色、出口国家、发证日期
+            String vin           = getCellStringValue(row.getCell(0));
+            String vehicleModel  = getCellStringValue(row.getCell(1)); // dictValue，如"E03"
+            String factoryCode   = getCellStringValue(row.getCell(2));
+            String materialNo    = getCellStringValue(row.getCell(3));
+            String color         = getCellStringValue(row.getCell(4));
+            String secondaryColor= getCellStringValue(row.getCell(5));
+            String country       = getCellStringValue(row.getCell(6)); // dictValue，如"西班牙"
+            Date issueDate       = getCellDateValue(row.getCell(7));
+
+            // 跳过空行
+            if (StringUtils.isBlank(vin)) continue;
+
+            try {
+                // VIN判重
+                if (vehicleInfoMapper.selectVehicleInfoByVin(vin) != null) {
+                    errorMsgs.add("第" + (rowIndex + 1) + "行：VIN[" + vin + "]已存在，跳过");
+                    continue;
+                }
+
+                // 车型代码 dictValue -> dictCode
+                Long vehicleModelCode = null;
+                if (StringUtils.isNotBlank(vehicleModel)) {
+                    vehicleModelCode = vehicleModelDicts.stream()
+                            .filter(d -> vehicleModel.equals(d.getDictValue()))
+                            .map(SysDictData::getDictCode)
+                            .findFirst()
+                            .orElse(null);
+                    if (vehicleModelCode == null) {
+                        errorMsgs.add("第" + (rowIndex + 1) + "行：车型代码[" + vehicleModel + "]在字典中不存在，跳过");
+                        continue;
+                    }
+                }
+
+                // 出口国家 dictValue -> dictCode（存dictCode还是dictValue根据你的字段决定）
+                String countryCode = null;
+                if (StringUtils.isNotBlank(country)) {
+                    countryCode = countryDicts.stream()
+                            .filter(d -> country.equals(d.getDictLabel()))
+                            .map(SysDictData::getDictValue)
+                            .findFirst()
+                            .orElse(country); // 找不到就存原值
+                }
+
+                // 通过物料号查模板ID
+                Long templateId = vehicleTemplateMaterialMapper
+                        .selectVehicleTemplateIdByMaterialNo(materialNo);
+                if (templateId == null) {
+                    errorMsgs.add("第" + (rowIndex + 1) + "行：物料号[" + materialNo + "]未找到关联模板，跳过");
+                    continue;
+                }
+
+                // 查模板详情，获取 wvtaCocNo、cocTemplateNo、json
+                VehicleTemplate template = vehicleTemplateMapper
+                        .selectVehicleTemplateById(templateId);
+                if (template == null) {
+                    errorMsgs.add("第" + (rowIndex + 1) + "行：模板ID[" + templateId + "]不存在，跳过");
+                    continue;
+                }
+
+                // 组装 VehicleInfo
+                VehicleInfo vehicleInfo = new VehicleInfo();
+                vehicleInfo.setVin(vin);
+                vehicleInfo.setVehicleModel(vehicleModelCode);
+                vehicleInfo.setFactoryCode(factoryCode);
+                vehicleInfo.setMaterialNo(materialNo);
+                vehicleInfo.setColor(color);
+                vehicleInfo.setSecondaryColor(secondaryColor);
+                vehicleInfo.setCountry(countryCode);
+                vehicleInfo.setIssueDate(issueDate);
+
+                // 从模板自动获取
+                vehicleInfo.setWvtaNo(template.getWvtaCocNo());
+                vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
+                vehicleInfo.setJson(template.getJson());
+                vehicleInfo.setVehicleTemplateId(String.valueOf(templateId));
+
+                // 默认值
+                vehicleInfo.setUploadStatus(0);
+                vehicleInfo.setValidationResult(0);
+                vehicleInfo.setDeleted(0);
+                vehicleInfo.setCreateTime(DateUtils.getNowDate());
+                vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null
+                        ? SecurityUtils.getUsername() : "MES To System");
+
+                vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+
+                // 写入生命周期
+                VehicleLifecycle lifecycle = new VehicleLifecycle();
+                lifecycle.setTime(new Date());
+                lifecycle.setVin(vin);
+                lifecycle.setOperate("0");
+                lifecycle.setResult(0);
+                vehicleLifecycleMapper.insert(lifecycle);
+
+            } catch (Exception e) {
+                log.error("导入第{}行异常：{}", rowIndex + 1, e.getMessage(), e);
+                errorMsgs.add("第" + (rowIndex + 1) + "行：导入异常，" + e.getMessage());
+            }
+        }
+
+        workbook.close();
+
+        // 有错误行则汇总提示，但不影响成功行
+        if (!errorMsgs.isEmpty()) {
+            throw new RuntimeException("部分数据导入失败：\n" + String.join("\n", errorMsgs));
+        }
+    }
+
+    @Override
+    public List<String> selectAllMaterialNos() {
+        List<String> list = vehicleTemplateMaterialMapper.selectAllMaterialNos();
+        return list;
+    }
+
+    @Override
+    public Long selectVehicleTemplateIdByMaterialNo(String materialNo) {
+        Long templateId = vehicleTemplateMaterialMapper
+                .selectVehicleTemplateIdByMaterialNo(materialNo);
+        return templateId;
+    }
+
+    @Override
+    public VehicleTemplate selectVehicleTemplateById(Long templateId) {
+        VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(templateId);
+        return template;
+    }
+
+// ========== 工具方法 ==========
+
+    private String getCellStringValue(Cell cell) {
+        if (cell == null) return "";
+        switch (cell.getCellType()) {
+            case STRING:  return cell.getStringCellValue().trim();
+            case NUMERIC:
+                // 防止数字被读成科学计数法
+                return new java.math.BigDecimal(cell.getNumericCellValue())
+                        .stripTrailingZeros().toPlainString();
+            case BOOLEAN: return String.valueOf(cell.getBooleanCellValue());
+            default:      return "";
+        }
+    }
+
+    private Date getCellDateValue(Cell cell) {
+        if (cell == null) return null;
+        if (cell.getCellType() == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
+            return cell.getDateCellValue();
+        }
+        if (cell.getCellType() == CellType.STRING) {
+            String val = cell.getStringCellValue().trim();
+            if (StringUtils.isNotBlank(val)) {
+                try {
+                    return new java.text.SimpleDateFormat("yyyy-MM-dd").parse(val);
+                } catch (Exception e) {
+                    log.warn("日期解析失败：{}", val);
+                }
+            }
+        }
+        return null;
     }
 }

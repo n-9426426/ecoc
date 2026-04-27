@@ -1,7 +1,9 @@
 package com.ruoyi.vehicle.utils;
 
 import com.ruoyi.common.core.constant.I18nConstants;
+import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.domain.ExcelColumnConfig;
+import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.system.config.I18nConfig;
 import com.ruoyi.vehicle.mapper.ExcelColumnConfigMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +34,9 @@ public class ExcelUtil {
 
     @Autowired
     private ExcelColumnConfigMapper columnConfigMapper;
+
+    @Autowired
+    private RemoteDictService remoteDictService;
 
     //==================== 语言解析 ====================
 
@@ -74,11 +79,9 @@ public class ExcelUtil {
                                 List<T> dataList,
                                 String tableName,
                                 String fileName) throws Exception {
-        // 1. 自动解析语言
         String lang = resolveCurrentLang();
         log.info("导出 Excel，tableName={}，lang={}，数据量={}", tableName, lang, dataList.size());
 
-        // 2. 读取列配置
         List<ExcelColumnConfig> configs = getConfigs(tableName);
         if (configs.isEmpty()) {
             throw new RuntimeException("未找到表[" + tableName + "] 的列配置，请检查数据库 excel_column_config");
@@ -89,26 +92,41 @@ public class ExcelUtil {
             CellStyle headerStyle = createHeaderStyle(workbook);
             CellStyle dateStyle   = createDateStyle(workbook);
 
-            // 3. 写列头（根据语言动态切换）
+            // 写列头
             Row headerRow = sheet.createRow(0);
             for (int i = 0; i < configs.size(); i++) {
                 Cell cell = headerRow.createCell(i);
                 cell.setCellValue(configs.get(i).getColumnName(lang));
-                cell.setCellStyle(headerStyle);sheet.setColumnWidth(i, 20* 256);
+                cell.setCellStyle(headerStyle);
+                sheet.setColumnWidth(i, 20 * 256);
             }
 
-            // 4. 写数据行
+            // 写数据行
             for (int rowIdx = 0; rowIdx < dataList.size(); rowIdx++) {
-                Row row    = sheet.createRow(rowIdx + 1);
+                Row row  = sheet.createRow(rowIdx + 1);
                 T entity = dataList.get(rowIdx);
                 for (int colIdx = 0; colIdx < configs.size(); colIdx++) {
-                    Cell   cell      = row.createCell(colIdx);
-                    Object value= getFieldValue(entity, configs.get(colIdx).getFieldName());
+                    Cell  cell      = row.createCell(colIdx);
+                    String fieldName = configs.get(colIdx).getFieldName();
+                    Object value    = getFieldValue(entity, fieldName);
+
+                    // 问题1修复：vehicleType 字段走字典翻译
+                    if ("vehicleType".equals(fieldName) && value != null) {
+                        try {
+                            Long dictCode = Long.parseLong(value.toString());
+                            SysDictData dictData = remoteDictService.getDataByDictCode(dictCode).getData();
+                            value = (dictData != null) ? dictData.getDictLabel() : value.toString();
+                        } catch (Exception e) {
+                            log.warn("vehicleType 字典翻译失败，原始值={}，{}", value, e.getMessage());
+                            // 翻译失败保留原始值
+                        }
+                    }
+
                     setCellValue(cell, value, dateStyle);
                 }
             }
 
-            // 5. 输出响应
+            // 输出响应
             response.setContentType(
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             response.setHeader("Content-Disposition",

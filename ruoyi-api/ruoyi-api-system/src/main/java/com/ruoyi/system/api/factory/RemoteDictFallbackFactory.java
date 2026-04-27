@@ -30,6 +30,11 @@ public class RemoteDictFallbackFactory implements FallbackFactory<RemoteDictServ
                 log.error("查询字典数据失败，dictCode：{}，原因：{}", dictCode, cause.getMessage());
                 return R.fail("查询字典数据失败：" + cause.getMessage());
             }
+
+            @Override
+            public R<SysDictData> getDictDataByTypeAndValue(String dictType, String dictValue) {
+                return R.fail("获取字典数据失败：" + cause.getMessage());
+            }
         };
     }
 }

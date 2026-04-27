@@ -41,7 +41,7 @@
 			   certificate_version, wvta_no, issue_date, json, xml_template_id, vehicle_template_id,
 			   deleted, create_by, create_time, update_by, update_time, remark, validation_report_json,
 			   engine_number, motor_number,
-			   sdd.dict_label as vehicleModelStr, vt.filepath as vehicleTemplateFilepath, vt.coc_template_no as coc_template_no
+			   sdd.dict_label as vehicle_model_str, vt.filepath as vehicle_template_filepath, vt.coc_template_no as coc_template_no
 		from vehicle_info vi
 		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
 		left join (select template_id, filepath, coc_template_no from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
@@ -55,11 +55,17 @@
 	<select id="selectVehicleInfoList" parameterType="VehicleInfo" resultMap="VehicleInfoResult">
 		<include refid="selectVehicleInfoVo"/>
 		<where>
-			<if test="vin != null and vin != ''">
-				AND vin like concat('%', #{vin}, '%')
+			<if test="vinList != null and vinList.size() > 0">
+				AND vin IN
+				<foreach collection="vinList" item="v" open="(" separator="," close=")">
+					#{v}
+				</foreach>
 			</if>
-			<if test="vehicleModel != null">
-				AND vehicle_model = #{vehicleModel}
+			<if test="vehicleModelList != null and vehicleModelList.size() > 0">
+				AND vehicle_model IN
+				<foreach collection="vehicleModelList" item="m" open="(" separator="," close=")">
+					#{m}
+				</foreach>
 			</if>
 			<if test="factoryCode != null and factoryCode != ''">
 				AND factory_code like concat('%', #{factoryCode}, '%')

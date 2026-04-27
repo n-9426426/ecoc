@@ -1,6 +1,8 @@
 package com.ruoyi.vehicle.controller;
 
+import com.ruoyi.common.core.domain.R;
 import com.ruoyi.common.core.exception.ServiceException;
+import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.core.web.page.TableDataInfo;
@@ -11,6 +13,7 @@ import com.ruoyi.system.api.RemoteLoginService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.LoginBody;
 import com.ruoyi.vehicle.domain.VehicleInfo;
+import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -18,8 +21,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/vehicle")
@@ -35,6 +43,9 @@ public class VehicleInfoController extends BaseController {
 
     @Autowired
     private RemoteLoginService remoteLoginService;
+
+
+
 
     @Operation(summary = "MES数据推送至本系统")
     @Log(title = "数据推送", businessType = BusinessType.INSERT)
@@ -54,10 +65,17 @@ public class VehicleInfoController extends BaseController {
     /**
      * 查询车辆信息列表
      */
-    @Operation(summary = "车辆信息列表")
-    @RequiresPermissions("vehicle:info:list")
     @GetMapping("/list")
     public TableDataInfo list(VehicleInfo vehicleInfo) {
+        // 手动输入的vin按逗号/换行拆分成vinList
+        if (StringUtils.isNotBlank(vehicleInfo.getVin())) {
+            List<String> vinList = Arrays.stream(vehicleInfo.getVin().split("[,，\n]"))
+                    .map(String::trim)
+                    .filter(StringUtils::isNotBlank)
+                    .collect(Collectors.toList());
+            vehicleInfo.setVinList(vinList);
+            vehicleInfo.setVin(null); // 清掉vin，走vinList的IN查询
+        }
         startPage();
         List<VehicleInfo> list = vehicleInfoService.selectVehicleInfoList(vehicleInfo);
         return getDataTable(list);
@@ -109,11 +127,11 @@ public class VehicleInfoController extends BaseController {
     @Log(title = "车辆信息管理", businessType = BusinessType.UPDATE)
     @PutMapping
     public AjaxResult edit(@RequestBody VehicleInfo vehicleInfo) {
+        // 用户手动编辑时才重置校验状态和上传状态
         vehicleInfo.setValidationResult(0);
         vehicleInfo.setUploadStatus(0);
         return AjaxResult.success(vehicleInfoService.updateVehicleInfo(vehicleInfo));
     }
-
     /**
      * 删除车辆信息
      */
@@ -145,5 +163,46 @@ public class VehicleInfoController extends BaseController {
     @PutMapping("/permanently")
     public AjaxResult permanently(@RequestBody Long[] vehicleIds) {
         return AjaxResult.success(vehicleInfoService.permanentlyDeleteVehicleInfoByIds(vehicleIds));
+    }
+
+    @RequiresPermissions("vehicle:info:import")
+    @PostMapping("/upload/excel")
+    public R<Void> importExcel(@RequestParam("file") MultipartFile file) throws Exception {
+        if (file.isEmpty()) {
+            return R.fail("上传文件不能为空");
+        }
+        vehicleInfoService.importVehicleInfoFromExcel(file);
+        return R.ok();
+    }
+
+    /**
+     * 获取所有物料号列表（下拉框用）
+     */
+    @GetMapping("/material/options")
+    public AjaxResult getMaterialOptions() {
+        List<String> list = vehicleInfoService.selectAllMaterialNos();
+        return AjaxResult.success(list);
+    }
+
+    /**
+     * 根据物料号查模板关联信息（选择物料号后自动带出）
+     */
+    @GetMapping("/material/template/{materialNo}")
+    public AjaxResult getTemplateByMaterialNo(@PathVariable("materialNo") String materialNo) {
+        Long templateId = vehicleInfoService
+                .selectVehicleTemplateIdByMaterialNo(materialNo);
+        if (templateId == null) {
+            return AjaxResult.error("该物料号未关联任何模板");
+        }
+        VehicleTemplate template = vehicleInfoService.selectVehicleTemplateById(templateId);
+        if (template == null) {
+            return AjaxResult.error("关联模板不存在");
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("vehicleTemplateId", templateId);
+        result.put("wvtaNo", template.getWvtaCocNo());
+        result.put("cocTemplateNo", template.getCocTemplateNo());
+        result.put("json", template.getJson());
+        return AjaxResult.success(result);
     }
 }
