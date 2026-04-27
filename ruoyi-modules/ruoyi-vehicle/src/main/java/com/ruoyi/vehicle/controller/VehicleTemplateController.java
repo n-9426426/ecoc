@@ -171,10 +171,6 @@ public class VehicleTemplateController extends BaseController {
 
     /**
      * ✅ 批量校验（支持单个或多个 ID）
-     * 示例：
-     *   POST /vehicle/template/batchValidate?templateIds=1
-     *   POST /vehicle/template/batchValidate?templateIds=1,2,3
-     *   POST /vehicle/template/batchValidate (body: [1,2,3])
      */
     @RequiresPermissions("vehicle:template:validate")
     @Log(title = "车辆模板管理", businessType = BusinessType.VALIDATION)

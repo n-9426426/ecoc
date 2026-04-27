@@ -6,7 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -469,10 +468,10 @@ public class FinalRuleExecutor {
     }
 
     public static boolean isAbsent(Object value) {
-        if (value == null) return true;
-        if (value instanceof String) return ((String) value).trim().isEmpty();
-        if (value instanceof Collection) return ((Collection<?>) value).isEmpty();
-        if (value instanceof Map) return ((Map<?, ?>) value).isEmpty();
+//        if (value == null) return true;
+//        if (value instanceof String) return ((String) value).trim().isEmpty();
+//        if (value instanceof Collection) return ((Collection<?>) value).isEmpty();
+//        if (value instanceof Map) return ((Map<?, ?>) value).isEmpty();
         return false;
     }
 

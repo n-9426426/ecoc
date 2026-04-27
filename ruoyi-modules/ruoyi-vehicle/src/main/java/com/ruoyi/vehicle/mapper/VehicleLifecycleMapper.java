@@ -4,6 +4,7 @@ import com.ruoyi.vehicle.domain.VehicleLifecycle;
 import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDateTime;
+import java.util.Date;
 import java.util.List;
 
 public interface VehicleLifecycleMapper {
@@ -32,7 +33,7 @@ public interface VehicleLifecycleMapper {
     /**
      * 查询所有不重复的 vin
      */
-    List<String> selectAllVins();
+    List<String> selectAllVinsByDateRange(Date startTime, Date endTime);
 
     /**
      * 查询截至指定时间，该 vin 下每个 operate 的最新一条记录

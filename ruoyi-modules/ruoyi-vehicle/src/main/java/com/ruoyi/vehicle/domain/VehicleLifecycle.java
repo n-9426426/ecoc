@@ -18,4 +18,6 @@ public class VehicleLifecycle {
     private String operate;
 
     private Integer result;
+
+    private Long entryId;
 }

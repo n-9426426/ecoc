@@ -10,6 +10,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Date;
+
 @RestController
 @RequestMapping("/chart/data")
 public class ChartDataController extends BaseController {
@@ -60,13 +62,12 @@ public class ChartDataController extends BaseController {
         return AjaxResult.success(chartDataService.statisticsXml(year));
     }
 
-    /**
-     * 获取所有 vin 某月的日历数据
-     * GET /vehicle/lifecycle/calendar/all?year=2024&month=6
-     */
-    @GetMapping("/calendar/all")
-    public AjaxResult getAllCalendar(@RequestParam int year, @RequestParam int month) {
-        return AjaxResult.success(chartDataService.getAllVinCalendarByMonth(year, month));
+    @GetMapping("/vin")
+    public AjaxResult selectAllVinsByDateRange(@RequestParam Long startTime,
+                                               @RequestParam Long  endTime) {
+        Date startDate = new Date(startTime);
+        Date endDate = new Date(endTime);
+        return AjaxResult.success(chartDataService.selectAllVinsByDateRange(startDate, endDate));
     }
 
     /**

@@ -10,13 +10,14 @@
         <result column="time"    property="time"/>
         <result column="operate" property="operate"/>
         <result column="result"  property="result"/>
+        <result column="entry_id" property="entryId"/>
     </resultMap>
 
     <!-- 新增 -->
     <insert id="insert" parameterType="com.ruoyi.vehicle.domain.VehicleLifecycle"
             useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO vehicle_lifecycle (vin, time, operate, result)
-        VALUES (#{vin}, #{time}, #{operate}, #{result})
+        INSERT INTO vehicle_lifecycle (vin, time, operate, result, entry_id)
+        VALUES (#{vin}, #{time}, #{operate}, #{result}, #{entryId})
     </insert>
 
     <!-- 查询某 vin 在时间范围内的所有记录，按 time 升序 -->
@@ -37,10 +38,10 @@
             LIMIT 1
     </select>
 
-    <select id="selectAllVins" resultType="java.lang.String">
+    <select id="selectAllVinsByDateRange" resultType="java.lang.String">
         SELECT DISTINCT vin
         FROM vehicle_lifecycle
-        WHERE vin IS NOT NULL
+        WHERE vin IS NOT NULL and time &lt;= #{endTime}  and time &gt;= #{startTime}
         ORDER BY vin
     </select>
 
