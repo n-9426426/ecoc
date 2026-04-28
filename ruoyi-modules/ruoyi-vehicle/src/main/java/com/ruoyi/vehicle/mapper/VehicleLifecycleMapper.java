@@ -33,7 +33,7 @@ public interface VehicleLifecycleMapper {
     /**
      * 查询所有不重复的 vin
      */
-    List<String> selectAllVinsByDateRange(Date startTime, Date endTime);
+    List<String> selectAllVinsByDateRange(@Param("startTime") Date startTime, @Param("endTime") Date endTime);
 
     /**
      * 查询截至指定时间，该 vin 下每个 operate 的最新一条记录
