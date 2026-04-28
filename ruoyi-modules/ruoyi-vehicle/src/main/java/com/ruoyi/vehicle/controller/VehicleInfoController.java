@@ -44,9 +44,6 @@ public class VehicleInfoController extends BaseController {
     @Autowired
     private RemoteLoginService remoteLoginService;
 
-
-
-
     @Operation(summary = "MES数据推送至本系统")
     @Log(title = "数据推送", businessType = BusinessType.INSERT)
     @PostMapping("/to-system")
@@ -56,7 +53,7 @@ public class VehicleInfoController extends BaseController {
         body.setPassword(vehicleDto.getPassword());
         int loginResultCode = remoteLoginService.login(body).getCode();
         if (loginResultCode != 200) {
-            throw new ServiceException("MES数据推送至本系统时用户名密码错误");
+            throw new ServiceException("MES数据推送至本系统时用户名或密码错误");
         }
         vehicleInfoService.getVehicleInfoFromMes(vehicleDto);
         return AjaxResult.success();
@@ -66,6 +63,7 @@ public class VehicleInfoController extends BaseController {
      * 查询车辆信息列表
      */
     @GetMapping("/list")
+    @RequiresPermissions("vehicle:info:query")
     public TableDataInfo list(VehicleInfo vehicleInfo) {
         // 手动输入的vin按逗号/换行拆分成vinList
         if (StringUtils.isNotBlank(vehicleInfo.getVin())) {
@@ -92,7 +90,7 @@ public class VehicleInfoController extends BaseController {
     }
 
     @Operation(summary = "更新车辆信息状态")
-    @RequiresPermissions("system:role:edit")
+    @RequiresPermissions("vehicle:info:edit")
     @Log(title = "车辆信息管理", businessType = BusinessType.UPDATE)
     @PutMapping("/changeStatus")
     public AjaxResult changeStatus(@RequestBody VehicleInfo vehicleInfo)

@@ -3,6 +3,7 @@ package com.ruoyi.vehicle.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.core.enums.RuleItemType;
+import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.model.FieldValidationResult;
 import com.ruoyi.common.core.model.RuleViolation;
 import com.ruoyi.common.core.model.ValidationReport;
@@ -16,6 +17,7 @@ import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.system.api.domain.SysNotice;
+import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.AbnormalClassify;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.VehicleLifecycle;
@@ -37,13 +39,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
-
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellType;
-import org.apache.poi.ss.usermodel.DateUtil;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
 
 
 @Service("vehicleInfoService")
@@ -331,6 +326,14 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Override
     public void getVehicleInfoFromMes(VehicleDto vehicleDto) {
+        // 获取当前登录用户
+        LoginUser loginUser = SecurityUtils.getLoginUser();
+
+        // 判断是否有某个权限
+        Set<String> permissions = loginUser.getPermissions();
+        if (!permissions.contains("vehicle:info:toSystem")) {
+            throw new ServiceException("没有权限执行此操作");
+        }
         VehicleInfo vehicleInfo = new VehicleInfo();
         BeanUtils.copyProperties(vehicleDto, vehicleInfo);
         List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_model").getData();

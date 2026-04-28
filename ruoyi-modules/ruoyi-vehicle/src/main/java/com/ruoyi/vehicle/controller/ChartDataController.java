@@ -63,6 +63,7 @@ public class ChartDataController extends BaseController {
     }
 
     @GetMapping("/vin")
+    @Operation(summary = "获取当天vin")
     public AjaxResult selectAllVinsByDateRange(@RequestParam Long startTime,
                                                @RequestParam Long  endTime) {
         Date startDate = new Date(startTime);
@@ -70,11 +71,8 @@ public class ChartDataController extends BaseController {
         return AjaxResult.success(chartDataService.selectAllVinsByDateRange(startDate, endDate));
     }
 
-    /**
-     * 获取某 vin 某月的日历数据
-     * GET /vehicle/lifecycle/calendar?vin=xxx&year=2024&month=6
-     */
     @GetMapping("/calendar")
+    @Operation(summary = "根据vin获取当天操作历史")
     public AjaxResult getCalendar(@RequestParam String vin, @RequestParam int year, @RequestParam int month) {
         return AjaxResult.success(chartDataService.getCalendarByMonth(vin, year, month));
     }

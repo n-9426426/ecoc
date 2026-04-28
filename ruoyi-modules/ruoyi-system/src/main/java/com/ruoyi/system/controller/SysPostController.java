@@ -113,12 +113,14 @@ public class SysPostController extends BaseController
     }
 
     @Operation(summary = "获取组的菜单权限")
+    @RequiresPermissions("system:post:menu:get")
     @GetMapping("/menuIds/{postId}")
     public AjaxResult getPostMenuIds(@PathVariable Long postId) {
         return AjaxResult.success(postService.getPostMenuIds(postId));
     }
 
     @Operation(summary = "新增、编辑组的菜单权限")
+    @RequiresPermissions("system:post:menu:edit")
     @PutMapping("/menuScope")
     public AjaxResult updatePostMenu(@RequestBody SysPostMenu postMenu) {
         return AjaxResult.success(postService.updatePostMenu(postMenu));

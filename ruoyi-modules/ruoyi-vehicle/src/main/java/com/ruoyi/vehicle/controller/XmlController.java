@@ -54,6 +54,7 @@ public class XmlController extends BaseController {
      * 查询XML文件列表
      */
     @GetMapping("/list")
+    @RequiresPermissions("system:xml:query")
     public TableDataInfo list(XmlFile xmlFile) {
         // VIN：逗号/换行拆分成 vinList
         if (StringUtils.isNotBlank(xmlFile.getVin())) {
