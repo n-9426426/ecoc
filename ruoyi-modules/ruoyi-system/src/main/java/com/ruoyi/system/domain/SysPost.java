@@ -7,6 +7,7 @@ import org.apache.commons.lang3.builder.ToStringStyle;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
+import java.util.List;
 
 /**
  * 组表 sys_post
@@ -34,6 +35,8 @@ public class SysPost extends BaseEntity
 
     /** 用户是否存在此组标识 默认不存在 */
     private boolean flag = false;
+
+    private List<Long> menuIds;
 
     public Long getPostId()
     {
@@ -112,5 +115,13 @@ public class SysPost extends BaseEntity
             .append("updateTime", getUpdateTime())
             .append("remark", getRemark())
             .toString();
+    }
+
+    public List<Long> getMenuIds() {
+        return menuIds;
+    }
+
+    public void setMenuIds(List<Long> menuIds) {
+        this.menuIds = menuIds;
     }
 }

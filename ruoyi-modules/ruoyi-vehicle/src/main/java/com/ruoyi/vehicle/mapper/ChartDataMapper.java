@@ -6,6 +6,7 @@ import com.ruoyi.vehicle.domain.vo.ChartDataXmlTotalVo;
 import com.ruoyi.vehicle.domain.vo.VehicleModelVo;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 
@@ -24,7 +25,7 @@ public interface ChartDataMapper {
 
     Integer selectStatisticsXmlPassNumber(ChartDataStatisticsDto statisticsDto);
 
-    Integer selectStatisticsVehicleWaitNumber(Integer year);
+    Integer selectStatisticsVehicleWaitNumber(@Param("startTime") LocalDateTime start, @Param("endTime") LocalDateTime end);
 
     Integer selectStatisticsVehicleFailNumber(ChartDataStatisticsDto statisticsDto);
 

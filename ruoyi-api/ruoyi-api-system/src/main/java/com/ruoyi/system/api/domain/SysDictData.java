@@ -62,6 +62,10 @@ public class SysDictData extends BaseEntity
 
     private String keyMapJson;
 
+    private String originalSystem;
+
+    private String uuid;
+
     public Long getDictCode()
     {
         return dictCode;
@@ -256,5 +260,21 @@ public class SysDictData extends BaseEntity
 
     public void setKeyMapJson(String keyMapJson) {
         this.keyMapJson = keyMapJson;
+    }
+
+    public String getOriginalSystem() {
+        return originalSystem;
+    }
+
+    public void setOriginalSystem(String originalSystem) {
+        this.originalSystem = originalSystem;
+    }
+
+    public String getUuid() {
+        return uuid;
+    }
+
+    public void setUuid(String uuid) {
+        this.uuid = uuid;
     }
 }

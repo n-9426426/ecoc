@@ -25,12 +25,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="dictTypeAffiliation" column="dict_type_affiliation"/>
 		<result property="dictTypeAffiliationStr" column="dict_type_affiliation_str"/>
 		<result property="ruleType" column="rule_type"/>
+		<result property="originalSystem" column="original_system"/>
+		<result property="uuid" column="uuid"/>
 	</resultMap>
 	
 	<sql id="selectDictDataVo">
         select sdd.dict_code, sdd.dict_sort, sdd.dict_label, sdd.dict_value, sdd.dict_type, sdd.css_class, sdd.rule, sdd.range_rule,
                sdd.key_map, sdd.value_map, sdd.is_default, sdd.status, sdd.create_by, sdd.create_time, sdd.remark, sdd.dict_type_affiliation,
-               sdt.dict_name as dict_type_str, sdd2.dict_label as dict_type_affiliation_str, sdd.rule_type
+               sdd.original_system, sdt.dict_name as dict_type_str, sdd2.dict_label as dict_type_affiliation_str, sdd.rule_type, sdd.uuid
 		from sys_dict_data sdd
 		left join sys_dict_type sdt on sdd.dict_type = sdt.dict_type
         left join sys_dict_data sdd2 on sdd.dict_type_affiliation = sdd2.dict_code
@@ -113,6 +115,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
  			<if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
 			<if test="dictTypeAffiliation != null">dict_type_affiliation = #{dictTypeAffiliation},</if>
 			<if test="ruleType != null and ruleType != ''">rule_type = #{ruleType},</if>
+ 		    <if test="originalSystem != null and originalSystem != ''">original_system = #{originalSystem},</if>
+			<if test="uuid != null and uuid != ''">uuid = #{uuid},</if>
  			update_time = sysdate()
  		</set>
  		where dict_code = #{dictCode}
@@ -139,6 +143,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 			<if test="dictTypeAffiliation != null">dict_type_affiliation,</if>
  			<if test="createBy != null and createBy != ''">create_by,</if>
 			<if test="ruleType != null and ruleType != ''">rule_type,</if>
+			<if test="originalSystem != null and originalSystem != ''">original_system,</if>
+			<if test="uuid != null and uuid != ''">uuid,</if>
  			create_time
  		)values(
  		    <if test="dictSort != null">#{dictSort},</if>
@@ -156,6 +162,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 			<if test="dictTypeAffiliation != null">#{dictTypeAffiliation},</if>
  			<if test="createBy != null and createBy != ''">#{createBy},</if>
 			<if test="ruleType != null and ruleType != ''">#{ruleType},</if>
+			<if test="originalSystem != null and originalSystem != ''">#{originalSystem},</if>
+			<if test="uuid != null and uuid != ''">#{uuid},</if>
  			sysdate()
  		)
 	</insert>
@@ -171,5 +179,121 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 			OR attr_path LIKE CONCAT('%.', #{dictCode})
 			)
 	</select>
-	
+
+	<!-- 查询同组的所有行 -->
+	<select id="selectSiblingRows" resultMap="SysDictDataResult">
+		<include refid="selectDictDataVo"/>
+		where sdd.uuid = #{uuid}
+		order by sdd.dict_code asc
+	</select>
+
+	<!-- 聚合查询（vehicle_attribute 专用，分页前已按组聚合） -->
+	<select id="selectDictDataListAggregated" parameterType="SysDictData" resultMap="SysDictDataAggResult">
+		SELECT
+		MIN(sdd.dict_code)                      AS dict_code,
+		sdd.uuid,
+		MIN(sdd.dict_sort)                      AS dict_sort,
+		MIN(sdd.dict_label)                     AS dict_label,
+		MIN(sdd.dict_value)                     AS dict_value,
+		sdd.dict_type,
+		MIN(sdd.css_class)                      AS css_class,
+		MIN(sdd.rule)                           AS rule,
+		MIN(sdd.range_rule)                     AS range_rule,
+		MIN(sdd.is_default)                     AS is_default,
+		MIN(sdd.status)                         AS status,
+		MIN(sdd.create_by)                      AS create_by,
+		MIN(sdd.create_time)                    AS create_time,
+		MIN(sdd.update_by)                      AS update_by,
+		MIN(sdd.update_time)                    AS update_time,
+		MIN(sdd.remark)                         AS remark,
+		MIN(sdd.dict_type_affiliation)          AS dict_type_affiliation,
+		MIN(sdd.rule_type)                      AS rule_type,
+		MIN(sdt.dict_name)                      AS dict_type_str,
+		MIN(sdd2.dict_label)                    AS dict_type_affiliation_str,
+		JSON_ARRAYAGG(
+		CASE WHEN sdd.original_system IS NOT NULL AND sdd.key_map IS NOT NULL
+		THEN JSON_OBJECT('system', sdd.original_system, 'key', sdd.key_map)
+		ELSE NULL END
+		)                                       AS key_map_agg,
+		JSON_ARRAYAGG(
+		sdd.value_map
+		)                                       AS value_map_agg
+		FROM sys_dict_data sdd
+		LEFT JOIN sys_dict_type sdt ON sdd.dict_type = sdt.dict_type
+		LEFT JOIN sys_dict_data sdd2 ON sdd.dict_type_affiliation = sdd2.dict_code
+		<where>
+			sdd.dict_type = 'vehicle_attribute'
+			<if test="dictData.dictTypeAffiliation != null">
+				AND sdd.dict_type_affiliation = #{dictData.dictTypeAffiliation}
+			</if>
+			<if test="dictData.dictLabel != null and dictData.dictLabel != ''">
+				AND sdd.dict_label LIKE CONCAT('%', #{dictData.dictLabel}, '%')
+			</if>
+			<if test="dictData.dictValue != null and dictData.dictValue != ''">
+				AND sdd.dict_value LIKE CONCAT('%', #{dictData.dictValue}, '%')
+			</if>
+			<if test="dictData.status != null and dictData.status != ''">
+				AND sdd.status = #{dictData.status}
+			</if>
+			<if test="dictData.ruleType != null and dictData.ruleType != ''">
+				AND sdd.rule_type = #{dictData.ruleType}
+			</if>
+		</where>
+		GROUP BY sdd.uuid, sdd.dict_type
+		ORDER BY MIN(sdd.dict_sort) ASC
+		LIMIT #{offset}, #{pageSize}
+	</select>
+
+	<!-- 聚合结果 resultMap -->
+	<resultMap type="SysDictData" id="SysDictDataAggResult">
+		<id     property="dictCode"                  column="dict_code"                  />
+		<result property="dictSort"                  column="dict_sort"                  />
+		<result property="dictLabel"                 column="dict_label"                 />
+		<result property="dictValue"                 column="dict_value"                 />
+		<result property="dictType"                  column="dict_type"                  />
+		<result property="cssClass"                  column="css_class"                  />
+		<result property="rule"                      column="rule"                       />
+		<result property="rangeRule"                 column="range_rule"                 />
+		<result property="isDefault"                 column="is_default"                 />
+		<result property="status"                    column="status"                     />
+		<result property="createBy"                  column="create_by"                  />
+		<result property="createTime"                column="create_time"                />
+		<result property="updateBy"                  column="update_by"                  />
+		<result property="updateTime"                column="update_time"                />
+		<result property="remark"                    column="remark"                     />
+		<result property="dictTypeAffiliation"       column="dict_type_affiliation"      />
+		<result property="ruleType"                  column="rule_type"                  />
+		<result property="dictTypeStr"               column="dict_type_str"              />
+		<result property="dictTypeAffiliationStr"    column="dict_type_affiliation_str"  />
+		<!-- 聚合原始字符串，由 Service 层转为 JSON -->
+		<result property="keyMap"                    column="key_map_agg"                />
+		<result property="valueMap"                  column="value_map_agg"              />
+		<result property="uuid" column="uuid"/>
+	</resultMap>
+
+	<select id="countDictDataListAggregated" parameterType="SysDictData" resultType="long">
+		SELECT COUNT(1) FROM (
+		SELECT sdd.uuid
+		FROM sys_dict_data sdd
+		<where>
+			sdd.dict_type = 'vehicle_attribute'
+			<if test="dictTypeAffiliation != null">
+				AND sdd.dict_type_affiliation = #{dictTypeAffiliation}
+			</if>
+			<if test="dictLabel != null and dictLabel != ''">
+				AND sdd.dict_label LIKE CONCAT('%', #{dictLabel}, '%')
+			</if>
+			<if test="dictValue != null and dictValue != ''">
+				AND sdd.dict_value LIKE CONCAT('%', #{dictValue}, '%')
+			</if>
+			<if test="status != null and status != ''">
+				AND sdd.status = #{status}
+			</if>
+			<if test="ruleType != null and ruleType != ''">
+				AND sdd.rule_type = #{ruleType}
+			</if>
+		</where>
+		GROUP BY sdd.uuid
+		) t
+	</select>
 </mapper> 
