@@ -14,6 +14,8 @@ import com.ruoyi.vehicle.service.IChartDataService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -51,10 +53,35 @@ public class ChartDataServiceImpl implements IChartDataService {
     public Map<String, Object> statisticsCard(ChartDataStatisticsDto statisticsDto) {
         initChartDataStatisticsDtoDate(statisticsDto);
         Map<String, Object> result = new HashMap<>();
-        result.put("xmlTotal", chartDataMapper.selectStatisticsXmlTotal(statisticsDto));
-        result.put("xmlPassNumber", chartDataMapper.selectStatisticsXmlPassNumber(statisticsDto));
-        result.put("vehicleFailNumber", chartDataMapper.selectStatisticsVehicleFailNumber(statisticsDto));
-        result.put("xmlRejectNumber", chartDataMapper.selectStatisticsXmlRejectNumber(statisticsDto));
+
+        // 当前周期数据
+        long xmlTotal = chartDataMapper.selectStatisticsXmlTotal(statisticsDto);
+        long xmlPassNumber = chartDataMapper.selectStatisticsXmlPassNumber(statisticsDto);
+        long vehicleFailNumber = chartDataMapper.selectStatisticsVehicleFailNumber(statisticsDto);
+        long xmlRejectNumber = chartDataMapper.selectStatisticsXmlRejectNumber(statisticsDto);
+
+        result.put("xmlTotal", xmlTotal);
+        result.put("xmlPassNumber", xmlPassNumber);
+        result.put("vehicleFailNumber", vehicleFailNumber);
+        result.put("xmlRejectNumber", xmlRejectNumber);
+
+        // 计算上个周期并添加环比数据
+        String flag = statisticsDto.getFlag();
+        if (flag != null && (flag.equals("day") || flag.equals("month") || flag.equals("year"))) {
+            ChartDataStatisticsDto prevDto = buildPreviousPeriodDto(statisticsDto);
+            if (prevDto != null) {
+                long prevXmlTotal = chartDataMapper.selectStatisticsXmlTotal(prevDto);
+                long prevXmlPassNumber = chartDataMapper.selectStatisticsXmlPassNumber(prevDto);
+                long prevVehicleFailNumber = chartDataMapper.selectStatisticsVehicleFailNumber(prevDto);
+                long prevXmlRejectNumber = chartDataMapper.selectStatisticsXmlRejectNumber(prevDto);
+
+                addGrowthRate(result, "xmlTotalGrowthRate", xmlTotal, prevXmlTotal);
+                addGrowthRate(result, "xmlPassNumberGrowthRate", xmlPassNumber, prevXmlPassNumber);
+                addGrowthRate(result, "vehicleFailNumberGrowthRate", vehicleFailNumber, prevVehicleFailNumber);
+                addGrowthRate(result, "xmlRejectNumberGrowthRate", xmlRejectNumber, prevXmlRejectNumber);
+            }
+        }
+
         return result;
     }
 
@@ -194,5 +221,101 @@ public class ChartDataServiceImpl implements IChartDataService {
     public  List<AbnormalStatisticsVo> statisticsAbnormal(ChartDataStatisticsDto statisticsDto) {
         initChartDataStatisticsDtoDate(statisticsDto);
         return chartDataMapper.selectStatisticsAbnormal(statisticsDto);
+    }
+
+    /**
+     * 构建上个周期的查询 DTO
+     */
+    private ChartDataStatisticsDto buildPreviousPeriodDto(ChartDataStatisticsDto current) {
+        Date startTime = current.getStartTime();
+        Date endTime = current.getEndTime();
+        if (startTime == null || endTime == null) {
+            return null;
+        }
+
+        String flag = current.getFlag();
+        Calendar startCal = Calendar.getInstance();
+        Calendar endCal = Calendar.getInstance();
+        startCal.setTime(startTime);
+        endCal.setTime(endTime);
+
+        switch (flag) {
+            case "day":
+                startCal.add(Calendar.DAY_OF_MONTH, -1);
+                endCal.add(Calendar.DAY_OF_MONTH, -1);
+                break;
+            case "month":
+                shiftByMonth(startCal, -1);
+                shiftByMonth(endCal, -1);
+                break;
+            case "year":
+                shiftByYear(startCal, -1);
+                shiftByYear(endCal, -1);
+                break;
+            default:
+                return null;
+        }
+
+        ChartDataStatisticsDto prevDto = new ChartDataStatisticsDto();
+        // 复制非时间字段
+        prevDto.setFactoryCode(current.getFactoryCode());
+        prevDto.setVehicleModel(current.getVehicleModel());
+        prevDto.setCountry(current.getCountry());
+        prevDto.setUploadStatus(current.getUploadStatus());
+        prevDto.setAbnormalType(current.getAbnormalType());
+        prevDto.setFlag(current.getFlag());
+        // 设置上个周期时间
+        prevDto.setStartTime(startCal.getTime());
+        prevDto.setEndTime(endCal.getTime());
+        return prevDto;
+    }
+
+    /**
+     * 按月偏移，处理月末边界问题
+     * 例如：3月31日 -> 2月28日（非3月3日）
+     */
+    private void shiftByMonth(Calendar cal, int months) {
+        int originalDay = cal.get(Calendar.DAY_OF_MONTH);
+        cal.add(Calendar.MONTH, months);
+        // 获取目标月份的最大天数
+        int maxDay = cal.getActualMaximum(Calendar.DAY_OF_MONTH);
+        // 若原始日期超过目标月份最大天数，则设置为该月最后一天
+        if (originalDay > maxDay) {
+            cal.set(Calendar.DAY_OF_MONTH, maxDay);
+        }
+    }
+
+    /**
+     * 按年偏移，处理闰年边界问题
+     * 例如：2024年2月29日 -> 2023年2月28日
+     */
+    private void shiftByYear(Calendar cal, int years) {
+        int originalDay = cal.get(Calendar.DAY_OF_MONTH);
+        cal.add(Calendar.YEAR, years);
+        int maxDay = cal.getActualMaximum(Calendar.DAY_OF_MONTH);
+        if (originalDay > maxDay) {
+            cal.set(Calendar.DAY_OF_MONTH, maxDay);
+        }
+    }
+
+    /**
+     * 计算环比增长率并放入结果 Map
+     * 上个周期为 0 时不添加该字段
+     *
+     * @param result      结果 Map
+     * @param key         字段名
+     * @param current     当前周期值
+     * @param previous    上个周期值
+     */
+    private void addGrowthRate(Map<String, Object> result, String key, long current, long previous) {
+        if (previous == 0) {
+            // 上周期为 0，不添加环比数据
+            return;
+        }
+        // 保留两位小数，例如：12.34 表示增长了 12.34%
+        BigDecimal rate = BigDecimal.valueOf(current - previous)
+                .multiply(BigDecimal.valueOf(100))
+                .divide(BigDecimal.valueOf(previous), 2, RoundingMode.HALF_UP);
+        result.put(key, rate);
     }
 }

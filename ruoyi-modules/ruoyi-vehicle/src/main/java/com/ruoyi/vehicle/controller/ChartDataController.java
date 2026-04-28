@@ -50,7 +50,7 @@ public class ChartDataController extends BaseController {
         return AjaxResult.success(chartDataService.statisticsTrend(statisticsDto));
     }
 
-    @Operation(summary = "报表统计面板")
+    @Operation(summary = "报表统计面板:异常原因占比分析")
     @PostMapping("/statistics/abnormal")
     public AjaxResult statisticsAbnormal(@RequestBody ChartDataStatisticsDto statisticsDto) {
         return AjaxResult.success(chartDataService.statisticsAbnormal(statisticsDto));
