@@ -47,10 +47,9 @@ import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
-import java.io.File;
-import java.io.StringReader;
-import java.io.StringWriter;
+import java.io.*;
 import java.math.BigDecimal;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -327,11 +326,12 @@ public class XmlFileServiceImpl implements IXmlFileService {
         if (xmlFile == null) {
             throw new RuntimeException(remoteTranslateService.translate("common.file.not.exist", null));
         }
-        String query = Optional.ofNullable(xmlFile.getFilePath())
-                .filter(name -> name.contains("_"))
-                .map(name -> name.substring(0, name.indexOf("_")))
-                .orElseThrow(() -> new RuntimeException("文件名格式不正确：" + xmlFile.getFilePath()));
-        return xmlFileMapper.selectXmlFileVersions(query);
+        String vin = xmlFile.getVin();
+        if (StringUtils.isBlank(vin)) {
+            throw new RuntimeException("VIN为空，无法查询版本列表");
+        }
+        List<XmlFile> versions = xmlFileMapper.selectXmlFileVersions(vin);
+        return versions;
     }
 
     /**
@@ -348,10 +348,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
 
             String projectPath = System.getProperty("user.dir");
-            String oldContent = new String(Files.readAllBytes(
-                    new File(projectPath + oldFile.getFilePath()).toPath()), StandardCharsets.UTF_8);
-            String newContent = new String(Files.readAllBytes(
-                    new File(projectPath + newFile.getFilePath()).toPath()), StandardCharsets.UTF_8);
+            String oldContent = readFileContent(oldFile.getFilePath());
+            String newContent = readFileContent(newFile.getFilePath());
 
             String[] oldLines = oldContent.replace("\r\n", "\n").split("\n", -1);
             String[] newLines = newContent.replace("\r\n", "\n").split("\n", -1);
@@ -420,6 +418,24 @@ public class XmlFileServiceImpl implements IXmlFileService {
         }
     }
 
+    private String readFileContent(String filePath) throws IOException {
+        if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
+            URL url = new URL(filePath);
+            try (InputStream is = url.openStream();
+                 ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[1024];
+                int len;
+                while ((len = is.read(buffer)) > 0) {
+                    baos.write(buffer, 0, len);
+                }
+                return baos.toString(StandardCharsets.UTF_8.name());
+            }
+        } else {
+            String projectPath = System.getProperty("user.dir");
+            return new String(Files.readAllBytes(
+                    new File(projectPath + filePath).toPath()), StandardCharsets.UTF_8);
+        }
+    }
     /**
      * LCS diff：返回对齐后的行索引对
      * pair[0] = oldIndex（-1表示该行为新增）
@@ -1436,6 +1452,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             xmlFile.setFileSize((long) xmlContent.getBytes(StandardCharsets.UTF_8).length);
             xmlFile.setFileLevel("1");
             xmlFile.setVersion(xmlVersion);
+            xmlFile.setVin(vehicle.getVin());
             xmlFile.setIsLatest(true);
             xmlFile.setStatus("0");
             xmlFile.setDeleted(0);
@@ -1449,6 +1466,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             xmlFile.setFactoryCode(vehicle.getFactoryCode());
             xmlFile.setVehicleMaterialNo(vehicle.getMaterialNo());
             xmlFile.setCountry(vehicle.getCountry());
+            xmlFile.setIssueDate(vehicle.getIssueDate());
             xmlFileMapper.insertXmlFile(xmlFile);
 
             // 18. 保存版本记录

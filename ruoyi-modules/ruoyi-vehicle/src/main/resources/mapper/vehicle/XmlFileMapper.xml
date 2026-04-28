@@ -34,7 +34,7 @@
     </resultMap>
 
     <sql id="selectXmlFileVo">
-        select xl.id, SUBSTRING_INDEX(SUBSTRING_INDEX(xl.file_path, '_', 2), '_', -1) AS vin,
+        select xl.id, xl.vin,
                xl.file_name, xl.file_path, xl.file_size, xl.file_level, xl.version, xl.is_latest,
                xl.pdf_path, xl.status, xl.deleted, xl.create_by, xl.create_time, xl.update_by,
                xl.update_time, xl.remark, xl.xml_template_id, xl.model_code, xl.factory_code,
@@ -56,10 +56,10 @@
                     #{id}
                 </foreach>
             </if>
-            <if test="vin != null and vin != ''">
+            <if test="vinList != null and vinList.size() > 0">
                 AND xl.vin IN
-                <foreach collection="vin.split(',')" item="vinItem" open="(" separator="," close=")">
-                    #{vinItem}
+                <foreach collection="vinList" item="v" open="(" separator="," close=")">
+                    #{v}
                 </foreach>
             </if>
             <if test="fileName != null and fileName != ''">
@@ -74,17 +74,18 @@
             <if test="status != null and status != ''">
                 AND xl.status = #{status}
             </if>
-            <if test="modelCode != null and modelCode != ''">
+            <if test="modelCodeList != null and modelCodeList.size() > 0">
                 AND xl.model_code IN
-                <foreach collection="modelCode.split(',')" item="codeItem" open="(" separator="," close=")">
-                    #{codeItem}
+                <foreach collection="modelCodeList" item="m" open="(" separator="," close=")">
+                    #{m}
                 </foreach>
             </if>
+
             <if test="factoryCode != null and factoryCode != ''">
                 AND xl.factory_code = #{factoryCode}
             </if>
             <if test="vehicleMaterialNo != null and vehicleMaterialNo != ''">
-                AND xl.vehicle_material_no = #{vehicleMaterialNo}
+                AND xl.vehicle_material_no LIKE concat('%', #{vehicleMaterialNo}, '%')
             </if>
             <if test="country != null and country != ''">
                 AND FIND_IN_SET(#{country}, xl.country)
@@ -105,10 +106,10 @@
                 AND date_format(issue_date,'%y%m%d') &lt;= date_format(#{issueDateEndTime},'%y%m%d')
             </if>
             <if test="createdStartTime != null">
-                AND date_format(create_time,'%y%m%d') &gt;= date_format(#{createdStartTime},'%y%m%d')
+                AND date_format(xl.create_time,'%y%m%d') &gt;= date_format(#{createdStartTime},'%y%m%d')
             </if>
             <if test="createdEndTime != null">
-                AND date_format(create_time,'%y%m%d') &lt;= date_format(#{createdEndTime},'%y%m%d')
+                AND date_format(xl.create_time,'%y%m%d') &lt;= date_format(#{createdEndTime},'%y%m%d')
             </if>
             <if test="validateResult != null">
                 AND xl.validate_result = #{validateResult}
@@ -156,6 +157,7 @@
             <if test="uploadResult != null">upload_result,</if>
             <if test="uploadDate != null">upload_date,</if>
             <if test="issueDate != null">issue_date,</if>
+            <if test="vin != null">vin,</if>
             <if test="validateResult != null">validate_result,</if>
             <if test="validationReportJson">validation_report_json,</if>
             create_time
@@ -179,6 +181,7 @@
             <if test="uploadResult != null">#{uploadResult},</if>
             <if test="uploadDate != null">#{uploadDate},</if>
             <if test="issueDate != null">#{issueDate},</if>
+            <if test="vin != null">#{vin},</if>
             <if test="validateResult != null">#{validateResult},</if>
             <if test="validationReportJson != null and validationReportJson != ''">#{validationReportJson},</if>
             sysdate()
@@ -205,6 +208,7 @@
             <if test="uploadResult != null">upload_result = #{uploadResult},</if>
             <if test="uploadDate != null">upload_date = #{uploadDate},</if>
             <if test="issueDate != null">issue_date = #{issueDate},</if>
+            <if test="vin != null">vin = #{vin},</if>
             <if test="validateResult != null">validate_result = #{validateResult},</if>
             <if test="validationReportJson != null and validationReportJson != ''">validation_report_json = #{validationReportJson},</if>
             update_time = sysdate()
@@ -225,7 +229,7 @@
 
     <select id="selectXmlFileVersions" parameterType="String" resultMap="XmlFileResult">
         <include refid="selectXmlFileVo"/>
-        where xl.file_name like concat(#{configName}, '%') and xl.deleted = 0
+        where xl.vin = #{vin} and xl.deleted = 0
         order by cast(xl.version as UNSIGNED) desc, xl.create_time desc
     </select>
 

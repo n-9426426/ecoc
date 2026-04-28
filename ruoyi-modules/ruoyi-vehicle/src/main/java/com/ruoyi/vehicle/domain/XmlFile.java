@@ -102,4 +102,22 @@ public class XmlFile extends BaseEntity {
     private Date createdEndTime;
 
     private String validationReportJson;
+
+    /** VIN批量查询列表 */
+    private List<String> vinList;
+
+    /** 车型代码批量查询列表 */
+    private List<String> modelCodeList;
+
+    /** 出口国家显示文本（导出用） */
+    private String countryLabel;
+
+    /** 上传结果显示文本（导出用） */
+    private String uploadResultLabel;
+
+    /** 校验结果显示文本（导出用） */
+    private String validateResultLabel;
+
+    /** 状态显示文本（导出用） */
+    private String statusLabel;
 }
