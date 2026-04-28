@@ -246,6 +246,11 @@
 		where vin = #{vin}
 		and deleted = 0
 	</select>
+	<select id="selectByVinAndDeleted" resultMap="VehicleInfoResult">
+		SELECT * FROM vehicle_info
+		WHERE vin = #{vin} AND deleted = #{deleted}
+			LIMIT 1
+	</select>
 
 	<update id="updateStatus">
 		UPDATE vehicle_info
@@ -255,4 +260,11 @@
 			update_time = SYSDATE()
 		WHERE vehicle_id = #{vehicleId}
 	</update>
+
+	<select id="selectVehicleInfoByIds" resultMap="VehicleInfoResult">
+		SELECT * FROM vehicle_info WHERE vehicle_id IN
+		<foreach item="vehicleId" collection="array" open="(" separator="," close=")">
+			#{vehicleId}
+		</foreach>
+	</select>
 </mapper>

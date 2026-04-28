@@ -497,10 +497,15 @@ public class XmlFileServiceImpl implements IXmlFileService {
         // 1. 根据 xmlIds 查询对应的 file_path
         List<String> filePaths = xmlFileMapper.selectFilePathsByIds(xmlIds);
 
-        // 2. 遍历 filePaths 删除本地文件
+        // 2. 遍历 filePaths 删除文件
         String projectPath = System.getProperty("user.dir");
         for (String filePath : filePaths) {
             try {
+                // HTTP URL 由文件服务器管理，跳过本地删除
+                if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
+                    log.info("文件为远程URL，跳过本地删除: {}", filePath);
+                    continue;
+                }
                 Path absolutePath = Paths.get(projectPath, filePath);
                 if (Files.exists(absolutePath)) {
                     Files.delete(absolutePath);
@@ -509,13 +514,26 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     log.warn("文件不存在，无法删除: {}", absolutePath);
                 }
             } catch (Exception e) {
-                // 可以选择抛异常回滚，也可以记录日志继续
                 log.error("删除文件失败: " + filePath, e);
                 throw new RuntimeException("删除文件失败：" + filePath, e);
             }
         }
         xmlVersionMapper.deleteXmlVersionByFileId(xmlIds);
         return xmlFileMapper.permanentlyDeleteXmlByIds(xmlIds);
+    }
+
+    private void deleteFile(String filePath) {
+        if (filePath == null) return;
+        if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
+            // HTTP URL 文件由文件服务器管理，跳过本地删除
+            log.info("文件为远程URL，跳过本地删除: {}", filePath);
+            return;
+        }
+        // 本地文件才删除
+        File file = new File(filePath);
+        if (file.exists()) {
+            file.delete();
+        }
     }
 
     // =====================================================
@@ -1468,6 +1486,13 @@ public class XmlFileServiceImpl implements IXmlFileService {
             xmlFile.setCountry(vehicle.getCountry());
             xmlFile.setIssueDate(vehicle.getIssueDate());
             xmlFileMapper.insertXmlFile(xmlFile);
+
+            try {
+                validateXml(xmlFile.getId());
+            } catch (Exception e) {
+                log.warn("自动校验失败，xmlFileId={}，原因={}", xmlFile.getId(), e.getMessage());
+                // 校验失败不影响生成结果，只记录日志
+            }
 
             // 18. 保存版本记录
             XmlVersion version = new XmlVersion();

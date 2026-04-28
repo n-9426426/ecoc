@@ -96,7 +96,12 @@ public class XmlController extends BaseController {
         List<SysDictData> statusList         = remoteDictService.getDictDataByType("xml_status").getData();
 
         // 转 Map
-        Map<String, String> modelMap          = toMap(vehicleModelList);
+        // 车型单独建一个以 dictCode 为 key 的 Map
+        Map<Long, String> modelMap = vehicleModelList.stream().collect(Collectors.toMap(
+                SysDictData::getDictCode,
+                SysDictData::getDictLabel,
+                (a, b) -> a
+        ));
         Map<String, String> countryMap        = toMap(countryList);
         Map<String, String> uploadResultMap   = toMap(uploadResultList);
         Map<String, String> validateResultMap = toMap(validateResultList);
@@ -104,8 +109,10 @@ public class XmlController extends BaseController {
 
         // 设置翻译字段
         for (XmlFile xml : xmlFiles) {
-            xml.setModelName(modelMap.getOrDefault(
-                    xml.getModelCode(), xml.getModelCode()));
+            // modelCode 存的是 Long 类型的 dictCode
+            xml.setModelName(xml.getModelCode() != null
+                    ? modelMap.getOrDefault(Long.parseLong(xml.getModelCode()), xml.getModelCode())
+                    : "");
             xml.setCountryLabel(countryMap.getOrDefault(
                     xml.getCountry(), xml.getCountry()));
             xml.setUploadResultLabel(uploadResultMap.getOrDefault(

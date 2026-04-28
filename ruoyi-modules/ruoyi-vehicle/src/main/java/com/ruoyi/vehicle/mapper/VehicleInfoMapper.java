@@ -80,4 +80,8 @@ public interface VehicleInfoMapper {
     int updateStatus( @Param("updateBy") String updateBy, @Param("vehicleId") Long vehicleId, @Param("status") Integer status);
 
     VehicleInfo selectVehicleInfoByVin(@Param("vin") String vin);
+
+    VehicleInfo selectByVinAndDeleted(@Param("vin") String vin, @Param("deleted") int deleted);
+
+    List<VehicleInfo> selectVehicleInfoByIds(Long[] vehicleIds);
 }

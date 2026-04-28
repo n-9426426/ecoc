@@ -109,11 +109,14 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     @Override
     public List<VehicleInfo> selectVehicleInfoList(VehicleInfo vehicleInfo) {
         List<VehicleInfo> list = vehicleInfoMapper.selectVehicleInfoList(vehicleInfo);
-        // 批量转换
         for (VehicleInfo vehicle : list) {
             if (StringUtils.isNotBlank(vehicle.getJson())) {
                 Map<String, Object> convertedMap = jsonDictConverter.convertJsonKeysToDictLabel(vehicle.getJson());
                 vehicle.setJsonMap(convertedMap);
+            }
+            // 回收站数据，vin 去掉 _DEL_ 后缀，只影响显示
+            if (vehicle.getVin() != null && vehicle.getVin().contains("_DEL_")) {
+                vehicle.setVin(vehicle.getVin().substring(0, vehicle.getVin().indexOf("_DEL_")));
             }
         }
         return list;
@@ -215,13 +218,19 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     @Override
     public AjaxResult deleteVehicleInfoByIds(Long[] vehicleIds) {
         try {
-            int deleteRows = vehicleInfoMapper.deleteVehicleInfoByIds(vehicleIds);
-            return AjaxResult.success(deleteRows);
-        } catch (Exception e){
+            // 查出要删除的车辆
+            List<VehicleInfo> list = vehicleInfoMapper.selectVehicleInfoByIds(vehicleIds);
+            for (VehicleInfo v : list) {
+                // vin 加时间戳打破唯一键
+                v.setVin(v.getVin() + "_DEL_" + String.format("%06d", new Random().nextInt(999999)));
+                v.setDeleted(2);
+                vehicleInfoMapper.updateVehicleInfo(v);
+            }
+            return AjaxResult.success(list.size());
+        } catch (Exception e) {
             return AjaxResult.error(e.getMessage());
         }
     }
-
     /**
      * 批量恢复车辆信息
      *
@@ -230,12 +239,41 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
      */
     @Override
     public AjaxResult restoreVehicleInfoByIds(Long[] vehicleIds) {
-        int restoreRows = vehicleInfoMapper.restoreVehicleInfoByIds(vehicleIds);
+        List<VehicleInfo> list = vehicleInfoMapper.selectVehicleInfoByIds(vehicleIds);
+        List<String> conflictVins = new ArrayList<>();
+
+        for (VehicleInfo v : list) {
+            String realVin = v.getVin().contains("_DEL_")
+                    ? v.getVin().substring(0, v.getVin().indexOf("_DEL_"))
+                    : v.getVin();
+
+            // 检查是否有相同 vin 的正常数据
+            VehicleInfo existing = vehicleInfoMapper.selectByVinAndDeleted(realVin, 0);
+            if (existing != null) {
+                conflictVins.add(realVin);
+            }
+        }
+
+        // 有冲突直接返回错误
+        if (!conflictVins.isEmpty()) {
+            return AjaxResult.error("以下VIN已存在正常数据，无法恢复，请先处理冲突："
+                    + String.join(", ", conflictVins));
+        }
+
+        // 无冲突正常恢复
+        for (VehicleInfo v : list) {
+            String realVin = v.getVin().contains("_DEL_")
+                    ? v.getVin().substring(0, v.getVin().indexOf("_DEL_"))
+                    : v.getVin();
+            v.setVin(realVin);
+            v.setDeleted(0);
+            vehicleInfoMapper.updateVehicleInfo(v);
+        }
+
         Map<String, Object> result = new HashMap<>();
-        result.put("restoreRows", restoreRows);
+        result.put("restoreRows", list.size());
         return AjaxResult.success(result);
     }
-
     /**
      * 永久删除车辆信息
      *
