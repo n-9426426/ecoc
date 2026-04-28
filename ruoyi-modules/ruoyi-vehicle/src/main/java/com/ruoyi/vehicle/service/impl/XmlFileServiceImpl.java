@@ -1288,6 +1288,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (vehicle == null) {
                 throw new RuntimeException("车辆信息不存在");
             }
+            if (vehicle.getStatus().equals(1)) {
+                throw new RuntimeException("车辆信息已停用");
+            }
             msg.append(vehicle.getVin());
             msg.append("的生成结果为");
             Map<String, Object> jsonMap = vehicle.getJsonMap();
