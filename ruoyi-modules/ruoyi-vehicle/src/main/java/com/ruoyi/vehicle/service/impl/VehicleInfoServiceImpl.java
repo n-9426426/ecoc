@@ -217,7 +217,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             List<VehicleInfo> list = vehicleInfoMapper.selectVehicleInfoByIds(vehicleIds);
             for (VehicleInfo v : list) {
                 // vin 加时间戳打破唯一键
-                v.setVin(v.getVin() + "_DEL_" + String.format("%06d", new Random().nextInt(999999)));
+                v.setVin(v.getVin() + "_DEL_" + System.currentTimeMillis());
                 v.setDeleted(2);
                 vehicleInfoMapper.updateVehicleInfo(v);
             }

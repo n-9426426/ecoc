@@ -199,6 +199,7 @@
 			<if test="engineNumber != null and engineNumber != ''">engine_number = #{engineNumber},</if>
 			<if test="motorNumber != null and motorNumber != ''">motor_number = #{motorNumber},</if>
 			<if test="updateBy != null and updateBy != ''">update_by = #{updateBy}, </if>
+			<if test="deleted != null">deleted = #{deleted}, </if>
 			update_time = sysdate()
 		</set>
 		where vehicle_id = #{vehicleId}
