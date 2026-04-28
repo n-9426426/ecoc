@@ -33,19 +33,19 @@
 
     <select id="selectXmlValidateTotal" resultMap="ChartDataXmlTotalVo">
         SELECT
-            YEAR(create_time)  AS year,
-            MONTH(create_time) AS month,
+            YEAR(update_time)  AS year,
+            MONTH(update_time) AS month,
             COUNT(CASE WHEN validate_result IN (1, 2) THEN 1 END)     AS total,
             SUM(CASE WHEN validate_result = 2 THEN 1 ELSE 0 END) AS fail_number,
             SUM(CASE WHEN validate_result = 1 THEN 1 ELSE 0 END) AS pass_number
         FROM xml_file
         WHERE
-            deleted = 0 and is_latest = 1
-              AND create_time >= CONCAT(IFNULL(#{year}, YEAR(NOW())), '-01-01')
-              AND create_time &lt; CONCAT(IFNULL(#{year}, YEAR(NOW())) + 1, '-01-01')
+            deleted = 0 and is_latest = 1 and update_time is not null
+              AND update_time >= CONCAT(IFNULL(#{year}, YEAR(NOW())), '-01-01')
+              AND update_time &lt; CONCAT(IFNULL(#{year}, YEAR(NOW())) + 1, '-01-01')
         GROUP BY
-            YEAR(create_time),
-            MONTH(create_time)
+            YEAR(update_time),
+            MONTH(update_time)
         ORDER BY
             year ASC,
             month ASC;
@@ -110,12 +110,12 @@
     <select id="selectStatisticsXmlPassNumber" resultType="java.lang.Integer">
         SELECT COUNT(case when upload_result = 4 then 1 end)
         FROM xml_file
-        WHERE deleted = 0 and is_latest = 1
+        WHERE deleted = 0 and is_latest = 1 and update_time is not null
             <if test="startTime != null">
-                AND create_time >= #{startTime}
+                AND update_time >= #{startTime}
             </if>
             <if test="endTime != null">
-                AND create_time &lt; #{endTime}
+                AND update_time &lt; #{endTime}
             </if>
             <if test="issueStartTime != null">
                 AND issue_date >= #{issueStartTime}
@@ -152,10 +152,10 @@
     <select id="selectStatisticsVehicleFailNumber" resultType="java.lang.Integer">
         SELECT COUNT(*)
         FROM vehicle_info vi
-        WHERE vi.deleted = 0
+        WHERE vi.deleted = 0 and update_time is not null
             AND vi.validation_result = 2
-            AND vi.create_time >= IFNULL(#{startTime},        CONCAT(YEAR(NOW()), '-01-01'))
-            AND vi.create_time &lt;  IFNULL(#{endTime},       CONCAT(YEAR(NOW()) + 1, '-01-01'))
+            AND vi.update_time >= IFNULL(#{startTime},        CONCAT(YEAR(NOW()), '-01-01'))
+            AND vi.update_time &lt;  IFNULL(#{endTime},       CONCAT(YEAR(NOW()) + 1, '-01-01'))
             AND vi.issue_date  >= IFNULL(#{issueStartTime},   CONCAT(YEAR(NOW()), '-01-01'))
             AND vi.issue_date  &lt;  IFNULL(#{issueEndTime},  CONCAT(YEAR(NOW()) + 1, '-01-01'))
             <if test="factoryCode != null and factoryCode != ''">
@@ -175,12 +175,12 @@
     <select id="selectStatisticsXmlRejectNumber" resultType="java.lang.Integer">
         SELECT COUNT(case when upload_result = 5 then 1 end)
         FROM xml_file
-        WHERE deleted = 0 and is_latest = 1
+        WHERE deleted = 0 and is_latest = 1 and update_time is not null
             <if test="startTime != null">
-                AND create_time >= #{startTime}
+                AND update_time >= #{startTime}
             </if>
             <if test="endTime != null">
-                AND create_time &lt; #{endTime}
+                AND update_time &lt; #{endTime}
             </if>
             <if test="issueStartTime != null">
                 AND issue_date >= #{issueStartTime}
@@ -203,15 +203,15 @@
     </select>
 
     <select id="selectStatisticsTrend" resultMap="ChartDataXmlTotalVo">
-        SELECT YEAR(create_time) AS year,
+        SELECT YEAR(case when update_time is null then create_time else update_time end) AS year,
             <choose>
                 <when test="flag == 'month' or flag == 'day'">
-                    MONTH(create_time) AS month,
+                    MONTH(case when update_time is null then create_time else update_time end) AS month,
                 </when>
             </choose>
             <choose>
                 <when test="flag == 'day'">
-                    DAY(create_time) AS day,
+                    DAY(case when update_time is null then create_time else update_time end) AS day,
                 </when>
             </choose>
             COUNT(CASE WHEN validate_result IN (0, 1, 2) THEN 1 END) AS total,
@@ -220,10 +220,10 @@
         FROM xml_file
         WHERE deleted = 0 and is_latest = 1
             <if test="startTime != null">
-                AND create_time >= #{startTime}
+                AND case when update_time is null then create_time else update_time end >= #{startTime}
             </if>
             <if test="endTime != null">
-                AND create_time &lt; #{endTime}
+                AND case when update_time is null then create_time else update_time end &lt; #{endTime}
             </if>
             <if test="issueStartTime != null">
                 AND issue_date >= #{issueStartTime}
@@ -243,15 +243,15 @@
             <if test="uploadStatus != null">
                 AND upload_result = #{uploadStatus}
             </if>
-        GROUP BY YEAR(create_time)
+        GROUP BY YEAR(case when update_time is null then create_time else update_time end)
             <choose>
                 <when test="flag == 'month' or flag == 'day'">
-                    , MONTH(create_time)
+                    , MONTH(case when update_time is null then create_time else update_time end)
                 </when>
             </choose>
             <choose>
                 <when test="flag == 'day'">
-                    , DAY(create_time)
+                    , DAY(case when update_time is null then create_time else update_time end)
                 </when>
             </choose>
         ORDER BY year ASC

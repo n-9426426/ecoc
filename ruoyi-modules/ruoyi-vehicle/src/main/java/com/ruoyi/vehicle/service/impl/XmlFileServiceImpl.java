@@ -1471,7 +1471,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             vehicleLifecycle.setEntryId(vehicle.getVehicleId());
             vehicleLifecycle.setTime(new Date());
             vehicleLifecycle.setVin(vehicle.getVin());
-            vehicleLifecycle.setOperate("3");
+            vehicleLifecycle.setOperate("2");
             vehicleLifecycle.setResult(1);
             vehicleLifecycleMapper.insert(vehicleLifecycle);
 

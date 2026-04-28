@@ -73,7 +73,7 @@ public class ChartDataServiceImpl implements IChartDataService {
         chartDataStatisticsDto.setEndTime(Date.from(end.atZone(ZoneId.systemDefault()).toInstant()));
         Map<String, Object> result = new HashMap<>();
         result = statisticsCard(chartDataStatisticsDto);
-        result.put("vehicleWaitNumber", chartDataMapper.selectStatisticsVehicleWaitNumber(year));
+        result.put("vehicleWaitNumber", chartDataMapper.selectStatisticsVehicleWaitNumber(start, end));
         return result;
     }
 
