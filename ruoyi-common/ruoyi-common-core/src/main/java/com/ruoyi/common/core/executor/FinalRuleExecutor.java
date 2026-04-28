@@ -60,53 +60,35 @@ public class FinalRuleExecutor {
             Map<String, Object> context) {
 
         try {
+            String strVal;
             switch (rule.getType()) {
                 case NULL: return null;
                 case VALUE_IS_PRESENT:
-                    if (isAbsent(actualValue)) {
-                        return buildViolation(rule, fieldName, actualValue,
-                                "Field is required", "必填字段不能为空");
-                    }
-                    break;
+                    return buildViolation(rule, fieldName, actualValue, "Field is required", "必填字段不能为空");
 
                 case VALUE_IS_ABSENT:
-                    if (!isAbsent(actualValue)) {
-                        return buildViolation(rule, fieldName, actualValue,
-                                "Field must be absent", "该字段在此场景下必须为空");
-                    }
-                    break;
+                    return buildViolation(rule, fieldName, actualValue, "Field must be absent", "该字段在此场景下必须为空");
 
                 case VALUE_IN:
-                    if (!isAbsent(actualValue)) {
-                        String strVal = String.valueOf(actualValue);
-                        if (rule.getEnumValues() == null || !rule.getEnumValues().contains(strVal)) {
-                            return buildViolation(rule, fieldName, actualValue,
-                                    "Value not in allowed list: " + rule.getEnumValues(),
-                                    "值不在允许的枚举列表中: " + rule.getEnumValues());
-                        }
+                    strVal = String.valueOf(actualValue);
+                    if (rule.getEnumValues() == null || !rule.getEnumValues().contains(strVal)) {
+                        return buildViolation(rule, fieldName, actualValue,
+                                "Value not in allowed list: " + rule.getEnumValues(), "值不在允许的枚举列表中: " + rule.getEnumValues());
                     }
-                    break;
 
                 case VALUE_REGEX:
-                    if (!isAbsent(actualValue)) {
-                        String strVal = String.valueOf(actualValue);
-                        if (!Pattern.matches(rule.getRegexPattern(), strVal)) {
-                            return buildViolation(rule, fieldName, actualValue,
-                                    "Value does not match pattern: " + rule.getRegexPattern(),
-                                    "值不符合正则格式: " + rule.getRegexPattern());
-                        }
+                    strVal = String.valueOf(actualValue);
+                    if (!Pattern.matches(rule.getRegexPattern(), strVal)) {
+                        return buildViolation(rule, fieldName, actualValue,
+                                "Value does not match pattern: " + rule.getRegexPattern(), "值不符合正则格式: " + rule.getRegexPattern());
                     }
-                    break;
 
                 case VALUE_COMPARE:
-                    if (!isAbsent(actualValue)) {
-                        if (!compareValue(actualValue, rule.getCompareValue(), rule.getOperator())) {
-                            return buildViolation(rule, fieldName, actualValue,
-                                    "Value compare failed: " + rule.getOperator() + " " + rule.getCompareValue(),
-                                    "数值比较不通过: " + rule.getOperator() + " " + rule.getCompareValue());
-                        }
+                    if (!compareValue(actualValue, rule.getCompareValue(), rule.getOperator())) {
+                        return buildViolation(rule, fieldName, actualValue,
+                                "Value compare failed: " + rule.getOperator() + " " + rule.getCompareValue(),
+                                "数值比较不通过: " + rule.getOperator() + " " + rule.getCompareValue());
                     }
-                    break;
 
                 case MANDATORY_IF_ANY:
                     return checkMandatoryIfAny(fieldName, actualValue, rule, context);
@@ -205,9 +187,7 @@ public class FinalRuleExecutor {
         return null;
     }
 
-    private static RuleViolation checkMandatoryIfAll(
-            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
-
+    private static RuleViolation checkMandatoryIfAll(String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
         ConditionChain chain = rule.getConditionChain();
         if (chain == null) return null;
         // ALL：全部条件满足才触发
@@ -219,9 +199,7 @@ public class FinalRuleExecutor {
         return null;
     }
 
-    private static RuleViolation checkForbiddenIfAll(
-            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
-
+    private static RuleViolation checkForbiddenIfAll(String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
         ConditionChain chain = rule.getConditionChain();
         if (chain == null) return null;
         if (chain.evaluate(context) && !isAbsent(actualValue)) {
@@ -232,9 +210,7 @@ public class FinalRuleExecutor {
         return null;
     }
 
-    private static RuleViolation checkForbiddenIfAny(
-            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
-
+    private static RuleViolation checkForbiddenIfAny(String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
         if (rule.getConditionChain() == null) {
             return null;
         }
@@ -253,9 +229,7 @@ public class FinalRuleExecutor {
     // 聚合校验
     // ==========================================
 
-    private static RuleViolation checkCountAggregate(
-            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
-
+    private static RuleViolation checkCountAggregate(String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
         AggregateFunction af = rule.getAggregateFunction();
         Object listObj = context.get(af.getListField());
         if (!(listObj instanceof List)) return null;
@@ -280,9 +254,7 @@ public class FinalRuleExecutor {
         return null;
     }
 
-    private static RuleViolation checkSumAggregate(
-            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
-
+    private static RuleViolation checkSumAggregate(String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
         AggregateFunction af = rule.getAggregateFunction();
         Object listObj = context.get(af.getListField());
         if (!(listObj instanceof List)) return null;
@@ -316,9 +288,7 @@ public class FinalRuleExecutor {
     // 嵌套条件校验
     // ==========================================
 
-    private static RuleViolation checkNestedCondition(
-            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
-
+    private static RuleViolation checkNestedCondition(String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
         NestedConditionRule nested = rule.getNestedCondition();
         if (nested == null) return null;
 
@@ -346,15 +316,15 @@ public class FinalRuleExecutor {
                 }
                 break;
             case "REGEX":
-                if (!isAbsent(actualValue)) {
+//                if (!isAbsent(actualValue)) {
                     String strVal = String.valueOf(actualValue);
                     if (!Pattern.matches(nested.getCompareValue(), strVal)) {
                         return buildViolation(rule, fieldName, actualValue,
                                 "Value does not match pattern (nested): " + nested.getCompareValue(),
                                 "嵌套条件满足时值不符合正则格式: " + nested.getCompareValue());
                     }
-                }
-                break;
+//                }
+//                break;
             default:
                 log.warn("嵌套条件未知操作符: {}", nested.getOperator());
         }
@@ -365,10 +335,8 @@ public class FinalRuleExecutor {
     // 范围校验
     // ==========================================
 
-    private static RuleViolation checkNumericRange(
-            String fieldName, Object actualValue, RuleItem rule) {
+    private static RuleViolation checkNumericRange(String fieldName, Object actualValue, RuleItem rule) {
         try {
-            if (isAbsent(actualValue)) return null;
             double val = toDouble(actualValue);
 
             Double min = rule.getRangeMin();
@@ -392,10 +360,7 @@ public class FinalRuleExecutor {
         }
     }
 
-    private static RuleViolation checkLengthRange(
-            String fieldName, Object actualValue, RuleItem rule) {
-
-        if (isAbsent(actualValue)) return null;
+    private static RuleViolation checkLengthRange(String fieldName, Object actualValue, RuleItem rule) {
         int len = String.valueOf(actualValue).length();
 
         // 从 rawRule 中取 minLength / maxLength（已存入 rangeMin/rangeMax）
@@ -415,10 +380,7 @@ public class FinalRuleExecutor {
         return null;
     }
 
-    private static RuleViolation checkTotalDigits(
-            String fieldName, Object actualValue, RuleItem rule) {
-
-        if (isAbsent(actualValue)) return null;
+    private static RuleViolation checkTotalDigits(String fieldName, Object actualValue, RuleItem rule) {
         try {
             BigDecimal bd = new BigDecimal(String.valueOf(actualValue)).stripTrailingZeros();
             int totalDigits = bd.precision();
@@ -437,10 +399,7 @@ public class FinalRuleExecutor {
         return null;
     }
 
-    private static RuleViolation checkFractionDigits(
-            String fieldName, Object actualValue, RuleItem rule) {
-
-        if (isAbsent(actualValue)) return null;
+    private static RuleViolation checkFractionDigits(String fieldName, Object actualValue, RuleItem rule) {
         try {
             BigDecimal bd = new BigDecimal(String.valueOf(actualValue));
             int scale = Math.max(bd.scale(), 0);
