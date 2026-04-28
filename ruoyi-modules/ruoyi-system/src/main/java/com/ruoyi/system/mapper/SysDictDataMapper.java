@@ -101,4 +101,17 @@ public interface SysDictDataMapper
      * @return 引用数量
      */
     int countVehicleTemplateAttributeByDictCode(@Param("dictCode") Long dictCode);
+
+    /**
+     * 查询同组（相同 dict_label + dict_type + dict_type_affiliation）的所有行
+     */
+    List<SysDictData> selectSiblingRows(@Param("uuid") String uuid);
+
+    // 手动分页查询
+    List<SysDictData> selectDictDataListAggregated(@Param("dictData") SysDictData dictData,
+                                                   @Param("offset") long offset,
+                                                   @Param("pageSize") int pageSize);
+
+    // 聚合总数
+    long countDictDataListAggregated(SysDictData dictData);
 }

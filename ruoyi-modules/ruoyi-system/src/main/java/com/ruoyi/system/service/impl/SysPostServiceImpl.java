@@ -174,9 +174,15 @@ public class SysPostServiceImpl implements ISysPostService
      * @return 结果
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public int insertPost(SysPost post)
     {
-        return postMapper.insertPost(post);
+        int row = postMapper.insertPost(post);
+        SysPostMenu postMenu = new SysPostMenu();
+        postMenu.setPostId(post.getPostId());
+        postMenu.setMenuIds(post.getMenuIds());
+        updatePostMenu(postMenu);
+        return row;
     }
 
     /**

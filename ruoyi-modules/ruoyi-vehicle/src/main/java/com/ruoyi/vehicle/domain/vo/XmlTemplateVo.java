@@ -26,6 +26,10 @@ public class XmlTemplateVo {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date createTime;
 
+    private String country;
+
+    private Long energyType;
+
     private List<AttributeTreeNode> attributeTree;
 
     public Long getTemplateId() {
@@ -106,5 +110,21 @@ public class XmlTemplateVo {
 
     public void setAttributeTree(List<AttributeTreeNode> attributeTree) {
         this.attributeTree = attributeTree;
+    }
+
+    public String getCountry() {
+        return country;
+    }
+
+    public void setCountry(String country) {
+        this.country = country;
+    }
+
+    public Long getEnergyType() {
+        return energyType;
+    }
+
+    public void setEnergyType(Long energyType) {
+        this.energyType = energyType;
     }
 }
