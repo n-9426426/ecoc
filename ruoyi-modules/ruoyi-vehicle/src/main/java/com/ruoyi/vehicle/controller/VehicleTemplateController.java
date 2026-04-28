@@ -45,7 +45,7 @@ public class VehicleTemplateController extends BaseController {
     /**
      * 查询列表
      */
-    @RequiresPermissions("vehicle:template:list")
+    @RequiresPermissions("vehicle:template:query")
     @GetMapping("/list")
     public TableDataInfo list(VehicleTemplate template) {
         startPage();
@@ -53,14 +53,14 @@ public class VehicleTemplateController extends BaseController {
         return getDataTable(list);
     }
 
-    @RequiresPermissions("vehicle:template:list")
+    @RequiresPermissions("vehicle:template:query")
     @GetMapping("/expiring")
     public TableDataInfo expiringList() {
         List<VehicleTemplate> list = vehicleTemplateService.selectVehicleTemplateExpiringList();
         return getDataTable(list);
     }
 
-    @RequiresPermissions("vehicle:template:list")
+    @RequiresPermissions("vehicle:template:query")
     @GetMapping("/options")
     public AjaxResult optionSelect() {
         List<VehicleTemplate> list = vehicleTemplateService.selectVehicleTemplateOption();
@@ -70,7 +70,7 @@ public class VehicleTemplateController extends BaseController {
     /**
      * 查看详情（下钻）
      */
-    @RequiresPermissions("vehicle:template:query")
+    @RequiresPermissions("vehicle:template:get")
     @GetMapping("/{templateId}")
     public AjaxResult getInfo(@PathVariable Long templateId) {
         return AjaxResult.success(vehicleTemplateService.selectVehicleTemplateById(templateId));
@@ -186,6 +186,7 @@ public class VehicleTemplateController extends BaseController {
     /**
      * 查询物料号列表
      */
+    @RequiresPermissions("vehicle:template:material:get")
     @GetMapping("/material/{templateId}")
     public AjaxResult getMaterialList(@PathVariable Long templateId) {
         return AjaxResult.success(vehicleTemplateService.selectMaterialByTemplateId(templateId));
@@ -194,6 +195,7 @@ public class VehicleTemplateController extends BaseController {
     /**
      * 保存物料号列表（1模板对N物料号）
      */
+    @RequiresPermissions("vehicle:template:material:edit")
     @PostMapping("/material/{templateId}")
     public AjaxResult saveMaterialList(
             @PathVariable Long templateId,

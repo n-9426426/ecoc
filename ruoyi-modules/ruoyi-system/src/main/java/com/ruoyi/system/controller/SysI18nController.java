@@ -48,6 +48,7 @@ public class SysI18nController extends BaseController {
     @Operation(summary = "查询翻译列表")
     @GetMapping("/list/all")
     public TableDataInfo allList(SysI18n sysI18n) {
+        sysI18n.setStatus(0);
         return getDataTable(i18nService.selectSysI18nList(sysI18n));
     }
 

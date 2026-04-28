@@ -205,12 +205,12 @@
     <select id="selectStatisticsTrend" resultMap="ChartDataXmlTotalVo">
         SELECT YEAR(case when update_time is null then create_time else update_time end) AS year,
             <choose>
-                <when test="flag == 'month' or flag == 'day'">
+                <when test="flag == 'year' or flag == 'month' or flag == 'day'">
                     MONTH(case when update_time is null then create_time else update_time end) AS month,
                 </when>
             </choose>
             <choose>
-                <when test="flag == 'day'">
+                <when test="flag == 'month' or flag == 'day'">
                     DAY(case when update_time is null then create_time else update_time end) AS day,
                 </when>
             </choose>
@@ -245,23 +245,23 @@
             </if>
         GROUP BY YEAR(case when update_time is null then create_time else update_time end)
             <choose>
-                <when test="flag == 'month' or flag == 'day'">
+                <when test="flag == 'year' or flag == 'month' or flag == 'day'">
                     , MONTH(case when update_time is null then create_time else update_time end)
                 </when>
             </choose>
             <choose>
-                <when test="flag == 'day'">
+                <when test="flag == 'month' or flag == 'day'">
                     , DAY(case when update_time is null then create_time else update_time end)
                 </when>
             </choose>
         ORDER BY year ASC
             <choose>
-                <when test="flag == 'month' or flag == 'day'">
+                <when test="flag == 'year' or flag == 'month' or flag == 'day'">
                     , month ASC
                 </when>
             </choose>
             <choose>
-                <when test="flag == 'day'">
+                <when test="flag == 'month' or flag == 'day'">
                     , day ASC
                 </when>
             </choose>
@@ -296,15 +296,9 @@
             <!-- ① Vehicle Template -->
             <when test="abnormalType == 'Vehicle Template'">
                 INNER JOIN xml_template xt
-                ON ac.entry_id = CAST(xf.id AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci and ac.entry_id = xt.template_id
+                ON ac.entry_id = CAST(xt.template_id AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci and ac.entry_id = xt.template_id
                 AND ac.entry_type = 'Vehicle Template'
                 WHERE xt.deleted = 0
-                <if test="startTime != null">
-                    AND xt.create_time &gt;= #{startTime}
-                </if>
-                <if test="endTime != null">
-                    AND xt.create_time &lt; #{endTime}
-                </if>
                 <if test="vehicleModel != null">
                     AND xt.template_id = #{vehicleModel}
                 </if>
@@ -315,15 +309,9 @@
             <!-- ② Vehicle Info -->
             <when test="abnormalType == 'Vehicle Info'">
                 INNER JOIN vehicle_info vi
-                ON ac.entry_id = CAST(xf.id AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci and ac.entry_id = vi.vehicle_id
+                ON ac.entry_id = CAST(vi.vehicle_id AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci and ac.entry_id = vi.vehicle_id
                 AND ac.entry_type = 'Vehicle Info'
                 WHERE vi.deleted = 0
-                <if test="startTime != null">
-                    AND vi.create_time &gt;= #{startTime}
-                </if>
-                <if test="endTime != null">
-                    AND vi.create_time &lt; #{endTime}
-                </if>
                 <if test="issueStartTime != null">
                     AND vi.issue_date &gt;= #{issueStartTime}
                 </if>
@@ -351,12 +339,6 @@
                 AND ac.entry_type = 'XML File'
                 WHERE xf.deleted = 0
                 AND xf.is_latest = 1
-                <if test="startTime != null">
-                    AND xf.create_time &gt;= #{startTime}
-                </if>
-                <if test="endTime != null">
-                    AND xf.create_time &lt; #{endTime}
-                </if>
                 <if test="issueStartTime != null">
                     AND xf.issue_date &gt;= #{issueStartTime}
                 </if>
@@ -377,6 +359,12 @@
                 </if>
             </otherwise>
         </choose>
+        <if test="startTime != null">
+            AND ac.create_time &gt;= #{startTime}
+        </if>
+        <if test="endTime != null">
+            AND ac.create_time &lt; #{endTime}
+        </if>
         GROUP BY ac.rule_type
         ORDER BY count DESC
     </select>
