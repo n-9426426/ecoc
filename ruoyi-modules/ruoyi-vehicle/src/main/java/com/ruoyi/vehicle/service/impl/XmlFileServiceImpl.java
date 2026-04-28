@@ -11,8 +11,10 @@ import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.RemoteFileService;
+import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.SysDictData;
+import com.ruoyi.system.api.domain.SysNotice;
 import com.ruoyi.vehicle.domain.*;
 import com.ruoyi.vehicle.domain.vo.DiffLineVO;
 import com.ruoyi.vehicle.domain.vo.DiffResultVO;
@@ -45,7 +47,9 @@ import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
-import java.io.*;
+import java.io.File;
+import java.io.StringReader;
+import java.io.StringWriter;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -95,6 +99,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     @Autowired
     private AbnormalClassifyMapper abnormalClassifyMapper;
+
+    @Autowired
+    private RemoteNoticeService remoteNoticeService;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -164,39 +171,30 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
         // 3. 从旧文件名中提取 VIN
         String oldFileName = dbXmlFile.getFileName();
-        String vin = oldFileName.substring(oldFileName.indexOf("_") + 1, oldFileName.lastIndexOf("_"));
+        String vin = oldFileName.split("_")[0];
+        vin = oldFileName.split("\\.")[0];
 
         // 4. 计算新版本号（当前版本 +1）
         String oldVersion = xmlFileMapper.selectVersionByFileName("vehicle_" + vin);
         String newVersion = String.valueOf(new BigDecimal(oldVersion).add(new BigDecimal(1)));
 
         // 5. 生成新文件名和路径
-        String newFileName = "vehicle_" + vin + "_" + System.currentTimeMillis() + ".xml";
-        // 获取项目根路径下的 /xml 目录
-        String xmlDir = "xml" + File.separator;
-        File dir = new File(xmlDir);
-        if (!dir.exists()) {
-            dir.mkdirs();
-        }
-        String newFilePath = File.separator + xmlDir + newFileName;
-
-        // 6. 将 content 写入本地文件
-        try (Writer writer = new OutputStreamWriter(
-                Files.newOutputStream(Paths.get(System.getProperty("user.dir") + newFilePath)), StandardCharsets.UTF_8)) {
-            writer.write(content);
-            writer.flush();
-        } catch (IOException e) {
-            throw new ServiceException("XML文件写入失败: " + e.getMessage());
-        }
+        String newFileName = "vehicle_" + vin + ".xml";
+        // 获取文件路径
+        MultipartFile multipartFile = FileUtils.createMultipartFile(
+                content, vin + ".xml", "application/xml");
+        String newFilePath = remoteFileService.upload(multipartFile).getData().getUrl();
 
         // 7. 计算文件大小
-        long fileSize = new File(newFilePath).length();
+        long fileSize = multipartFile.getSize();
 
         // 8. 构造 remark
         String remark = "由" + oldFileName + "更新，版本：" + newVersion;
 
         // 9. 将旧记录 is_latest 设为 0
         xmlFileMapper.updateIsLatestToFalse("vehicle_" + vin);
+
+        xmlFileMapper.updateIsLatestToFalse(newFileName);
 
         // 10. 更新 xml_file 表
         dbXmlFile.setFileName(newFileName);
@@ -259,7 +257,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
 
             xmlFile.setVersion(xmlVersion);
-            xmlFile.setFileName(file.getOriginalFilename());
+            xmlFile.setFileName("vehicle_" + xmlFile.getVin() + ".xml");
             xmlFile.setFileSize(file.getSize());
             xmlFile.setIsLatest(true);
             xmlFile.setStatus("0");
@@ -555,6 +553,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
         // 前置：结构校验错误列表（校验1、2）
         List<FieldValidationResult> structureResults = new ArrayList<>();
         List<AbnormalClassify> abnormalClassifies = new ArrayList<>();
+        SysNotice sysNotice = new SysNotice();
+        sysNotice.setIsRead(false);
+        sysNotice.setNoticeType("1");
+        sysNotice.setNoticeTitle("XML文件校验完成通知");
+        StringBuilder msg = new StringBuilder("XML文件");
         AbnormalClassify abnormalClassify;
         try {
             // 1. 查询文件记录
@@ -651,11 +654,18 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             // 记录生命周期
             VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
+            vehicleLifecycle.setEntryId(xmlFile.getId());
             vehicleLifecycle.setTime(new Date());
             vehicleLifecycle.setVin(xmlFile.getVin());
             vehicleLifecycle.setOperate("3");
             vehicleLifecycle.setResult(validateResult ? 0 : 1);
             vehicleLifecycleMapper.insert(vehicleLifecycle);
+
+            msg.append(System.lineSeparator());
+            msg.append("Vin");
+            msg.append(xmlFile.getVin());
+            msg.append("的校验结果为");
+            msg.append(finalReport.isAllValid() ? "通过" : "失败");
 
             for (FieldValidationResult fieldValidationResult: finalReport.getFieldResults()) {
                 for (RuleViolation ruleViolation: fieldValidationResult.getViolations()) {
@@ -670,8 +680,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (!abnormalClassifies.isEmpty()) {
                 abnormalClassifyMapper.batchInsert(abnormalClassifies);
             }
+            sysNotice.setNoticeContent(msg.toString());
+            remoteNoticeService.add(sysNotice);
             return finalReport;
-
         } catch (Exception e) {
             log.error("校验XML文件失败", e);
             return ValidationReport.fail("校验XML文件异常：" + e.getMessage());
@@ -1068,8 +1079,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             List<XmlTemplateAttribute> attrList = xmlTemplateAttributeMapper.selectByTemplateId(template.getTemplateId());
             if (attrList == null || attrList.isEmpty()) return null;
 
-            List<SysDictData> dictDataList =
-                    remoteDictService.getDictDataByType("vehicle_attribute").getData();
+            List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
             Map<String, SysDictData> dictCodeMap = new HashMap<>();
             for (SysDictData d : dictDataList) {
                 if (d.getDictCode() != null) {
@@ -1098,9 +1108,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 if (nodeList.getLength() == 1) {
                     // 非循环节点：直接取值
                     String value = nodeList.item(0).getTextContent();
-                    if (StringUtils.isNotBlank(value)) {
-                        reconstructedJsonMap.put(dict.getKeyMap(), value);
-                    }
+                    reconstructedJsonMap.put(dict.getKeyMap(), value);
                 } else {
                     // 循环节点：拼接为分号分隔字符串，与原始 json 格式对齐
                     StringJoiner joiner = new StringJoiner(";");
@@ -1251,11 +1259,21 @@ public class XmlFileServiceImpl implements IXmlFileService {
     @Transactional(rollbackFor = Exception.class)
     public String generateXmlFromDatabase(Long vehicleId) {
         try {
+            SysNotice sysNotice = new SysNotice();
+            sysNotice.setIsRead(false);
+            sysNotice.setNoticeType("1");
+            sysNotice.setNoticeTitle("XML文件生成通知");
+            StringBuilder msg = new StringBuilder("XML文件");
+            msg.append(System.lineSeparator());
+            msg.append("Vin");
+
             // 1. 查询车辆信息
             VehicleInfo vehicle = vehicleInfoService.selectVehicleInfoById(vehicleId);
             if (vehicle == null) {
                 throw new RuntimeException("车辆信息不存在");
             }
+            msg.append(vehicle.getVin());
+            msg.append("的生成结果为");
             Map<String, Object> jsonMap = vehicle.getJsonMap();
             if (jsonMap == null) {
                 jsonMap = new HashMap<>();
@@ -1264,6 +1282,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             // 2.匹配模板
             XmlTemplate xmlTemplate = matchTemplate(vehicle);
             if (xmlTemplate == null) {
+                msg.append("失败");
+                sysNotice.setNoticeContent(msg.toString());
+                remoteNoticeService.add(sysNotice);
                 throw new RuntimeException("未找到匹配的XML模板，VIN=" + vehicle.getVin());
             }
 
@@ -1279,6 +1300,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             // 4. 查询模板属性列表
             List<XmlTemplateAttribute> attrList = xmlTemplateAttributeMapper.selectByTemplateId(xmlTemplate.getTemplateId());
             if (attrList == null || attrList.isEmpty()) {
+                msg.append("失败");
+                sysNotice.setNoticeContent(msg.toString());
+                remoteNoticeService.add(sysNotice);
                 throw new ServiceException("模板无属性定义，无法生成XML");
             }
 
@@ -1287,9 +1311,15 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     .filter(a -> a.getAttrPath() != null && a.getAttrPath().split("\\.").length == 1)
                     .collect(Collectors.toList());
             if (topLevelAttrs.isEmpty()) {
+                msg.append("失败");
+                sysNotice.setNoticeContent(msg.toString());
+                remoteNoticeService.add(sysNotice);
                 throw new ServiceException("模板无顶层节点，XML必须有唯一根节点");
             }
             if (topLevelAttrs.size() > 1) {
+                msg.append("失败");
+                sysNotice.setNoticeContent(msg.toString());
+                remoteNoticeService.add(sysNotice);
                 throw new ServiceException("模板存在多个顶层节点，XML 不允许多根节点");
             }
 
@@ -1391,8 +1421,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             // 15. 版本管理
             String xmlVersion = xmlFileMapper.selectVersionByFileName("vehicle_" + vehicle.getVin());
-            xmlVersion = StringUtils.isBlank(xmlVersion) ? "1.0"
-                    : String.valueOf(new BigDecimal(xmlVersion).add(new BigDecimal(1)));
+            xmlVersion = StringUtils.isBlank(xmlVersion) ? "1.0" : String.valueOf(new BigDecimal(xmlVersion).add(new BigDecimal(1)));
+            xmlFileMapper.updateIsLatestToFalse("vehicle_" + vehicle.getVin());
 
             // 16. 上传文件
             MultipartFile multipartFile = FileUtils.createMultipartFile(
@@ -1433,19 +1463,22 @@ public class XmlFileServiceImpl implements IXmlFileService {
             xmlVersionMapper.insertXmlVersion(version);
 
             // 19. 更新状态
-            xmlFileMapper.updateIsLatestToFalse("vehicle_" + vehicle.getVin());
             vehicle.setUploadStatus(1);
             vehicleInfoService.updateVehicleInfo(vehicle);
 
             // 20. 记录生命周期
             VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
+            vehicleLifecycle.setEntryId(vehicle.getVehicleId());
             vehicleLifecycle.setTime(new Date());
             vehicleLifecycle.setVin(vehicle.getVin());
             vehicleLifecycle.setOperate("3");
             vehicleLifecycle.setResult(1);
             vehicleLifecycleMapper.insert(vehicleLifecycle);
 
-            log.info("成功生成XML文件，VIN={}", vehicle.getVin());
+            msg.append("成功");
+            sysNotice.setNoticeContent(msg.toString());
+            remoteNoticeService.add(sysNotice);
+
             return xmlContent;
 
         } catch (Exception e) {

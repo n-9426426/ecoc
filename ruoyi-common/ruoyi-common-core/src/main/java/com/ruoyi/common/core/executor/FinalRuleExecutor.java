@@ -6,7 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -368,24 +367,29 @@ public class FinalRuleExecutor {
 
     private static RuleViolation checkNumericRange(
             String fieldName, Object actualValue, RuleItem rule) {
+        try {
+            if (isAbsent(actualValue)) return null;
+            double val = toDouble(actualValue);
 
-        if (isAbsent(actualValue)) return null;
-        double val = toDouble(actualValue);
+            Double min = rule.getRangeMin();
+            Double max = rule.getRangeMax();
 
-        Double min = rule.getRangeMin();
-        Double max = rule.getRangeMax();
-
-        if (min != null && min.compareTo(val) > 0) {
+            if (min != null && min.compareTo(val) > 0) {
+                return buildViolation(rule, fieldName, actualValue,
+                        "Value " + val + " is less than min " + min,
+                        "值 " + val + " 小于最小值 " + min);
+            }
+            if (max != null && max.compareTo(val) < 0) {
+                return buildViolation(rule, fieldName, actualValue,
+                        "Value " + val + " exceeds max " + max,
+                        "值 " + val + " 超过最大值 " + max);
+            }
+            return null;
+        } catch (Exception e) {
             return buildViolation(rule, fieldName, actualValue,
-                    "Value " + val + " is less than min " + min,
-                    "值 " + val + " 小于最小值 " + min);
+                    "Value is not Value",
+                    "totalDigits 校验时值无法转换为数字");
         }
-        if (max != null && max.compareTo(val) < 0) {
-            return buildViolation(rule, fieldName, actualValue,
-                    "Value " + val + " exceeds max " + max,
-                    "值 " + val + " 超过最大值 " + max);
-        }
-        return null;
     }
 
     private static RuleViolation checkLengthRange(
@@ -426,6 +430,9 @@ public class FinalRuleExecutor {
             }
         } catch (NumberFormatException e) {
             log.warn("totalDigits 校验时值无法转换为数字: {}", actualValue);
+            return buildViolation(rule, fieldName, actualValue,
+                    "Value is not Value",
+                    "totalDigits 校验时值无法转换为数字");
         }
         return null;
     }
@@ -445,6 +452,9 @@ public class FinalRuleExecutor {
             }
         } catch (NumberFormatException e) {
             log.warn("fractionDigits 校验时值无法转换为数字: {}", actualValue);
+            return buildViolation(rule, fieldName, actualValue,
+                    "Value is not Value",
+                    "totalDigits 校验时值无法转换为数字");
         }
         return null;
     }
@@ -469,10 +479,10 @@ public class FinalRuleExecutor {
     }
 
     public static boolean isAbsent(Object value) {
-        if (value == null) return true;
-        if (value instanceof String) return ((String) value).trim().isEmpty();
-        if (value instanceof Collection) return ((Collection<?>) value).isEmpty();
-        if (value instanceof Map) return ((Map<?, ?>) value).isEmpty();
+//        if (value == null) return true;
+//        if (value instanceof String) return ((String) value).trim().isEmpty();
+//        if (value instanceof Collection) return ((Collection<?>) value).isEmpty();
+//        if (value instanceof Map) return ((Map<?, ?>) value).isEmpty();
         return false;
     }
 

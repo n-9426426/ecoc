@@ -2,6 +2,7 @@ package com.ruoyi.vehicle.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.core.enums.RuleItemType;
+import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.model.FieldValidationResult;
 import com.ruoyi.common.core.model.RuleViolation;
 import com.ruoyi.common.core.model.ValidationReport;
@@ -10,7 +11,9 @@ import com.ruoyi.common.core.utils.uuid.UUID;
 import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.RemoteFileService;
+import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.domain.SysDictData;
+import com.ruoyi.system.api.domain.SysNotice;
 import com.ruoyi.vehicle.domain.AbnormalClassify;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.domain.VehicleTemplateMaterial;
@@ -88,6 +91,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     @Autowired
     private AbnormalClassifyMapper abnormalClassifyMapper;
 
+    @Autowired
+    private RemoteNoticeService remoteNoticeService;
+
     @Override
     public List<VehicleTemplate> selectVehicleTemplateList(VehicleTemplate template) {
         return templateMapper.selectVehicleTemplateList(template);
@@ -133,7 +139,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         template.setValidateResult("0");
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(DateUtils.getNowDate());
-        return templateMapper.insertVehicleTemplate(template);
+        int row = templateMapper.insertVehicleTemplate(template);
+        batchValidate(template.getTemplateId());
+        return row;
     }
 
     @Override
@@ -176,14 +184,37 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         List<AbnormalClassify> abnormalClassifies = new ArrayList<>();
         AbnormalClassify abnormalClassify;
 
-        for (Long templateId : templateIds) {
-            try {
-                VehicleTemplate template = templateMapper.selectVehicleTemplateById(templateId);
-                if (template == null) {
-                    log.warn("模板不存在, templateId={}", templateId);
-                    continue;
-                }
+        List<VehicleTemplate> templates = new LinkedList<>();
+        List<Long> notExistIds = new LinkedList<>();
 
+        for (Long templateId : templateIds) {
+            VehicleTemplate vehicleTemplate = templateMapper.selectVehicleTemplateById(templateId);
+            if (vehicleTemplate == null) {
+                log.warn("模板不存在, templateId = {}", templateId);
+                notExistIds.add(templateId);
+                continue;
+            }
+            templates.add(vehicleTemplate);
+        }
+        if (!notExistIds.isEmpty()) {
+            StringBuilder msg = new StringBuilder("模版");
+            for (int i = 0; i < notExistIds.size(); i++) {
+                msg.append(notExistIds.get(i));
+                if (i != notExistIds.size() - 1) {
+                    msg.append(",");
+                }
+            }
+            msg.append("不存在");
+            throw new ServiceException(msg.toString());
+        }
+
+        SysNotice sysNotice = new SysNotice();
+        sysNotice.setIsRead(false);
+        sysNotice.setNoticeType("1");
+        sysNotice.setNoticeTitle("车辆信息模版校验完成通知");
+        StringBuilder msg = new StringBuilder("车辆信息模版");
+        for (VehicleTemplate template : templates) {
+            try {
                 // 执行校验
                 ValidationReport report = vehicleValidationService.validate(
                         template.getJson(),
@@ -194,7 +225,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 for (FieldValidationResult fieldValidationResult: report.getFieldResults()) {
                     for (RuleViolation ruleViolation: fieldValidationResult.getViolations()) {
                         abnormalClassify = new AbnormalClassify();
-                        abnormalClassify.setEntryId(String.valueOf(templateId));
+                        abnormalClassify.setEntryId(String.valueOf(template.getTemplateId()));
                         abnormalClassify.setEntryType("Vehicle Template");
                         abnormalClassify.setRuleType(RuleItemType.getRuleType(ruleViolation.getRuleType()));
                         abnormalClassifies.add(abnormalClassify);
@@ -205,7 +236,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
                 // 组装回写数据
                 VehicleTemplate update = new VehicleTemplate();
-                update.setTemplateId(templateId);
+                update.setTemplateId(template.getTemplateId());
                 update.setValidateResult(report.isAllValid() ? "1" : "2");
                 try {
                     update.setValidateMsg(objectMapper.writeValueAsString(report.getFailedFields()));
@@ -214,8 +245,13 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 }
                 updateList.add(update);
 
+                msg.append(System.lineSeparator());
+                msg.append("WVTA编号");
+                msg.append(template.getWvtaCocNo());
+                msg.append("的校验结果为");
+                msg.append(report.isAllValid() ? "通过" : "失败");
             } catch (Exception e) {
-                log.error("校验异常, templateId={}", templateId, e);
+                log.error("校验异常, templateId={}", template.getTemplateId(), e);
                 reports.add(ValidationReport.builder()
                         .allValid(false)
                         .error("校验异常：" + e.getMessage()).build());
@@ -226,11 +262,12 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             abnormalClassifyMapper.batchInsert(abnormalClassifies);
         }
 
-        // 批量回写校验结果
+        // 批量回写校验结果,发送通知
         if (!updateList.isEmpty()) {
             templateMapper.batchUpdateValidateResult(updateList);
         }
-
+        sysNotice.setNoticeContent(msg.toString());
+        remoteNoticeService.add(sysNotice);
         return reports;
     }
 

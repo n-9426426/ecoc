@@ -12,8 +12,10 @@ import com.ruoyi.common.core.utils.bean.BeanUtils;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.RemoteDictService;
+import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.SysDictData;
+import com.ruoyi.system.api.domain.SysNotice;
 import com.ruoyi.vehicle.domain.AbnormalClassify;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.VehicleLifecycle;
@@ -72,6 +74,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Autowired
     private AbnormalClassifyMapper abnormalClassifyMapper;
+
+    @Autowired
+    private RemoteNoticeService remoteNoticeService;
 
     @Autowired
     private VehicleTemplateMapper vehicleTemplateMapper;
@@ -155,12 +160,14 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         int row = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
 
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
+        vehicleLifecycle.setEntryId(vehicleInfo.getVehicleId());
         vehicleLifecycle.setTime(new Date());
         vehicleLifecycle.setVin(vehicleInfo.getVin());
         vehicleLifecycle.setOperate("0");
         vehicleLifecycle.setResult(0);
         vehicleLifecycleMapper.insert(vehicleLifecycle);
 
+        validateVehicleInfo(Collections.singletonList(vehicleInfo.getVehicleId()));
         return row;
     }
 
@@ -262,6 +269,11 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     public List<ValidationReport> validateVehicleInfo(List<Long> vehicleInfoIds) {
         List<ValidationReport> validationReports = new LinkedList<>();
         List<AbnormalClassify> abnormalClassifies = new ArrayList<>();
+        SysNotice sysNotice = new SysNotice();
+        sysNotice.setIsRead(false);
+        sysNotice.setNoticeType("1");
+        sysNotice.setNoticeTitle("车辆信息校验完成通知");
+        StringBuilder msg = new StringBuilder("车辆信息");
         AbnormalClassify abnormalClassify;
         for (Long vehicleInfoId : vehicleInfoIds) {
             VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleInfoId);
@@ -285,6 +297,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             validationReports.add(validationReport);
             vehicleInfoMapper.updateVehicleInfo(vehicleInfo);
             VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
+            vehicleLifecycle.setEntryId(vehicleInfo.getVehicleId());
             vehicleLifecycle.setTime(new Date());
             vehicleLifecycle.setVin(vehicleInfo.getVin());
             vehicleLifecycle.setOperate("1");
@@ -300,12 +313,19 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                     abnormalClassifies.add(abnormalClassify);
                 }
             }
+
+            msg.append(System.lineSeparator());
+            msg.append("Vin");
+            msg.append(vehicleInfo.getVin());
+            msg.append("的校验结果为");
+            msg.append(validationReport.isAllValid() ? "通过" : "失败");
         }
 
         if (!abnormalClassifies.isEmpty()) {
             abnormalClassifyMapper.batchInsert(abnormalClassifies);
         }
-
+        sysNotice.setNoticeContent(msg.toString());
+        remoteNoticeService.add(sysNotice);
         return validationReports;
     }
 
