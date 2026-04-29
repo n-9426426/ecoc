@@ -109,7 +109,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
      */
     @Override
     public List<XmlFile> selectXmlFileList(XmlFile xmlFile) {
-        return xmlFileMapper.selectXmlFileList(xmlFile);}
+        return xmlFileMapper.selectXmlFileList(xmlFile);
+    }
 
     /**
      * 查询XML文件
@@ -847,7 +848,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             Map<String, SysDictData> dictCodeMap = new HashMap<>();
             for (SysDictData d : dictDataList) {
                 if (d.getDictCode() != null) {
-                    dictCodeMap.put(String.valueOf(d.getDictCode()), d);
+                    dictCodeMap.put(String.valueOf(d.getUuid()), d);
                 }
             }
 
@@ -858,8 +859,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 String[] parts = attr.getAttrPath().split("\\.");
                 SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
                 if (d != null && StringUtils.isNotBlank(d.getDictLabel())) {
-                    attrPathToTagName.put(attr.getAttrPath(),
-                            sanitizeXmlTagName(d.getDictLabel()));
+                    attrPathToTagName.put(attr.getAttrPath(), sanitizeXmlTagName(d.getDictLabel()));
                 }
             }
 
@@ -872,6 +872,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             //    ★修复：先按路径深度升序排序，保证父节点一定先于子节点处理，
             //           否则子节点处理时 attrPathToTagPath 中还没有父节点记录，导致 tagPath 断链
             //           （如 1058.37.39.40 先于 1058.37.39 处理时 ManufacturerGroup 变成孤立短路径）
+            final String INVALID = "__INVALID__";
             List<XmlTemplateAttribute> sortedAttrList = attrList.stream()
                     .sorted(Comparator.comparingInt(a -> a.getAttrPath().split("\\.").length))
                     .collect(Collectors.toList());
@@ -882,9 +883,14 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 String tagName = attrPathToTagName.get(attrPath);
                 String parentAttrPath = getParentPath(attrPath);
                 String parentTagPath = attrPathToTagPath.getOrDefault(parentAttrPath, "");
+                // ★ 父节点无效，子树全部跳过
+                if (INVALID.equals(parentTagPath)) {
+                    attrPathToTagPath.put(attrPath, INVALID);
+                    continue;
+                }
+                // ★ 当前节点字典缺失，标记无效并跳过
                 if (tagName == null) {
-                    // ★ 字典缺失时：用父 tagPath 占位，保证子节点的 parentTagPath 不丢失
-                    attrPathToTagPath.put(attrPath, parentTagPath);
+                    attrPathToTagPath.put(attrPath, INVALID);
                     continue;
                 }
                 String tagPath = parentTagPath.isEmpty() ? tagName : parentTagPath + "/" + tagName;
@@ -1117,7 +1123,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             Map<String, SysDictData> dictCodeMap = new HashMap<>();
             for (SysDictData d : dictDataList) {
                 if (d.getDictCode() != null) {
-                    dictCodeMap.put(String.valueOf(d.getDictCode()), d);
+                    dictCodeMap.put(String.valueOf(d.getUuid()), d);
                 }
             }
 
@@ -1327,10 +1333,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             // 3. 查询字典数据，构建 dictCode -> SysDictData 映射
             List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
-            Map<String, SysDictData> dictCodeMap = new HashMap<>();
+            Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 变为 uuid
             for (SysDictData d : dictDataList) {
-                if (d.getDictCode() != null) {
-                    dictCodeMap.put(String.valueOf(d.getDictCode()), d);
+                if (d.getUuid() != null) {
+                    dictCodeMap.putIfAbsent(d.getUuid(), d);   // ★ uuid 为 key，一个uuid多行取第一个
                 }
             }
 
@@ -1488,6 +1494,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             xmlFile.setVehicleMaterialNo(vehicle.getMaterialNo());
             xmlFile.setCountry(vehicle.getCountry());
             xmlFile.setIssueDate(vehicle.getIssueDate());
+            xmlFile.setValidateResult(0);
             xmlFileMapper.insertXmlFile(xmlFile);
 
             try {

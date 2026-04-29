@@ -4,7 +4,6 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -12,9 +11,11 @@ import java.util.Map;
 
 /**
  * 条件链
- * 支持 IF ANY（任意满足）和 IF ALL（全部满足）两种模式
+ * 支持 IF ANY（任意满足）和 IF ALL（全部满足）两种模式。
+ *
+ * <p>解析失败的单个条件表达式会被静默跳过（不抛异常、不打日志），
+ * 以避免单条子条件的格式错误导致整条规则失效。
  */
-@Slf4j
 @Data
 @Builder
 @NoArgsConstructor
@@ -43,7 +44,8 @@ public class ConditionChain {
     }
 
     /**
-     * 内部解析方法
+     * 内部解析方法。
+     * 单个条件表达式解析失败时静默跳过，不抛异常、不打日志。
      */
     private static ConditionChain parse(String condStr, Mode mode) {
         List<ConditionExpression> list = new ArrayList<>();
@@ -56,16 +58,10 @@ public class ConditionChain {
             if (trimmed.isEmpty()) {
                 continue;
             }
-            try {
-                ConditionExpression expr = ConditionExpression.parse(trimmed);
-                if (expr != null) {
-                    list.add(expr);
-                } else {
-                    log.warn("跳过无效条件表达式: '{}'", trimmed);
-                }
-            } catch (Exception e) {
-                log.error("解析条件表达式失败: '{}'", trimmed, e);
-                // 可选择：跳过 or 抛出（建议跳过，避免单条规则失败导致整条规则失效）
+            // parse() 内部返回 null 表示解析失败，直接跳过，不做任何日志
+            ConditionExpression expr = ConditionExpression.parse(trimmed);
+            if (expr != null) {
+                list.add(expr);
             }
         }
 

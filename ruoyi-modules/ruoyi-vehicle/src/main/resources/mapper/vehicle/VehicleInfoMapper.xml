@@ -56,16 +56,18 @@
 		<include refid="selectVehicleInfoVo"/>
 		<where>
 			<if test="vinList != null and vinList.size() > 0">
-				AND vin IN
-				<foreach collection="vinList" item="v" open="(" separator="," close=")">
-					#{v}
+				AND (
+				<foreach collection="vinList" item="v" separator=" OR ">
+					vin LIKE CONCAT('%', #{v}, '%')
 				</foreach>
+				)
 			</if>
 			<if test="vehicleModelList != null and vehicleModelList.size() > 0">
-				AND vehicle_model IN
-				<foreach collection="vehicleModelList" item="m" open="(" separator="," close=")">
-					#{m}
+				AND (
+				<foreach collection="vehicleModelList" item="m" separator=" OR ">
+					vehicle_model LIKE CONCAT('%', #{m}, '%')
 				</foreach>
+				)
 			</if>
 			<if test="factoryCode != null and factoryCode != ''">
 				AND factory_code like concat('%', #{factoryCode}, '%')

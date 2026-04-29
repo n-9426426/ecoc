@@ -64,7 +64,8 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
 
         SysDictData modelDict = modelDictMap.get(template.getModelDictCode());
         vo.setModelDictLabel(modelDict != null ? modelDict.getDictLabel() : "");
-        vo.setAttributeTree(buildAttributeTree(attrList, attrDictMap));
+        Map<String, SysDictData> uuidDictMap = getUuidDictMap("vehicle_attribute");
+        vo.setAttributeTree(buildAttributeTree(attrList, uuidDictMap));
 
         return vo;
     }
@@ -193,9 +194,9 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
             SysDictData modelDict = modelDictMap.get(template.getModelDictCode());
             vo.setModelDictLabel(modelDict != null ? modelDict.getDictLabel() : "");
 
-            List<XmlTemplateAttribute> attrList = attrGroupMap
-                    .getOrDefault(template.getTemplateId(), Collections.emptyList());
-            vo.setAttributeTree(buildAttributeTree(attrList, attrDictMap));
+            List<XmlTemplateAttribute> attrList = attrGroupMap.getOrDefault(template.getTemplateId(), Collections.emptyList());
+            Map<String, SysDictData> uuidDictMap = getUuidDictMap("vehicle_attribute");
+            vo.setAttributeTree(buildAttributeTree(attrList, uuidDictMap));
 
             return vo;
         }).collect(Collectors.toList());
@@ -213,79 +214,78 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
      *  - 用 nodeMap（path → node）缓存已创建节点，O(1) 快速找到父节点
      *  - 路径只有1段 → 根节点；否则截取父路径，从 nodeMap 取父节点并挂载子节点
      */
-    private List<AttributeTreeNode> buildAttributeTree(List<XmlTemplateAttribute> attrList, Map<Long, SysDictData> attrDictMap) {
-        if (attrList == null || attrList.isEmpty()) {
-            return Collections.emptyList();
-        }
+    private List<AttributeTreeNode> buildAttributeTree(
+            List<XmlTemplateAttribute> attrList,
+            Map<String, SysDictData> uuidDictMap) {  // uuid -> SysDictData
 
-        // 按路径深度升序，确保父节点先被处理
+        if (attrList == null || attrList.isEmpty()) return Collections.emptyList();
+
         attrList.sort(Comparator.comparingInt(r -> r.getAttrPath().split("\\.").length));
 
-        // path → node 映射，用于快速找父节点
         Map<String, AttributeTreeNode> nodeMap = new LinkedHashMap<>();
         List<AttributeTreeNode> rootNodes = new ArrayList<>();
 
         for (XmlTemplateAttribute attr : attrList) {
-            String path = attr.getAttrPath();
-            String[] parts = path.split("\\.");
+            String uuidPath = attr.getAttrPath();      // db 中存的是 uuid 路径，直接使用
+            String[] uuidParts = uuidPath.split("\\.");
 
-            // 取路径最后一段作为当前节点的 dict_code
-            Long currentDictCode = Long.parseLong(parts[parts.length - 1]);
-            SysDictData dictData = attrDictMap.get(currentDictCode);
-            if (dictData == null) {
-                // 字典中不存在该属性，属脏数据，跳过
-                continue;
-            }
+            String lastUuid = uuidParts[uuidParts.length - 1];
+            SysDictData dictData = uuidDictMap.get(lastUuid);
+            if (dictData == null) continue;            // 脏数据跳过
 
-            // 构建节点
             AttributeTreeNode node = new AttributeTreeNode();
-            node.setDictCode(currentDictCode);
+            node.setDictCode(dictData.getDictCode());
             node.setDictLabel(dictData.getDictLabel());
-            node.setAttrPath(path);
+            node.setAttrPath(uuidPath);                // 直接原样返回 uuid 路径
             node.setDefaultValue(attr.getDefaultValue());
             node.setIsRequired(attr.getIsRequired());
             node.setIsEditable(attr.getIsEditable());
             node.setSortOrder(attr.getSortOrder());
             node.setChildren(new ArrayList<>());
 
-            nodeMap.put(path, node);
+            nodeMap.put(uuidPath, node);
 
-            if (parts.length == 1) {
-                // 根节点
+            if (uuidParts.length == 1) {
                 rootNodes.add(node);
             } else {
-                // 截取父路径，从 nodeMap 找父节点并挂载
-                String parentPath = path.substring(0, path.lastIndexOf('.'));
-                AttributeTreeNode parentNode = nodeMap.get(parentPath);
+                String parentUuidPath = uuidPath.substring(0, uuidPath.lastIndexOf('.'));
+                AttributeTreeNode parentNode = nodeMap.get(parentUuidPath);
                 if (parentNode != null) {
                     parentNode.getChildren().add(node);
                 }
-                // parentNode 为 null 说明父路径未记录（脏数据），跳过挂载
             }
         }
-
         return rootNodes;
     }
+
 
     // ==================== 保存属性树（递归） ====================
 
     private void saveAttributeTree(Long templateId, List<AttributeTreeNode> tree) {
-        saveTreeNodes(templateId, tree, "", SecurityUtils.getUsername());
+        Map<Long, String> codeToUuidMap = getDictCodeToUuidMap("vehicle_attribute");
+        saveTreeNodes(templateId, tree, "", SecurityUtils.getUsername(), codeToUuidMap);
     }
 
     private void saveTreeNodes(Long templateId, List<AttributeTreeNode> nodes,
-                               String parentPath, String createBy) {
+                               String parentPath, String createBy,
+                               Map<Long, String> codeToUuidMap) {
         for (int i = 0; i < nodes.size(); i++) {
             AttributeTreeNode node = nodes.get(i);
 
-            // 构建当前完整路径
+            // ★ 将 dictCode 转为 uuid
+            String uuid = codeToUuidMap.get(node.getDictCode());
+            if (uuid == null) {
+                throw new ServiceException("属性 dictCode=" + node.getDictCode() + " 无对应uuid，无法保存");
+            }
+
+            // 用 uuid 拼路径（而非 dictCode）
             String currentPath = parentPath.isEmpty()
-                    ? String.valueOf(node.getDictCode())
-                    : parentPath + "." + node.getDictCode();
+                    ? uuid
+                    : parentPath + "." + uuid;
 
             XmlTemplateAttribute attr = new XmlTemplateAttribute();
             attr.setTemplateId(templateId);
-            attr.setAttrPath(currentPath);
+            attr.setAttrPath(currentPath);            // ★ 存 uuid 路径
             attr.setDefaultValue(node.getDefaultValue());
             attr.setIsRequired(node.getIsRequired() != null ? node.getIsRequired() : 0);
             attr.setIsEditable(node.getIsEditable() != null ? node.getIsEditable() : 1);
@@ -295,9 +295,8 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
             attr.setCreateTime(new Date());
             attributeMapper.insert(attr);
 
-            // 递归处理子节点
             if (node.getChildren() != null && !node.getChildren().isEmpty()) {
-                saveTreeNodes(templateId, node.getChildren(), currentPath, createBy);
+                saveTreeNodes(templateId, node.getChildren(), currentPath, createBy, codeToUuidMap);
             }
         }
     }
@@ -307,5 +306,25 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
     private Map<Long, SysDictData> getDictMap(String dictType) {
         List<SysDictData> list = remoteDictService.getDictDataByType(dictType).getData();
         return list.stream().collect(Collectors.toMap(SysDictData::getDictCode, d -> d));
+    }
+
+    // 新增工具方法：构建 dictCode -> uuid 的映射
+    private Map<Long, String> getDictCodeToUuidMap(String dictType) {
+        List<SysDictData> list = remoteDictService.getDictDataByType(dictType).getData();
+        // 一个 dictCode 可能对应多行（多 uuid）；保存时只需取第一个 uuid
+        Map<Long, String> map = new LinkedHashMap<>();
+        for (SysDictData d : list) {
+            map.putIfAbsent(d.getDictCode(), d.getUuid()); // putIfAbsent：一个code多行时取第一个
+        }
+        return map;
+    }
+
+    private Map<String, SysDictData> getUuidDictMap(String dictType) {
+        List<SysDictData> list = remoteDictService.getDictDataByType(dictType).getData();
+        Map<String, SysDictData> map = new LinkedHashMap<>();
+        for (SysDictData d : list) {
+            map.putIfAbsent(d.getUuid(), d);
+        }
+        return map;
     }
 }

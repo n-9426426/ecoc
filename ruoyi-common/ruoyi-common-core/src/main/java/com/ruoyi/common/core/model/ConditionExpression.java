@@ -5,7 +5,6 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
 import java.util.Collection;
 import java.util.Map;
@@ -20,8 +19,10 @@ import java.util.regex.Pattern;
  *   field != value, >, <, >=, <=
  *   field IS PRESENT / IS ABSENT
  *   @field（字段有值即满足）
+ *
+ * <p>{@link #parse(String)} 在表达式无法识别时返回 {@code null}，
+ * 不抛出异常、不打印日志，由调用方（{@link ConditionChain}）决定如何处理。
  */
-@Slf4j
 @Data
 @Builder
 @NoArgsConstructor
@@ -41,13 +42,22 @@ public class ConditionExpression {
             Pattern.compile("^@([\\w.]+)$");
 
     private String fieldName;
-    private CompareOperator operator;   // ✅ 改为 CompareOperator 类型
+    private CompareOperator operator;
     private String expectValue;
 
+    /**
+     * 解析单个条件表达式字符串。
+     *
+     * @return 解析成功时返回 {@link ConditionExpression}；
+     *         表达式格式无法识别或运算符不合法时返回 {@code null}（不抛异常、不打日志）。
+     */
     public static ConditionExpression parse(String expr) {
+        if (expr == null) {
+            return null;
+        }
         expr = expr.trim();
         if (expr.isEmpty()) {
-            throw new IllegalArgumentException("空条件表达式");
+            return null;
         }
 
         // 1. 尝试匹配：field op value（支持 @field 或 field）
@@ -61,7 +71,8 @@ public class ConditionExpression {
             try {
                 op = CompareOperator.fromSymbol(opStr);
             } catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException("不支持的运算符: " + opStr, e);
+                // 运算符不合法 —— 静默返回 null
+                return null;
             }
 
             return ConditionExpression.builder()
@@ -91,11 +102,12 @@ public class ConditionExpression {
             String field = m.group(1);
             return ConditionExpression.builder()
                     .fieldName(field)
-                    .operator(CompareOperator.REF)  // ✅ 需在 CompareOperator 中添加 REF
+                    .operator(CompareOperator.REF)
                     .build();
         }
 
-        throw new IllegalArgumentException("无法解析条件表达式: '" + expr + "'");
+        // 所有模式均未匹配 —— 静默返回 null，由调用方决定如何处理
+        return null;
     }
 
     public boolean evaluate(Map<String, Object> context) {
@@ -105,7 +117,6 @@ public class ConditionExpression {
 
         Object actual = context.get(this.fieldName);
 
-        // 处理 IS_PRESENT / IS_ABSENT / REF
         if (this.operator == CompareOperator.IS_PRESENT) {
             return !isAbsent(actual);
         }
@@ -116,24 +127,21 @@ public class ConditionExpression {
             return !isAbsent(actual);
         }
 
-        // 处理数值/字符串比较（=, !=, >, <, >=, <=）
         if (this.expectValue == null) {
             return false;
         }
 
         try {
-            // 尝试转数值比较（优先）
             double actualNum = Double.parseDouble(actual == null ? "0" : actual.toString());
             double expectedNum = Double.parseDouble(this.expectValue);
             return this.operator.apply(actualNum, expectedNum);
         } catch (NumberFormatException e) {
-            // 降级为字符串比较（仅 EQ/NEQ 安全）
             if (this.operator == CompareOperator.EQ) {
                 return Objects.equals(this.expectValue, actual == null ? null : actual.toString());
             } else if (this.operator == CompareOperator.NEQ) {
                 return !Objects.equals(this.expectValue, actual == null ? null : actual.toString());
             } else {
-                log.warn("非数值字段使用数值比较运算符 {}，降级失败", this.operator.getSymbol());
+                // 非数值字段使用数值比较运算符，无法降级 —— 静默返回 false
                 return false;
             }
         }

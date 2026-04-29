@@ -288,9 +288,7 @@
     </resultMap>
 
     <select id="selectStatisticsAbnormal" resultMap="AbnormalStatisticsVo">
-        SELECT
-        ac.rule_type AS abnormal,
-        COUNT(*)     AS count
+        SELECT ac.rule_type AS abnormal, COUNT(*)     AS count
         FROM abnormal_classify ac
         <choose>
             <!-- ① Vehicle Template -->

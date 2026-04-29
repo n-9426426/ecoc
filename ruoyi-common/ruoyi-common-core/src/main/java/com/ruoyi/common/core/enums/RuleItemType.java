@@ -48,7 +48,9 @@ public enum RuleItemType {
     TOTAL_DIGITS,           // totalDigits=n
     FRACTION_DIGITS,         // fractionDigits=n
     NULL,
-    STRUCTURE;
+    STRUCTURE,
+    VALUE_COUNT_REF,
+    PARSE_ERROR;
 
     public static String getRuleType(RuleItemType ruleItemType) {
         Map<RuleItemType, String> map = new HashMap<>();
@@ -61,6 +63,7 @@ public enum RuleItemType {
         map.put(RuleItemType.VALUE_REGEX,       "VALUE REGEX");
         // ===== 数值比较 =====
         map.put(RuleItemType.VALUE_COMPARE,     "VALUE COMPARE");
+        map.put(RuleItemType.VALUE_COUNT_REF,    "VALUE COMPARE");
         // ===== 条件触发 - 单字段引用=====
         map.put(RuleItemType.MANDATORY_IF,      "VALUE IS PRESENT IF");
         map.put(RuleItemType.FORBIDDEN_IF,      "VALUE IS ABSENT IF");
@@ -85,6 +88,8 @@ public enum RuleItemType {
         map.put(RuleItemType.STRUCTURE, "STRUCTURE");
         // ===== 空值 =====
         map.put(RuleItemType.NULL,              null);
+        // 解析错误
+        map.put(RuleItemType.PARSE_ERROR, "PARSE_ERROR");
 
         return map.get(ruleItemType);
     }

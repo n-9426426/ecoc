@@ -57,10 +57,11 @@
                 </foreach>
             </if>
             <if test="vinList != null and vinList.size() > 0">
-                AND xl.vin IN
-                <foreach collection="vinList" item="v" open="(" separator="," close=")">
-                    #{v}
+                AND (
+                <foreach collection="vinList" item="v" separator=" OR ">
+                    xl.vin LIKE CONCAT('%', #{v}, '%')
                 </foreach>
+                )
             </if>
             <if test="fileName != null and fileName != ''">
                 AND xl.file_name like concat('%', #{fileName}, '%')
@@ -75,12 +76,12 @@
                 AND xl.status = #{status}
             </if>
             <if test="modelCodeList != null and modelCodeList.size() > 0">
-                AND xl.model_code IN
-                <foreach collection="modelCodeList" item="m" open="(" separator="," close=")">
-                    #{m}
+                AND (
+                <foreach collection="modelCodeList" item="m" separator=" OR ">
+                    xl.model_code LIKE CONCAT('%', #{m}, '%')
                 </foreach>
+                )
             </if>
-
             <if test="factoryCode != null and factoryCode != ''">
                 AND xl.factory_code = #{factoryCode}
             </if>

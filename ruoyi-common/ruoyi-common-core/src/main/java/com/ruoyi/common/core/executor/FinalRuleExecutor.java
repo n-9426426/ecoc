@@ -2,10 +2,10 @@ package com.ruoyi.common.core.executor;
 
 import com.ruoyi.common.core.enums.CompareOperator;
 import com.ruoyi.common.core.model.*;
-import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -14,7 +14,6 @@ import java.util.regex.Pattern;
  * 规则执行器
  * 负责对单个字段执行所有 RuleItem 校验，返回 FieldValidationResult
  */
-@Slf4j
 public class FinalRuleExecutor {
 
     /**
@@ -63,6 +62,12 @@ public class FinalRuleExecutor {
             String strVal;
             switch (rule.getType()) {
                 case NULL: return null;
+                // 规则解析失败时直接转化为校验违规，消息已在解析阶段写好
+                case PARSE_ERROR:
+                    return buildViolation(rule, fieldName, actualValue,
+                            rule.getErrorMessageEn(),
+                            rule.getErrorMessageZh());
+
                 case VALUE_IS_PRESENT:
                     return buildViolation(rule, fieldName, actualValue, "Field is required", "必填字段不能为空");
 
@@ -100,10 +105,7 @@ public class FinalRuleExecutor {
                     if (rule.getRefFieldName() != null) {
                         Object refValue = context.get(rule.getRefFieldName());
                         boolean refAbsent = isAbsent(refValue);
-
-                        // PRESENT → 引用字段有值时条件成立；ABSENT → 引用字段为空时条件成立
                         boolean conditionMet = "PRESENT".equals(rule.getRefFieldCondition()) != refAbsent;
-
                         if (conditionMet && isAbsent(actualValue)) {
                             String state = "PRESENT".equals(rule.getRefFieldCondition()) ? "has value" : "is absent";
                             return buildViolation(rule, fieldName, actualValue,
@@ -124,10 +126,7 @@ public class FinalRuleExecutor {
                     if (rule.getRefFieldName() != null) {
                         Object refValue = context.get(rule.getRefFieldName());
                         boolean refAbsent = isAbsent(refValue);
-
-                        // 同样逻辑：判断引用字段是否满足条件
                         boolean conditionMet = "PRESENT".equals(rule.getRefFieldCondition()) != refAbsent;
-
                         if (conditionMet && !isAbsent(actualValue)) {
                             String state = "PRESENT".equals(rule.getRefFieldCondition()) ? "has value" : "is absent";
                             return buildViolation(rule, fieldName, actualValue,
@@ -140,6 +139,9 @@ public class FinalRuleExecutor {
 
                 case COUNT_AGGREGATE:
                     return checkCountAggregate(fieldName, actualValue, rule, context);
+
+                case VALUE_COUNT_REF:
+                    return checkValueCountRef(fieldName, actualValue, rule, context);
 
                 case SUM_AGGREGATE:
                     return checkSumAggregate(fieldName, actualValue, rule, context);
@@ -162,10 +164,16 @@ public class FinalRuleExecutor {
                     return checkFractionDigits(fieldName, actualValue, rule);
 
                 default:
-                    log.warn("未处理的规则类型: {}", rule.getType());
+                    // 未知规则类型：同样封装为报告，不打 log
+                    return buildViolation(rule, fieldName, actualValue,
+                            "Unknown rule type: " + rule.getType(),
+                            "未知规则类型: " + rule.getType());
             }
         } catch (Exception e) {
-            log.error("规则执行异常, field={}, rule={}, error={}", fieldName, rule.getRawRule(), e.getMessage(), e);
+            // 执行期异常：封装为报告，不打 log
+            return buildViolation(rule, fieldName, actualValue,
+                    "Rule execution error: " + e.getMessage() + " [raw=" + rule.getRawRule() + "]",
+                    "规则执行异常: " + e.getMessage() + " [原始规则=" + rule.getRawRule() + "]");
         }
 
         return null;
@@ -178,7 +186,6 @@ public class FinalRuleExecutor {
     private static RuleViolation checkMandatoryIfAny(String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
         ConditionChain chain = rule.getConditionChain();
         if (chain == null) return null;
-        // ANY：任一条件满足即触发
         if (chain.evaluate(context) && isAbsent(actualValue)) {
             return buildViolation(rule, fieldName, actualValue,
                     "Field is required when any condition is met",
@@ -190,7 +197,6 @@ public class FinalRuleExecutor {
     private static RuleViolation checkMandatoryIfAll(String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
         ConditionChain chain = rule.getConditionChain();
         if (chain == null) return null;
-        // ALL：全部条件满足才触发
         if (chain.evaluate(context) && isAbsent(actualValue)) {
             return buildViolation(rule, fieldName, actualValue,
                     "Field is required when all conditions are met",
@@ -214,7 +220,6 @@ public class FinalRuleExecutor {
         if (rule.getConditionChain() == null) {
             return null;
         }
-        // 所有条件都满足时 → 当前字段必须为空
         if (rule.getConditionChain().evaluate(context)) {
             if (!isAbsent(actualValue)) {
                 return buildViolation(rule, fieldName, actualValue,
@@ -229,6 +234,42 @@ public class FinalRuleExecutor {
     // 聚合校验
     // ==========================================
 
+    private static RuleViolation checkValueCountRef(String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+        String refField = rule.getRefFieldName();
+        if (refField == null) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "refFieldName is null",
+                    "规则缺少引用字段名");
+        }
+
+        Object refObj = context.get(refField);
+        int refCount;
+        if (refObj instanceof List) {
+            refCount = ((List<?>) refObj).size();
+        } else if (refObj == null) {
+            refCount = 0;
+        } else {
+            // 非 List 类型：视为单个元素，计数为 1
+            refCount = 1;
+        }
+
+        double actualNum;
+        try {
+            actualNum = toDouble(actualValue);
+        } catch (Exception e) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "VALUE = COUNT(@" + refField + ") check failed: current value is not numeric",
+                    "当前字段值无法转换为数字，无法与 COUNT(@" + refField + ") 比较");
+        }
+
+        if ((int) actualNum != refCount) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "Value " + (int) actualNum + " != COUNT(@" + refField + ") which is " + refCount,
+                    "字段值 " + (int) actualNum + " 与 @" + refField + " 的列表数量 " + refCount + " 不一致");
+        }
+        return null;
+    }
+
     private static RuleViolation checkCountAggregate(String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
         AggregateFunction af = rule.getAggregateFunction();
         Object listObj = context.get(af.getListField());
@@ -239,8 +280,9 @@ public class FinalRuleExecutor {
         long count = list.stream()
                 .filter(item -> {
                     if (!(item instanceof Map)) return false;
+                    @SuppressWarnings("unchecked")
                     Map<String, Object> itemMap = (Map<String, Object>) item;
-                    if (condExpr == null) return true; // 无条件，全部计数
+                    if (condExpr == null) return true;
                     return condExpr.evaluate(itemMap);
                 })
                 .count();
@@ -270,7 +312,6 @@ public class FinalRuleExecutor {
                 })
                 .sum();
 
-        // threshold 为 null 时引用当前字段值
         double threshold = af.getThreshold() != null
                 ? af.getThreshold()
                 : toDouble(actualValue);
@@ -292,12 +333,9 @@ public class FinalRuleExecutor {
         NestedConditionRule nested = rule.getNestedCondition();
         if (nested == null) return null;
 
-        // IF ANY 条件链（任意满足）
         boolean anyMet = nested.getAnyChain() == null || nested.getAnyChain().evaluate(context);
-        // IF ALL 条件链（全部满足）
         boolean allMet = nested.getAllChain() == null || nested.getAllChain().evaluate(context);
 
-        // 两个条件链都满足时才执行主体规则
         if (!anyMet || !allMet) return null;
 
         switch (nested.getOperator()) {
@@ -316,17 +354,18 @@ public class FinalRuleExecutor {
                 }
                 break;
             case "REGEX":
-//                if (!isAbsent(actualValue)) {
-                    String strVal = String.valueOf(actualValue);
-                    if (!Pattern.matches(nested.getCompareValue(), strVal)) {
-                        return buildViolation(rule, fieldName, actualValue,
-                                "Value does not match pattern (nested): " + nested.getCompareValue(),
-                                "嵌套条件满足时值不符合正则格式: " + nested.getCompareValue());
-                    }
-//                }
-//                break;
+                String strVal = String.valueOf(actualValue);
+                if (!Pattern.matches(nested.getCompareValue(), strVal)) {
+                    return buildViolation(rule, fieldName, actualValue,
+                            "Value does not match pattern (nested): " + nested.getCompareValue(),
+                            "嵌套条件满足时值不符合正则格式: " + nested.getCompareValue());
+                }
+                break;
             default:
-                log.warn("嵌套条件未知操作符: {}", nested.getOperator());
+                // 未知嵌套操作符：封装为报告，不打 log
+                return buildViolation(rule, fieldName, actualValue,
+                        "Unknown nested condition operator: " + nested.getOperator(),
+                        "嵌套条件未知操作符: " + nested.getOperator());
         }
         return null;
     }
@@ -338,7 +377,6 @@ public class FinalRuleExecutor {
     private static RuleViolation checkNumericRange(String fieldName, Object actualValue, RuleItem rule) {
         try {
             double val = toDouble(actualValue);
-
             Double min = rule.getRangeMin();
             Double max = rule.getRangeMax();
 
@@ -355,15 +393,13 @@ public class FinalRuleExecutor {
             return null;
         } catch (Exception e) {
             return buildViolation(rule, fieldName, actualValue,
-                    "Value is not Value",
-                    "totalDigits 校验时值无法转换为数字");
+                    "Value cannot be parsed as a number",
+                    "数值范围校验时值无法转换为数字");
         }
     }
 
     private static RuleViolation checkLengthRange(String fieldName, Object actualValue, RuleItem rule) {
         int len = String.valueOf(actualValue).length();
-
-        // 从 rawRule 中取 minLength / maxLength（已存入 rangeMin/rangeMax）
         Integer minLen = rule.getMinLength();
         Integer maxLen = rule.getMaxLength();
 
@@ -391,9 +427,8 @@ public class FinalRuleExecutor {
                         "有效数字位数 " + totalDigits + " 超过限制 " + maxDigits);
             }
         } catch (NumberFormatException e) {
-            log.warn("totalDigits 校验时值无法转换为数字: {}", actualValue);
             return buildViolation(rule, fieldName, actualValue,
-                    "Value is not Value",
+                    "Value cannot be parsed as a number for totalDigits check",
                     "totalDigits 校验时值无法转换为数字");
         }
         return null;
@@ -410,10 +445,9 @@ public class FinalRuleExecutor {
                         "小数位数 " + scale + " 超过限制 " + maxScale);
             }
         } catch (NumberFormatException e) {
-            log.warn("fractionDigits 校验时值无法转换为数字: {}", actualValue);
             return buildViolation(rule, fieldName, actualValue,
-                    "Value is not Value",
-                    "totalDigits 校验时值无法转换为数字");
+                    "Value cannot be parsed as a number for fractionDigits check",
+                    "fractionDigits 校验时值无法转换为数字");
         }
         return null;
     }
@@ -422,26 +456,21 @@ public class FinalRuleExecutor {
     // 工具方法
     // ==========================================
 
-    /**
-     * 数值比较（支持字符串和数字类型）
-     */
     private static boolean compareValue(Object actual, String expected, String operator) {
         try {
             double actualD = toDouble(actual);
             double expectedD = Double.parseDouble(expected);
             return CompareOperator.fromSymbol(operator).apply(actualD, expectedD);
         } catch (NumberFormatException e) {
-            // 降级为字符串比较（仅支持 = 和 !=）
-            return CompareOperator.fromSymbol(operator)
-                    .applyString(String.valueOf(actual), expected);
+            return CompareOperator.fromSymbol(operator).applyString(String.valueOf(actual), expected);
         }
     }
 
     public static boolean isAbsent(Object value) {
-//        if (value == null) return true;
-//        if (value instanceof String) return ((String) value).trim().isEmpty();
-//        if (value instanceof Collection) return ((Collection<?>) value).isEmpty();
-//        if (value instanceof Map) return ((Map<?, ?>) value).isEmpty();
+        if (value == null) return true;
+        if (value instanceof String) return ((String) value).trim().isEmpty();
+        if (value instanceof Collection) return ((Collection<?>) value).isEmpty();
+        if (value instanceof Map) return ((Map<?, ?>) value).isEmpty();
         return false;
     }
 
