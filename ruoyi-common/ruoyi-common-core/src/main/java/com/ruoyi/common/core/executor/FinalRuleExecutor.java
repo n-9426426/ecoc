@@ -140,14 +140,17 @@ public class FinalRuleExecutor {
                 case COUNT_AGGREGATE:
                     return checkCountAggregate(fieldName, actualValue, rule, context);
 
-                case VALUE_COUNT_REF:
-                    return checkValueCountRef(fieldName, actualValue, rule, context);
-
                 case SUM_AGGREGATE:
                     return checkSumAggregate(fieldName, actualValue, rule, context);
 
                 case NESTED_CONDITION:
                     return checkNestedCondition(fieldName, actualValue, rule, context);
+
+                case VALUE_IS_NUMBERED:
+                    return checkValueIsNumbered(fieldName, actualValue, rule, context);
+
+                case VALUE_FIELD_COMPARE:
+                    return checkValueFieldCompare(fieldName, actualValue, rule, context);
 
                 case NUMERIC_RANGE:
                     return checkNumericRange(fieldName, actualValue, rule);
@@ -233,42 +236,6 @@ public class FinalRuleExecutor {
     // ==========================================
     // 聚合校验
     // ==========================================
-
-    private static RuleViolation checkValueCountRef(String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
-        String refField = rule.getRefFieldName();
-        if (refField == null) {
-            return buildViolation(rule, fieldName, actualValue,
-                    "refFieldName is null",
-                    "规则缺少引用字段名");
-        }
-
-        Object refObj = context.get(refField);
-        int refCount;
-        if (refObj instanceof List) {
-            refCount = ((List<?>) refObj).size();
-        } else if (refObj == null) {
-            refCount = 0;
-        } else {
-            // 非 List 类型：视为单个元素，计数为 1
-            refCount = 1;
-        }
-
-        double actualNum;
-        try {
-            actualNum = toDouble(actualValue);
-        } catch (Exception e) {
-            return buildViolation(rule, fieldName, actualValue,
-                    "VALUE = COUNT(@" + refField + ") check failed: current value is not numeric",
-                    "当前字段值无法转换为数字，无法与 COUNT(@" + refField + ") 比较");
-        }
-
-        if ((int) actualNum != refCount) {
-            return buildViolation(rule, fieldName, actualValue,
-                    "Value " + (int) actualNum + " != COUNT(@" + refField + ") which is " + refCount,
-                    "字段值 " + (int) actualNum + " 与 @" + refField + " 的列表数量 " + refCount + " 不一致");
-        }
-        return null;
-    }
 
     private static RuleViolation checkCountAggregate(String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
         AggregateFunction af = rule.getAggregateFunction();
@@ -368,6 +335,149 @@ public class FinalRuleExecutor {
                         "嵌套条件未知操作符: " + nested.getOperator());
         }
         return null;
+    }
+
+    // ==========================================
+    // 列表连续编号校验
+    // ==========================================
+
+    /**
+     * VALUE_IS_NUMBERED：校验列表中当前字段的值必须从 1 开始连续编号（1, 2, 3 … N），不允许重复或跳号。
+     *
+     * <p>上下文约定：context 中以 listFieldName 为 key 存放 {@code List<Map<String,Object>>}，
+     * 每个 Map 对应列表中的一行，其中以校验字段名（fieldName）为 key 存放该行的序号值。
+     *
+     * <p>示例规则：{@code ManufacturerTable=>VALUE IS NUMBERED}
+     * 对应 context key = "ManufacturerTable"，每行 Map 包含 "ManufacturerStageNumber" 字段。
+     */
+    private static RuleViolation checkValueIsNumbered(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        String listField = rule.getRefFieldName();
+        if (listField == null || listField.isEmpty()) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "VALUE_IS_NUMBERED: listFieldName is null",
+                    "VALUE_IS_NUMBERED 规则缺少列表字段名");
+        }
+
+        Object listObj = context.get(listField);
+        if (!(listObj instanceof List)) {
+            // 列表不存在或为空时跳过校验（存在性由其他规则保证）
+            return null;
+        }
+
+        List<?> list = (List<?>) listObj;
+        if (list.isEmpty()) {
+            return null;
+        }
+
+        // 收集列表中每行的序号值
+        java.util.List<Integer> numbers = new java.util.ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof Map)) continue;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> row = (Map<String, Object>) item;
+            Object val = row.get(fieldName);
+            if (val == null) {
+                return buildViolation(rule, fieldName, actualValue,
+                        "VALUE IS NUMBERED failed: field '" + fieldName + "' is missing in one or more rows of " + listField,
+                        "连续编号校验失败：列表 " + listField + " 中存在缺少字段 " + fieldName + " 的行");
+            }
+            try {
+                numbers.add((int) Double.parseDouble(val.toString()));
+            } catch (NumberFormatException e) {
+                return buildViolation(rule, fieldName, actualValue,
+                        "VALUE IS NUMBERED failed: value '" + val + "' in " + listField + " is not a valid integer",
+                        "连续编号校验失败：列表 " + listField + " 中值 " + val + " 不是有效整数");
+            }
+        }
+
+        // 排序后校验是否从 1 开始连续
+        java.util.Collections.sort(numbers);
+        for (int i = 0; i < numbers.size(); i++) {
+            int expected = i + 1;
+            if (numbers.get(i) != expected) {
+                return buildViolation(rule, fieldName, actualValue,
+                        "VALUE IS NUMBERED failed: expected sequence 1.." + numbers.size()
+                                + " but found " + numbers,
+                        "连续编号校验失败：期望序列 1.." + numbers.size() + "，实际为 " + numbers);
+            }
+        }
+        return null;
+    }
+
+    // ==========================================
+    // 跨字段值比较校验
+    // ==========================================
+
+    /**
+     * VALUE_FIELD_COMPARE：将当前字段值与 context 中另一字段做数值比较。
+     *
+     * <p>示例规则：{@code VALUE != @Version}、{@code VALUE < @TechnicallyPermissibleMaximumLadenMass}
+     *
+     * <p>仅支持数值比较（=, !=, >, <, >=, <=）。若任一侧无法转换为数字则降级为字符串
+     * EQ/NEQ 比较；其他运算符降级失败时返回违规。
+     */
+    private static RuleViolation checkValueFieldCompare(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        String targetField = rule.getRefFieldName();
+        if (targetField == null || targetField.isEmpty()) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "VALUE_FIELD_COMPARE: compareFieldName is null",
+                    "VALUE_FIELD_COMPARE 规则缺少目标字段名");
+        }
+
+        Object targetValue = context.get(targetField);
+
+        // 目标字段为空时跳过（由其他规则保证目标字段必填）
+        if (isAbsent(targetValue)) {
+            return null;
+        }
+
+        CompareOperator op;
+        try {
+            op = CompareOperator.fromSymbol(rule.getOperator());
+        } catch (IllegalArgumentException e) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "VALUE_FIELD_COMPARE: unknown operator '" + rule.getOperator() + "'",
+                    "VALUE_FIELD_COMPARE 未知运算符: " + rule.getOperator());
+        }
+
+        // 优先尝试数值比较
+        try {
+            double actual = toDouble(actualValue);
+            double target = toDouble(targetValue);
+            if (!op.apply(actual, target)) {
+                return buildViolation(rule, fieldName, actualValue,
+                        "Value " + actualValue + " " + op.getSymbol() + " @" + targetField
+                                + "(" + targetValue + ") failed",
+                        "字段值 " + actualValue + " 与 @" + targetField
+                                + "(" + targetValue + ") 比较不通过（" + op.getSymbol() + "）");
+            }
+            return null;
+        } catch (Exception e) {
+            // 数值转换失败，降级字符串 EQ/NEQ
+            String actualStr = actualValue == null ? null : actualValue.toString();
+            String targetStr = targetValue.toString();
+            boolean result;
+            try {
+                result = op.applyString(actualStr, targetStr);
+            } catch (IllegalArgumentException ex) {
+                return buildViolation(rule, fieldName, actualValue,
+                        "VALUE_FIELD_COMPARE: cannot compare non-numeric values with operator "
+                                + op.getSymbol(),
+                        "VALUE_FIELD_COMPARE：非数值字段不支持运算符 " + op.getSymbol());
+            }
+            if (!result) {
+                return buildViolation(rule, fieldName, actualValue,
+                        "Value " + actualValue + " " + op.getSymbol()
+                                + " @" + targetField + "(" + targetValue + ") failed",
+                        "字段值 " + actualValue + " 与 @" + targetField
+                                + "(" + targetValue + ") 比较不通过（" + op.getSymbol() + "）");
+            }
+            return null;
+        }
     }
 
     // ==========================================
@@ -496,6 +606,7 @@ public class FinalRuleExecutor {
                 .messageZh(rule.getErrorMessageZh() != null ? rule.getErrorMessageZh() : messageZh)
                 .rawRule(rule.getRawRule())
                 .ruleType(rule.getType())
+                .ruleTypeLabel(com.ruoyi.common.core.enums.RuleItemType.getRuleType(rule.getType()))
                 .build();
     }
 }

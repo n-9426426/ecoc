@@ -34,4 +34,7 @@ public class RuleViolation {
     private String rawRule;
 
     private RuleItemType ruleType;
+
+    /** getRuleType() 转换后的可读标签，如 "VALUE IS PRESENT"、"AGGREGATE" 等 */
+    private String ruleTypeLabel;
 }

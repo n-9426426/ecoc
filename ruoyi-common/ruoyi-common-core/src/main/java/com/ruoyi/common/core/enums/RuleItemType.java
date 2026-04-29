@@ -40,6 +40,12 @@ public enum RuleItemType {
     // ===== 嵌套条件 =====
     NESTED_CONDITION,       // VALUE = /re/ IF ANY f=v IF ALL g IS PRESENT
 
+    // ===== 列表连续编号 =====
+    VALUE_IS_NUMBERED,      // TableName=>VALUE IS NUMBERED  列表中该字段必须从1开始连续编号
+
+    // ===== 跨字段值比较 =====
+    VALUE_FIELD_COMPARE,    // VALUE >= @otherField  当前值与另一字段做比较
+
     // ===== 范围约束（来自 rangeRule 字段）=====
     NUMERIC_RANGE,          // min=x; max=y
     LENGTH_RANGE,           // minLength=x; maxLength=y
@@ -49,7 +55,6 @@ public enum RuleItemType {
     FRACTION_DIGITS,         // fractionDigits=n
     NULL,
     STRUCTURE,
-    VALUE_COUNT_REF,
     PARSE_ERROR;
 
     public static String getRuleType(RuleItemType ruleItemType) {
@@ -63,7 +68,6 @@ public enum RuleItemType {
         map.put(RuleItemType.VALUE_REGEX,       "VALUE REGEX");
         // ===== 数值比较 =====
         map.put(RuleItemType.VALUE_COMPARE,     "VALUE COMPARE");
-        map.put(RuleItemType.VALUE_COUNT_REF,    "VALUE COMPARE");
         // ===== 条件触发 - 单字段引用=====
         map.put(RuleItemType.MANDATORY_IF,      "VALUE IS PRESENT IF");
         map.put(RuleItemType.FORBIDDEN_IF,      "VALUE IS ABSENT IF");
@@ -77,6 +81,10 @@ public enum RuleItemType {
         map.put(RuleItemType.SUM_AGGREGATE,     "AGGREGATE");
         // ===== 嵌套条件 =====
         map.put(RuleItemType.NESTED_CONDITION,  "NESTED CONDITION");
+        // ===== 列表连续编号 =====
+        map.put(RuleItemType.VALUE_IS_NUMBERED,   "VALUE IS NUMBERED");
+        // ===== 跨字段值比较 =====
+        map.put(RuleItemType.VALUE_FIELD_COMPARE, "VALUE COMPARE");
         // ===== 范围约束 =====
         map.put(RuleItemType.NUMERIC_RANGE,     "VALUE RANGE");
         map.put(RuleItemType.LENGTH_RANGE,      "VALUE RANGE");
@@ -85,11 +93,11 @@ public enum RuleItemType {
         map.put(RuleItemType.TOTAL_DIGITS,      "VALUE RANGE");
         map.put(RuleItemType.FRACTION_DIGITS,   "VALUE RANGE");
         // 结构校验
-        map.put(RuleItemType.STRUCTURE, "STRUCTURE");
+        map.put(RuleItemType.STRUCTURE,         "STRUCTURE");
         // ===== 空值 =====
-        map.put(RuleItemType.NULL,              null);
+        map.put(RuleItemType.NULL,               null);
         // 解析错误
-        map.put(RuleItemType.PARSE_ERROR, "PARSE_ERROR");
+        map.put(RuleItemType.PARSE_ERROR,        "PARSE_ERROR");
 
         return map.get(ruleItemType);
     }

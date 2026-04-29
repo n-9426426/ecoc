@@ -79,10 +79,6 @@ public class FinalRuleParser {
             Pattern.compile("VALUE\\s+=\\s+/([^/]+)/",
                     Pattern.CASE_INSENSITIVE);
 
-    private static final Pattern VALUE_COUNT_REF_PATTERN =
-            Pattern.compile("VALUE\\s+=\\s+COUNT\\s*\\(\\s*@([\\w.]+)\\s*\\)",
-                    Pattern.CASE_INSENSITIVE);
-
     // ===== 数值比较 =====
     private static final Pattern VALUE_COMPARE_PATTERN =
             Pattern.compile("VALUE\\s+(>=|<=|>|<|=|!=)\\s+([^\\s]+)",
@@ -93,6 +89,18 @@ public class FinalRuleParser {
             Pattern.compile("VALUE\\s+IS\\s+PRESENT", Pattern.CASE_INSENSITIVE);
     private static final Pattern VALUE_IS_ABSENT_PATTERN =
             Pattern.compile("VALUE\\s+IS\\s+ABSENT", Pattern.CASE_INSENSITIVE);
+
+    // ===== 列表连续编号 =====
+    // 格式: @TableName=>VALUE IS NUMBERED
+    private static final Pattern VALUE_IS_NUMBERED_PATTERN =
+            Pattern.compile("^@([\\w.]+)\\s*=>\\s*VALUE\\s+IS\\s+NUMBERED$",
+                    Pattern.CASE_INSENSITIVE);
+
+    // ===== 跨字段值比较 =====
+    // 格式: VALUE >= @fieldName  /  VALUE != @fieldName  等
+    private static final Pattern VALUE_FIELD_COMPARE_PATTERN =
+            Pattern.compile("VALUE\\s+(>=|<=|>|<|=|!=)\\s+@([\\w.]+)",
+                    Pattern.CASE_INSENSITIVE);
 
     // ==========================================
     // 公开入口
@@ -311,6 +319,25 @@ public class FinalRuleParser {
                 return RuleItem.builder()
                         .type(RuleItemType.VALUE_IS_ABSENT)
                         .operator("IS_ABSENT")
+                        .build();
+            }
+
+            // 13. TableName=>VALUE IS NUMBERED
+            m = VALUE_IS_NUMBERED_PATTERN.matcher(body);
+            if (m.matches()) {
+                return RuleItem.builder()
+                        .type(RuleItemType.VALUE_IS_NUMBERED)
+                        .refFieldName(m.group(1).trim())
+                        .build();
+            }
+
+            // 14. VALUE op @fieldName（跨字段值比较）
+            m = VALUE_FIELD_COMPARE_PATTERN.matcher(body);
+            if (m.matches()) {
+                return RuleItem.builder()
+                        .type(RuleItemType.VALUE_FIELD_COMPARE)
+                        .operator(m.group(1).trim())
+                        .refFieldName(m.group(2).trim())
                         .build();
             }
 
