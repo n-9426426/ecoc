@@ -492,6 +492,10 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 vehicleInfo.setSecondaryColor(secondaryColor);
                 vehicleInfo.setCountry(countryCode);
                 vehicleInfo.setIssueDate(issueDate);
+                vehicleInfo.setBrand(brand);
+                vehicleInfo.setWeight(weight);
+                vehicleInfo.setSaleName(saleName);
+                vehicleInfo.setTire(trie);
 
                 // 从模板自动获取
                 vehicleInfo.setWvtaNo(template.getWvtaCocNo());
