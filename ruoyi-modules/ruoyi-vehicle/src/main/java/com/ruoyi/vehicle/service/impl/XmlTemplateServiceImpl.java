@@ -1,6 +1,7 @@
 package com.ruoyi.vehicle.service.impl;
 
 import com.ruoyi.common.core.exception.ServiceException;
+import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.domain.SysDictData;
@@ -37,6 +38,7 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
     @Override
     public List<XmlTemplateVo> selectTemplateList(XmlTemplate query) {
         // 1. 查询模板列表（XML中过滤 deleted=0）
+        query.setIsLast(1);
         List<XmlTemplate> templateList = templateMapper.selectTemplateList(query);
         return getXmlTemplateVos(templateList);
     }
@@ -75,10 +77,13 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int insertTemplate(XmlTemplate template) {
-        if (template.getUuid() == null) {
-            template.setTemplateCode(UUID.randomUUID().toString().replace("-", ""));
+        if (StringUtils.isBlank(template.getUuid())) {
+            template.setUuid(template.getTemplateCode());
         }
-        template.setVersion("1.0");
+        if (StringUtils.isBlank(template.getTemplateCode())) {
+            template.setTemplateCode(UUID.randomUUID().toString());
+        }
+        template.setVersion(StringUtils.isBlank(template.getVersion()) ? "1.0" : template.getVersion());
         template.setDeleted(0);
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(new Date());
@@ -102,10 +107,10 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
         }
 
         template.setUuid(dbTemplate.getUuid());
-        template.setVersion(String.valueOf(new BigDecimal(template.getVersion() == null ? "0.0" : template.getVersion()).add(new BigDecimal(1))));
+        template.setVersion(String.valueOf(new BigDecimal(StringUtils.isBlank(dbTemplate.getVersion()) ? "0.0" : dbTemplate.getVersion()).add(new BigDecimal(1))));
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(new Date());
-        template.setTemplateCode(UUID.randomUUID().toString().replace("-", ""));
+        template.setTemplateCode(UUID.randomUUID().toString());
         template.setDeleted(0);
         templateMapper.updateAllIsLast(dbTemplate.getUuid());
         templateMapper.insert(template);

@@ -57,10 +57,10 @@
     <!-- 插入 -->
     <insert id="insert" parameterType="com.ruoyi.vehicle.domain.XmlTemplate" useGeneratedKeys="true" keyProperty="templateId">
         INSERT INTO xml_template (
-        template_code, template_name, model_dict_code, status, remark, create_by, create_time, deleted, country, energy_type, version
+        template_code, template_name, model_dict_code, status, remark, create_by, create_time, deleted, country, energy_type, version, uuid
         ) VALUES (
         #{templateCode}, #{templateName}, #{modelDictCode}, #{status}, #{remark},
-        #{createBy}, #{createTime}, #{deleted}, #{country}, #{energyType}, #{version}
+        #{createBy}, #{createTime}, #{deleted}, #{country}, #{energyType}, #{version}, #{uuid}
         )
     </insert>
 
@@ -99,7 +99,7 @@
 
     <update id="updateAllIsLast">
         update xml_template
-        SET is_last = 1
+        SET is_last = 0
         where uuid = #{uuid}
     </update>
 </mapper>

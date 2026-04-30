@@ -67,4 +67,15 @@ public class VehicleTemplate extends BaseEntity {
     private Date overdueDate;
 
     private String templateVersion;
+
+    private String tvv;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date effectiveDate;
+
+    private String type;
+
+    private String variant;
+
+    private String versionNo;
 }

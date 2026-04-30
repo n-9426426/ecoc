@@ -31,6 +31,14 @@ public class VehicleDto implements Serializable {
 
     private String motorNumber;
 
+    private String brand;
+
+    private String weight;
+
+    private String saleName;
+
+    private String tire;
+
     private String username;
 
     private String password;

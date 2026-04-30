@@ -2238,7 +2238,12 @@ public class XmlFileServiceImpl implements IXmlFileService {
         if (templates == null || templates.isEmpty()) return null;
 
         for (XmlTemplate template : templates) {
-            if (!Objects.equals(template.getModelDictCode(), vehicle.getVehicleModel())) continue;
+            if (!Objects.equals(template.getModelDictCode(), vehicle.getVehicleModel())) {
+                continue;
+            }
+            if (template.getIsLast().equals(0)) {
+                continue;
+            }
             return template;
         }
         return null;

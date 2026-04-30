@@ -13,7 +13,6 @@ import com.ruoyi.system.api.RemoteLoginService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.LoginBody;
 import com.ruoyi.vehicle.domain.VehicleInfo;
-import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -24,9 +23,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -183,24 +180,11 @@ public class VehicleInfoController extends BaseController {
     }
 
     /**
-     * 根据物料号查模板关联信息（选择物料号后自动带出）
+     * 根据物料号 品牌 重量  销售名称  轮胎查模板关联信息
      */
-    @GetMapping("/material/template/{materialNo}")
-    public AjaxResult getTemplateByMaterialNo(@PathVariable("materialNo") String materialNo) {
-        Long templateId = vehicleInfoService
-                .selectVehicleTemplateIdByMaterialNo(materialNo);
-        if (templateId == null) {
-            return AjaxResult.error("该物料号未关联任何模板");
-        }
-        VehicleTemplate template = vehicleInfoService.selectVehicleTemplateById(templateId);
-        if (template == null) {
-            return AjaxResult.error("关联模板不存在");
-        }
-        Map<String, Object> result = new HashMap<>();
-        result.put("vehicleTemplateId", templateId);
-        result.put("wvtaNo", template.getWvtaCocNo());
-        result.put("cocTemplateNo", template.getCocTemplateNo());
-        result.put("json", template.getJson());
-        return AjaxResult.success(result);
+    @PostMapping("/material/template")
+    public AjaxResult selectVehicleTemplateIdCondition(@RequestBody VehicleInfo vehicleInfo) {
+        return AjaxResult.success(vehicleInfoService.selectVehicleTemplateIdCondition(
+                vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(), vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire()));
     }
 }

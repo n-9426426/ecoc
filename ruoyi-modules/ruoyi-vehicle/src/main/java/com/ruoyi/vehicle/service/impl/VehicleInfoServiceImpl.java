@@ -133,9 +133,10 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
         // 通过物料号查模板
         Long vehicleTemplateId = vehicleTemplateMaterialMapper
-                .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo());
+                .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(),
+                        vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire());
         if (vehicleTemplateId == null) {
-            throw new RuntimeException("该物料号对应的车辆模板不存在");
+            throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎对应的车辆模板不存在");
         }
 
         // 查模板详情，自动填充关联字段
@@ -184,7 +185,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     public int updateVehicleInfo(VehicleInfo vehicleInfo) {
         if (StringUtils.isNotBlank(vehicleInfo.getMaterialNo())) {
             Long vehicleTemplateId = vehicleTemplateMaterialMapper
-                    .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo());
+                    .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(),
+                            vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire());
             if (vehicleTemplateId == null) {
                 throw new RuntimeException("该物料号对应的车辆模板不存在");
             }
@@ -363,6 +365,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void getVehicleInfoFromMes(VehicleDto vehicleDto) {
         // 获取当前登录用户
         LoginUser loginUser = SecurityUtils.getLoginUser();
@@ -424,6 +427,10 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             String secondaryColor= getCellStringValue(row.getCell(5));
             String country       = getCellStringValue(row.getCell(6)); // dictValue，如"西班牙"
             Date issueDate       = getCellDateValue(row.getCell(7));
+            String brand         = getCellStringValue(row.getCell(8));
+            String weight        = getCellStringValue(row.getCell(9));
+            String saleName      = getCellStringValue(row.getCell(10));
+            String trie          = getCellStringValue(row.getCell(11));
 
             // 跳过空行
             if (StringUtils.isBlank(vin)) continue;
@@ -461,7 +468,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
                 // 通过物料号查模板ID
                 Long templateId = vehicleTemplateMaterialMapper
-                        .selectVehicleTemplateIdByMaterialNo(materialNo);
+                        .selectVehicleTemplateIdByMaterialNo(materialNo, brand, weight, saleName, trie);
                 if (templateId == null) {
                     errorMsgs.add("第" + (rowIndex + 1) + "行：物料号[" + materialNo + "]未找到关联模板，跳过");
                     continue;
@@ -526,21 +533,38 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Override
     public List<String> selectAllMaterialNos() {
-        List<String> list = vehicleTemplateMaterialMapper.selectAllMaterialNos();
-        return list;
+        return vehicleTemplateMaterialMapper.selectAllMaterialNos();
     }
 
     @Override
     public Long selectVehicleTemplateIdByMaterialNo(String materialNo) {
-        Long templateId = vehicleTemplateMaterialMapper
-                .selectVehicleTemplateIdByMaterialNo(materialNo);
-        return templateId;
+        return vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(materialNo, null, null, null, null);
     }
 
     @Override
     public VehicleTemplate selectVehicleTemplateById(Long templateId) {
         VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(templateId);
         return template;
+    }
+
+    @Override
+    public List<Map<String, Object>> selectVehicleTemplateIdCondition(String materialNo, String brand, String weight, String saleName, String tire) {
+        List<VehicleTemplate> templates = vehicleTemplateMapper.selectVehicleTemplateIdCondition(materialNo, brand, weight, saleName, tire);
+        if (templates.isEmpty()) {
+            throw new RuntimeException("该物料号未关联任何模板");
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (VehicleTemplate template : templates) {
+            Map<String, Object> templateMap = new HashMap<>();
+            templateMap.put("vehicleTemplateId", template.getTemplateId());
+            templateMap.put("wvtaNo", template.getWvtaCocNo());
+            templateMap.put("cocTemplateNo", template.getCocTemplateNo());
+            templateMap.put("json", template.getJson());
+            templateMap.put("version", template.getVersion());
+            templateMap.put("tvv", template.getTvv());
+            result.add(templateMap);
+        }
+        return result;
     }
 
 // ========== 工具方法 ==========

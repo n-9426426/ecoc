@@ -101,6 +101,14 @@ public class VehicleInfo extends BaseEntity {
 
     private String motorNumber;
 
+    private String brand;
+
+    private String weight;
+
+    private String saleName;
+
+    private String tire;
+
     /** VIN批量查询列表 */
     private List<String> vinList;
 
@@ -123,5 +131,4 @@ public class VehicleInfo extends BaseEntity {
             return Collections.emptyMap();
         }
     }
-
 }

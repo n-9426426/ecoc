@@ -32,4 +32,12 @@ public interface VehicleTemplateMapper {
     int updateAllTemplateNotIsLast(@Param("cocTemplateNo") String cocTemplateNo);
 
     List<VehicleTemplate> selectExpiringTemplates();
+
+    List<VehicleTemplate> selectVehicleTemplateIdCondition(
+            @Param("materialNo") String materialNo,
+            @Param("brand") String brand,
+            @Param("weight") String weight,
+            @Param("saleName") String saleName,
+            @Param("tire") String tire
+    );
 }
