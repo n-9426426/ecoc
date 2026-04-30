@@ -182,7 +182,7 @@ public class VehicleInfoController extends BaseController {
     /**
      * 根据物料号 品牌 重量  销售名称  轮胎查模板关联信息
      */
-    @PostMapping("/material/template")
+    @PostMapping("/template/condition")
     public AjaxResult selectVehicleTemplateIdCondition(@RequestBody VehicleInfo vehicleInfo) {
         return AjaxResult.success(vehicleInfoService.selectVehicleTemplateIdCondition(
                 vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(), vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire()));
