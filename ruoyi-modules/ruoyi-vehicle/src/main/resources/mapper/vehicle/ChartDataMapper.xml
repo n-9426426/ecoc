@@ -102,8 +102,8 @@
             <if test="country != null and country != ''">
                 AND country = #{country}
             </if>
-            <if test="uploadStatus != null">
-                AND upload_result = #{uploadStatus}
+            <if test="uploadResult != null">
+                AND upload_result = #{uploadResult}
             </if>
     </select>
 
@@ -132,8 +132,8 @@
             <if test="country != null and country != ''">
                 AND country = #{country}
             </if>
-            <if test="uploadStatus != null">
-                AND upload_result = #{uploadStatus}
+            <if test="uploadResult != null">
+                AND upload_result = #{uploadResult}
             </if>
     </select>
 
@@ -167,8 +167,8 @@
             <if test="country != null and country != ''">
                 AND vi.country = #{country}
             </if>
-            <if test="uploadStatus != null">
-                AND vi.upload_status = #{uploadStatus}
+            <if test="uploadResult != null">
+                AND vi.upload_status = #{uploadResult}
             </if>
     </select>
 
@@ -197,8 +197,8 @@
             <if test="country != null and country != ''">
                 AND country = #{country}
             </if>
-            <if test="uploadStatus != null">
-                AND upload_result = #{uploadStatus}
+            <if test="uploadResult != null">
+                AND upload_result = #{uploadResult}
             </if>
     </select>
 
@@ -240,8 +240,8 @@
             <if test="country != null and country != ''">
                 AND country = #{country}
             </if>
-            <if test="uploadStatus != null">
-                AND upload_result = #{uploadStatus}
+            <if test="uploadResult != null">
+                AND upload_result = #{uploadResult}
             </if>
         GROUP BY YEAR(case when update_time is null then create_time else update_time end)
             <choose>
@@ -300,7 +300,7 @@
                 <if test="vehicleModel != null">
                     AND xt.template_id = #{vehicleModel}
                 </if>
-                <!-- issueStartTime / issueEndTime / factoryCode / country / uploadStatus:
+                <!-- issueStartTime / issueEndTime / factoryCode / country / uploadResult:
                      xml_template 表无对应字段，不适用 -->
             </when>
 
@@ -325,8 +325,8 @@
                 <if test="country != null and country != ''">
                     AND vi.country like concat('%',#{country},'%')
                 </if>
-                <if test="uploadStatus != null">
-                    AND vi.upload_status = #{uploadStatus}
+                <if test="uploadResult != null">
+                    AND vi.upload_status = #{uploadResult}
                 </if>
             </when>
 
@@ -352,8 +352,8 @@
                 <if test="country != null and country != ''">
                     AND xf.country like concat('%',#{country},'%')
                 </if>
-                <if test="uploadStatus != null">
-                    AND xf.upload_result = #{uploadStatus}
+                <if test="uploadResult != null">
+                    AND xf.upload_result = #{uploadResult}
                 </if>
             </otherwise>
         </choose>

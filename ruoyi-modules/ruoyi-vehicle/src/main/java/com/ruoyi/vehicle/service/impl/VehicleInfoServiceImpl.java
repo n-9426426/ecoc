@@ -308,7 +308,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         sysNotice.setIsRead(false);
         sysNotice.setNoticeType("1");
         sysNotice.setNoticeTitle("车辆信息校验完成通知");
-        StringBuilder msg = new StringBuilder("车辆信息");
+        StringBuilder msg = new StringBuilder("车辆信息：");
         AbnormalClassify abnormalClassify;
         for (Long vehicleInfoId : vehicleInfoIds) {
             VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleInfoId);
@@ -350,9 +350,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             }
 
             msg.append(System.lineSeparator());
-            msg.append("Vin");
+            msg.append("Vin：");
             msg.append(vehicleInfo.getVin());
-            msg.append("的校验结果为");
+            msg.append("的校验结果为：");
             msg.append(validationReport.isAllValid() ? "通过" : "失败");
         }
 

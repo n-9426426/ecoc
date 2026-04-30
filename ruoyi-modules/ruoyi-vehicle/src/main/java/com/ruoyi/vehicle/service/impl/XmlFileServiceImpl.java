@@ -592,7 +592,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
         sysNotice.setIsRead(false);
         sysNotice.setNoticeType("1");
         sysNotice.setNoticeTitle("XML文件校验完成通知");
-        StringBuilder msg = new StringBuilder("XML文件");
+        StringBuilder msg = new StringBuilder("XML文件：");
         AbnormalClassify abnormalClassify;
         try {
             // 1. 查询文件记录
@@ -697,9 +697,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             vehicleLifecycleMapper.insert(vehicleLifecycle);
 
             msg.append(System.lineSeparator());
-            msg.append("Vin");
+            msg.append("Vin：");
             msg.append(xmlFile.getVin());
-            msg.append("的校验结果为");
+            msg.append("的校验结果为：");
             msg.append(finalReport.isAllValid() ? "通过" : "失败");
 
             for (FieldValidationResult fieldValidationResult: finalReport.getFieldResults()) {

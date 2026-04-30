@@ -30,6 +30,8 @@ public class XmlTemplateVo {
 
     private Long energyType;
 
+    private String version;
+
     private List<AttributeTreeNode> attributeTree;
 
     public Long getTemplateId() {
@@ -126,5 +128,13 @@ public class XmlTemplateVo {
 
     public void setEnergyType(Long energyType) {
         this.energyType = energyType;
+    }
+
+    public String getVersion() {
+        return version;
+    }
+
+    public void setVersion(String version) {
+        this.version = version;
     }
 }

@@ -218,7 +218,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         sysNotice.setIsRead(false);
         sysNotice.setNoticeType("1");
         sysNotice.setNoticeTitle("车辆信息模版校验完成通知");
-        StringBuilder msg = new StringBuilder("车辆信息模版");
+        StringBuilder msg = new StringBuilder("车辆信息模版：");
         for (VehicleTemplate template : templates) {
             try {
                 // 执行校验
@@ -252,9 +252,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 updateList.add(update);
 
                 msg.append(System.lineSeparator());
-                msg.append("WVTA编号");
+                msg.append("WVTA编号：");
                 msg.append(template.getWvtaCocNo());
-                msg.append("的校验结果为");
+                msg.append("的校验结果为：");
                 msg.append(report.isAllValid() ? "通过" : "失败");
             } catch (Exception e) {
                 log.error("校验异常, templateId={}", template.getTemplateId(), e);

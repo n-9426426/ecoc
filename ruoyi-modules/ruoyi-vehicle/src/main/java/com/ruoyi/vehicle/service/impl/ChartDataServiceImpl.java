@@ -261,7 +261,7 @@ public class ChartDataServiceImpl implements IChartDataService {
         prevDto.setFactoryCode(current.getFactoryCode());
         prevDto.setVehicleModel(current.getVehicleModel());
         prevDto.setCountry(current.getCountry());
-        prevDto.setUploadStatus(current.getUploadStatus());
+        prevDto.setUploadResult(current.getUploadResult());
         prevDto.setAbnormalType(current.getAbnormalType());
         prevDto.setFlag(current.getFlag());
         // 设置上个周期时间
