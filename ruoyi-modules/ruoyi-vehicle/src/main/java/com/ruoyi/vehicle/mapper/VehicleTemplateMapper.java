@@ -33,7 +33,7 @@ public interface VehicleTemplateMapper {
 
     List<VehicleTemplate> selectExpiringTemplates();
 
-    List<VehicleTemplate> selectVehicleTemplateIdCondition(
+    List<VehicleTemplate> selectVehicleTemplateIdByCondition(
             @Param("materialNo") String materialNo,
             @Param("brand") String brand,
             @Param("weight") String weight,

@@ -89,7 +89,7 @@
     </select>
 
     <select id="selectAllMaterialNos" resultType="java.lang.String">
-        select vtm.material_no
+        select distinct vtm.material_no
         from vehicle_template_material vtm
                  left join vehicle_template vt on vtm.template_id = vt.template_id
         where vt.del_flag = '0'

@@ -238,6 +238,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 			<if test="dictData.ruleType != null and dictData.ruleType != ''">
 				AND sdd.rule_type = #{dictData.ruleType}
 			</if>
+			<if test="dictData.rule != null and dictData.rule != ''">
+				and sdd.rule like concat('%', #{dictData.rule}, '%')
+			</if>
 		</where>
 		GROUP BY sdd.uuid, sdd.dict_type
 		ORDER BY MIN(sdd.dict_sort) ASC
@@ -291,6 +294,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 			</if>
 			<if test="ruleType != null and ruleType != ''">
 				AND sdd.rule_type = #{ruleType}
+			</if>
+			<if test="rule != null and rule != ''">
+				and sdd.rule like concat('%', #{rule}, '%')
 			</if>
 		</where>
 		GROUP BY sdd.uuid

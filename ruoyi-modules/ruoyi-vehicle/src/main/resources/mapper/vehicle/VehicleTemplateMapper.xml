@@ -229,7 +229,7 @@
             AND vt.overdue_date > NOW()
     </select>
 
-    <select id="selectVehicleTemplateIdCondition" resultMap="VehicleTemplateResult">
+    <select id="selectVehicleTemplateIdByCondition" resultMap="VehicleTemplateResult">
         select vt.*
         from vehicle_template_material vtm
         left join vehicle_template vt on vtm.template_id = vt.template_id

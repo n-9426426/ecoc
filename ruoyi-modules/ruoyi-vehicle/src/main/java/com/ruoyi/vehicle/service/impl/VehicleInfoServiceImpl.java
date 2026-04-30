@@ -136,7 +136,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(),
                         vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire());
         if (vehicleTemplateId == null) {
-            throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎对应的车辆模板不存在");
+            throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎无对应的可用车辆模板");
         }
 
         // 查模板详情，自动填充关联字段
@@ -188,7 +188,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                     .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(),
                             vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire());
             if (vehicleTemplateId == null) {
-                throw new RuntimeException("该物料号对应的车辆模板不存在");
+                throw new RuntimeException("该物料号无对应的可用车辆模板");
             }
             VehicleTemplate template = vehicleTemplateMapper
                     .selectVehicleTemplateById(vehicleTemplateId);
@@ -471,7 +471,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 Long templateId = vehicleTemplateMaterialMapper
                         .selectVehicleTemplateIdByMaterialNo(materialNo, brand, weight, saleName, tire);
                 if (templateId == null) {
-                    errorMsgs.add("第" + (rowIndex + 1) + "行：物料号[" + materialNo + "]未找到关联模板，跳过");
+                    errorMsgs.add("第" + (rowIndex + 1) + "行：物料号[" + materialNo + "]未找到可用关联模板，跳过");
                     continue;
                 }
 
@@ -555,18 +555,15 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     }
 
     @Override
-    public List<Map<String, Object>> selectVehicleTemplateIdCondition(String materialNo, String brand, String weight, String saleName, String tire) {
-        List<VehicleTemplate> templates = vehicleTemplateMapper.selectVehicleTemplateIdCondition(materialNo, brand, weight, saleName, tire);
+    public List<Map<String, Object>> selectVehicleTemplateIdByCondition(String materialNo, String brand, String weight, String saleName, String tire) {
+        List<VehicleTemplate> templates = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(materialNo, brand, weight, saleName, tire);
         if (templates.isEmpty()) {
-            throw new RuntimeException("该物料号未关联任何模板");
+            throw new RuntimeException("该物料号未关联任何可用模板");
         }
         List<Map<String, Object>> result = new ArrayList<>();
         for (VehicleTemplate template : templates) {
             Map<String, Object> templateMap = new HashMap<>();
             templateMap.put("vehicleTemplateId", template.getTemplateId());
-            templateMap.put("wvtaNo", template.getWvtaCocNo());
-            templateMap.put("cocTemplateNo", template.getCocTemplateNo());
-            templateMap.put("json", template.getJson());
             templateMap.put("version", template.getVersion());
             templateMap.put("tvv", template.getTvv());
             result.add(templateMap);
