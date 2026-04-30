@@ -143,7 +143,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         template.setValidateResult("0");
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(DateUtils.getNowDate());
-        template.setTvv(template.getTvv() + "," + template.getVariant() + template.getVersionNo());
+        template.setTvv(template.getType() + "," + template.getVariant() + "," + template.getVersionNo());
         int row = templateMapper.insertVehicleTemplate(template);
         batchValidate(template.getTemplateId());
         return row;
@@ -162,7 +162,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         template.setVersion(templateVersion);
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(DateUtils.getNowDate());
-        template.setTvv(template.getTvv() + "," + template.getVariant() + template.getVersionNo());
+        template.setTvv(template.getType() + "," + template.getVariant() + template.getVersionNo());
         templateMapper.updateAllTemplateNotIsLast(template.getCocTemplateNo());
         return templateMapper.insertVehicleTemplate(template);
     }
@@ -399,7 +399,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 template.setValidateResult("0");
                 template.setCreateBy(SecurityUtils.getUsername());
                 template.setCreateTime(DateUtils.getNowDate());
-                template.setTvv(template.getTvv() + "," + template.getVariant() + template.getVersionNo());
+                template.setTvv(template.getType() + "," + template.getVariant() + template.getVersionNo());
                 templateMapper.insertVehicleTemplate(template);
             });
         } catch (Exception e) {
