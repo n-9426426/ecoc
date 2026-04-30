@@ -396,6 +396,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void importVehicleInfoFromExcel(MultipartFile file) throws IOException {
         Workbook workbook = new XSSFWorkbook(file.getInputStream());
         Sheet sheet = workbook.getSheetAt(0);
@@ -520,6 +521,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 lifecycle.setOperate("0");
                 lifecycle.setResult(0);
                 vehicleLifecycleMapper.insert(lifecycle);
+
+                validateVehicleInfo(Collections.singletonList(vehicleInfo.getVehicleId()));
 
             } catch (Exception e) {
                 log.error("导入第{}行异常：{}", rowIndex + 1, e.getMessage(), e);
