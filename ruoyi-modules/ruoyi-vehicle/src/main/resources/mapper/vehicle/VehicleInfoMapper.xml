@@ -33,6 +33,10 @@
 		<result property="validationReportJson" column="validation_report_json"/>
 		<result property="engineNumber" column="engine_number"/>
 		<result property="motorNumber" column="motor_number"/>
+		<result property="brand" column="brand"/>
+		<result property="weight" column="weight"/>
+		<result property="saleName" column="sale_name"/>
+		<result property="tire" column="tire"/>
 	</resultMap>
 
 	<sql id="selectVehicleInfoVo">
@@ -40,7 +44,7 @@
 			   upload_status, validation_result, status, country, color, secondary_color,
 			   certificate_version, wvta_no, issue_date, json, xml_template_id, vehicle_template_id,
 			   deleted, create_by, create_time, update_by, update_time, remark, validation_report_json,
-			   engine_number, motor_number,
+			   engine_number, motor_number, brand, weight, sale_name, tire,
 			   sdd.dict_label as vehicle_model_str, vt.filepath as vehicle_template_filepath, vt.coc_template_no as coc_template_no
 		from vehicle_info vi
 		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
@@ -147,6 +151,10 @@
 		<if test="validationReportJson != null and validationReportJson != ''">validation_report_json,</if>
 	    <if test="engineNumber != null and engineNumber != ''">engine_number,</if>
 	    <if test="motorNumber != null and motorNumber != ''">motor_number,</if>
+	    <if test="brand != null and brand != ''">brand,</if>
+		<if test="weight != null and weight != ''">weight,</if>
+		<if test="saleName != null and saleName != ''">sale_name,</if>
+		<if test="tire != null and tire != ''">tire,</if>
 		<if test="createBy != null and createBy != ''">create_by, </if>
 		create_time
 		) values (
@@ -171,6 +179,10 @@
 		<if test="validationReportJson != null and validationReportJson != ''">#{validationReportJson},</if>
 		<if test="engineNumber != null and engineNumber != ''">#{engineNumber},</if>
 		<if test="motorNumber != null and motorNumber != ''">#{motorNumber},</if>
+		<if test="brand != null and brand != ''">#{brand},</if>
+		<if test="weight != null and weight != ''">#{weight},</if>
+		<if test="saleName != null and saleName != ''">#{saleName},</if>
+		<if test="tire != null and tire != ''">#{tire},</if>
 		<if test="createBy != null and createBy != ''">#{createBy}, </if>
 		sysdate()
 		)
@@ -202,6 +214,10 @@
 			<if test="motorNumber != null and motorNumber != ''">motor_number = #{motorNumber},</if>
 			<if test="updateBy != null and updateBy != ''">update_by = #{updateBy}, </if>
 			<if test="deleted != null">deleted = #{deleted}, </if>
+			<if test="brand != null and brand != ''">brand = #{brand},</if>
+			<if test="weight != null and weight != ''">weight = #{weight},</if>
+			<if test="saleName != null and saleName != ''">sale_name = #{saleName},</if>
+			<if test="tire != null and tire != ''">tire = #{tire},</if>
 			update_time = sysdate()
 		</set>
 		where vehicle_id = #{vehicleId}

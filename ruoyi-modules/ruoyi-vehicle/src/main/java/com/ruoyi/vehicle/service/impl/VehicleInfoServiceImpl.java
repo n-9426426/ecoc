@@ -430,7 +430,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             String brand         = getCellStringValue(row.getCell(8));
             String weight        = getCellStringValue(row.getCell(9));
             String saleName      = getCellStringValue(row.getCell(10));
-            String trie          = getCellStringValue(row.getCell(11));
+            String tire          = getCellStringValue(row.getCell(11));
 
             // 跳过空行
             if (StringUtils.isBlank(vin)) continue;
@@ -468,7 +468,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
                 // 通过物料号查模板ID
                 Long templateId = vehicleTemplateMaterialMapper
-                        .selectVehicleTemplateIdByMaterialNo(materialNo, brand, weight, saleName, trie);
+                        .selectVehicleTemplateIdByMaterialNo(materialNo, brand, weight, saleName, tire);
                 if (templateId == null) {
                     errorMsgs.add("第" + (rowIndex + 1) + "行：物料号[" + materialNo + "]未找到关联模板，跳过");
                     continue;
@@ -495,7 +495,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 vehicleInfo.setBrand(brand);
                 vehicleInfo.setWeight(weight);
                 vehicleInfo.setSaleName(saleName);
-                vehicleInfo.setTire(trie);
+                vehicleInfo.setTire(tire);
 
                 // 从模板自动获取
                 vehicleInfo.setWvtaNo(template.getWvtaCocNo());

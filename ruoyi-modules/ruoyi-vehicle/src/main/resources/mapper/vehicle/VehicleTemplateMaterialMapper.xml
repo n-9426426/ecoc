@@ -81,8 +81,8 @@
         <if test="saleName != null and saleName != ''">
             AND JSON_UNQUOTE(JSON_EXTRACT(vt.json, '$.saleName')) = #{saleName}
         </if>
-        <if test="trie != null and trie != ''">
-            AND JSON_UNQUOTE(JSON_EXTRACT(vt.json, '$.trie')) = #{trie}
+        <if test="tire != null and tire != ''">
+            AND JSON_UNQUOTE(JSON_EXTRACT(vt.json, '$.tire')) = #{tire}
         </if>
         order by vt.version desc
         limit 1

@@ -19,7 +19,7 @@ public interface VehicleTemplateMaterialMapper {
                                              @Param("brand") String brand,
                                              @Param("weight") String weight,
                                              @Param("saleName") String saleName,
-                                             @Param("trie") String trie);
+                                             @Param("tire") String tire);
 
     List<String> selectAllMaterialNos();
 }
