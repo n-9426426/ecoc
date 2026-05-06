@@ -27,7 +27,7 @@ public interface VehicleTemplateMapper {
 
     List<VehicleTemplate> selectVehicleTemplateOption();
 
-    String selectVersionByCoc(@Param("cocTemplateNo") String cocTemplateNo);
+    VehicleTemplate selectVehicleByCoc(@Param("cocTemplateNo") String cocTemplateNo);
 
     int updateAllTemplateNotIsLast(@Param("cocTemplateNo") String cocTemplateNo);
 

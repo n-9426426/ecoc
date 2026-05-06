@@ -204,12 +204,12 @@
         </foreach>
     </update>
 
-    <select id="selectVersionByCoc" resultType="java.lang.String">
-        SELECT version
+    <select id="selectVehicleByCoc" resultMap="VehicleTemplateResult">
+        SELECT *
         FROM vehicle_template
         WHERE coc_template_no = #{cocTemplateNo}
         ORDER BY cast(version as UNSIGNED) desc
-            limit 1
+        limit 1
     </select>
 
     <update id="updateAllTemplateNotIsLast">

@@ -152,17 +152,19 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int updateVehicleTemplate(VehicleTemplate template) {
-        String templateVersion = templateMapper.selectVersionByCoc(template.getCocTemplateNo());
+        VehicleTemplate existTemplate = templateMapper.selectVehicleByCoc(template.getCocTemplateNo());
+        String templateVersion = existTemplate.getTemplateVersion();
         if (templateVersion == null) {
             templateVersion = "1.0";
         } else {
             templateVersion = String.valueOf(new BigDecimal(templateVersion).add(new BigDecimal(1)));
         }
+        template.setUuid(existTemplate.getUuid());
         template.setTemplateId(null);
         template.setVersion(templateVersion);
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(DateUtils.getNowDate());
-        template.setTvv(template.getType() + "," + template.getVariant() + template.getVersionNo());
+        template.setTvv(template.getType() + "," + template.getVariant() + "," + template.getVersionNo());
         templateMapper.updateAllTemplateNotIsLast(template.getCocTemplateNo());
         return templateMapper.insertVehicleTemplate(template);
     }
