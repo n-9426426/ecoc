@@ -1669,7 +1669,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             } else if (StringUtils.isNotBlank(dict.getKeyMap())) {
                 // 叶子节点：直接取值（无分号说明无循环）
                 Object raw = jsonMap.get(dict.getKeyMap());
-                String value = raw != null ? raw.toString() : "";
+                String value = getValueOrDefault(raw, attr.getDefaultValue());
                 addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
             }
         }
@@ -1739,7 +1739,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             } else if (StringUtils.isNotBlank(dict.getKeyMap())) {
                 // 叶子节点：含分号 → 循环字段跳过；无分号 → 正常生成（含空标签）
                 Object raw = jsonMap.get(dict.getKeyMap());
-                String value = raw != null ? raw.toString() : "";
+                String value = getValueOrDefault(raw, sibling.getDefaultValue());
                 if (!value.contains(";")) {
                     addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
                 }
@@ -1798,6 +1798,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 buildContainerByPrefix(doc, structElement, child.getAttrPath(), attrList, dictCodeMap, jsonMap, prefix, prefixIndex);
             } else if (StringUtils.isNotBlank(dict.getKeyMap())) {
                 String value = extractValueByPrefix(jsonMap, dict.getKeyMap(), prefix, prefixIndex);
+                if (StringUtils.isBlank(value)) {
+                    value = StringUtils.isNotBlank(child.getDefaultValue()) ? child.getDefaultValue() : "";
+                }
                 addElement(doc, container, sanitizeXmlTagName(dict.getDictLabel()), value);
             }
         }
@@ -1884,7 +1887,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             } else if (StringUtils.isNotBlank(dict.getKeyMap())) {
                 // 叶子节点：含分号 → 循环字段跳过；无分号 → 正常生成（含空标签）
                 Object raw = jsonMap.get(dict.getKeyMap());
-                String value = raw != null ? raw.toString() : "";
+                String value = getValueOrDefault(raw, sibling.getDefaultValue());
                 if (!value.contains(";")) {
                     addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
                 }
@@ -1940,7 +1943,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (value.contains(";")) {
                 value = value.split(";")[0].trim();
             }
-            // ★修复：无论 value 是否为空，只要模板中定义了该标签，都必须生成（空标签保留）
+            if (StringUtils.isBlank(value)) {
+                value = StringUtils.isNotBlank(leaf.getDefaultValue()) ? leaf.getDefaultValue() : "";
+            }
+            // 无论 value 是否为空，只要模板中定义了该标签，都必须生成（空标签保留）
             addElement(doc, container, sanitizeXmlTagName(dict.getDictLabel()), value);
         }
     }
@@ -1968,7 +1974,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (dict == null || StringUtils.isBlank(dict.getKeyMap())) continue;
 
             String value = extractValueByIndex(jsonMap, dict.getKeyMap(), index);
-            // ★修复：无论 value 是否为空，只要模板中定义了该标签，都必须生成（空标签保留）
+            if (StringUtils.isBlank(value)) {
+                value = StringUtils.isNotBlank(field.getDefaultValue()) ? field.getDefaultValue() : "";
+            }
+            // 无论 value 是否为空，只要模板中定义了该标签，都必须生成（空标签保留）
             addElement(doc, structElement, sanitizeXmlTagName(dict.getDictLabel()), value);
         }
     }
@@ -2026,7 +2035,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 pathNodeMap.put(attrPath, structElement);
             } else if (StringUtils.isNotBlank(dict.getKeyMap())) {
                 Object raw = jsonMap.get(dict.getKeyMap());
-                String value = raw != null ? raw.toString() : "";
+                String value = getValueOrDefault(raw, attr.getDefaultValue());
                 // 含分号 → 循环字段，由循环逻辑处理，此处跳过
                 if (!value.contains(";")) {
                     addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
@@ -2338,4 +2347,20 @@ public class XmlFileServiceImpl implements IXmlFileService {
         return cleaned;
     }
 
+    /**
+     * 取 jsonMap 中对应 keyMap 的值；若值为空（null 或空白字符串），回退到模板属性的 defaultValue。
+     *
+     * @param raw          已从 jsonMap 中取出的原始值（可为 null）
+     * @param defaultValue XmlTemplateAttribute.defaultValue（可为 null）
+     * @return 最终使用的字符串值，永不为 null
+     */
+    private String getValueOrDefault(Object raw, String defaultValue) {
+        if (raw != null) {
+            String val = raw.toString();
+            if (StringUtils.isNotBlank(val)) {
+                return val;
+            }
+        }
+        return StringUtils.isNotBlank(defaultValue) ? defaultValue : "";
+    }
 }
