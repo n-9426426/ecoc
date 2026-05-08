@@ -171,8 +171,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
         // 3. 从旧文件名中提取 VIN
         String oldFileName = dbXmlFile.getFileName();
-        String vin = oldFileName.split("_")[0];
-        vin = oldFileName.split("\\.")[0];
+        String vin = oldFileName.split("_")[1];
+        vin = vin.split("\\.")[0];
 
         // 4. 计算新版本号（当前版本 +1）
         String oldVersion = xmlFileMapper.selectVersionByFileName("vehicle_" + vin);
