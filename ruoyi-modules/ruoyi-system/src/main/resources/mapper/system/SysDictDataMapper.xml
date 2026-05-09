@@ -215,9 +215,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		THEN JSON_OBJECT('system', sdd.original_system, 'key', sdd.key_map)
 		ELSE NULL END
 		)                                       AS key_map_agg,
-		JSON_ARRAYAGG(
-		sdd.value_map
-		)                                       AS value_map_agg
+		GROUP_CONCAT(sdd.value_map ORDER BY sdd.dict_code ASC SEPARATOR ';')
+		    									AS value_map_agg
 		FROM sys_dict_data sdd
 		LEFT JOIN sys_dict_type sdt ON sdd.dict_type = sdt.dict_type
 		LEFT JOIN sys_dict_data sdd2 ON sdd.dict_type_affiliation = sdd2.dict_code

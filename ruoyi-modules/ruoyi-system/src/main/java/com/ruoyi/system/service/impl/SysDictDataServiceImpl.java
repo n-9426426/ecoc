@@ -257,9 +257,7 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
 
                 if (i < valueMapEntries.size()) {
                     Map.Entry<String, String> valueEntry = valueMapEntries.get(i);
-                    Map<String, String> singleValueMap = new LinkedHashMap<>();
-                    singleValueMap.put(valueEntry.getKey(), valueEntry.getValue());
-                    row.setValueMap(MAPPER.writeValueAsString(singleValueMap));
+                    row.setValueMap(valueEntry.getKey() + ";" + valueEntry.getValue());
                 } else {
                     row.setValueMap(null);
                 }
@@ -290,18 +288,15 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
         for (List<SysDictData> group : grouped.values()) {
             try {
                 Map<String, String> keyMapObj   = new LinkedHashMap<>();
-                Map<String, String> valueMapObj = new LinkedHashMap<>();
-
+                StringJoiner valueMapJoiner = new StringJoiner(";");
                 for (SysDictData row : group) {
                     // key_map 字段存的是原值字符串，original_system 存的是原系统名
                     if (row.getOriginalSystem() != null && row.getKeyMap() != null) {
                         keyMapObj.put(row.getOriginalSystem(), row.getKeyMap());
                     }
-                    // value_map 字段存的是 {"原值":"新值"} 单条JSON，合并到总 valueMap
-                    if (row.getValueMap() != null && !StringUtils.isBlank(row.getValueMap())) {
-                        Map<String, String> singleMap = MAPPER.readValue(
-                                row.getValueMap(), new TypeReference<LinkedHashMap<String, String>>() {});
-                        valueMapObj.putAll(singleMap);
+                    // value_map 字段存的是 DIRECT 单字符串，使用;合并为一句
+                    if (StringUtils.isNotBlank(row.getValueMap())) {
+                        valueMapJoiner.add(row.getValueMap());
                     }
                 }
 
@@ -309,7 +304,7 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
                 SysDictData agg = copyBaseFields(group.get(0));
                 agg.setDictCode(group.get(0).getDictCode()); // 取第一行的code（前端编辑时用）
                 agg.setKeyMap(MAPPER.writeValueAsString(keyMapObj));
-                agg.setValueMap(MAPPER.writeValueAsString(valueMapObj));
+                agg.setValueMap(valueMapJoiner.toString());
                 agg.setOriginalSystem(null); // 聚合后不需要单独的originalSystem
                 result.add(agg);
             } catch (Exception e) {
@@ -385,26 +380,12 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
             }
 
             // ---- 还原 valueMap ----
-            // SQL返回格式: ["{\"k1\":\"v1\"}", null, "{\"k2\":\"v2\"}", ...]
+            // SQL返回格式: 用分号拼接后的字符串
             String valueMapAgg = agg.getValueMap();
             if (StringUtils.isNotBlank(valueMapAgg)) {
-                try {
-                    // JSON_ARRAYAGG 返回的是 JSON 数组，元素是字符串或 null
-                    List<String> valueMapArr = MAPPER.readValue(
-                            valueMapAgg, new TypeReference<List<String>>() {});
-                    Map<String, String> valueMapObj = new LinkedHashMap<>();
-                    for (String singleJson : valueMapArr) {
-                        if (StringUtils.isBlank(singleJson)) continue; // 跳过 null 元素
-                        Map<String, String> singleMap = MAPPER.readValue(
-                                singleJson, new TypeReference<LinkedHashMap<String, String>>() {});
-                        valueMapObj.putAll(singleMap);
-                    }
-                    agg.setValueMap(MAPPER.writeValueAsString(valueMapObj));
-                } catch (Exception e) {
-                    agg.setValueMap("{}");
-                }
+                agg.setValueMap(valueMapAgg);
             } else {
-                agg.setValueMap("{}");
+                agg.setValueMap("");
             }
         }
         return aggList;
