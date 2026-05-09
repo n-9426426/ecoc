@@ -226,11 +226,9 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
                 keyMapEntries = new ArrayList<>(keyMapObj.entrySet());
             }
 
-            List<Map.Entry<String, String>> valueMapEntries = Collections.emptyList();
+            List<String> valueMapEntries = Collections.emptyList();
             if (StringUtils.isNotBlank(data.getValueMap())) {
-                Map<String, String> valueMapObj = MAPPER.readValue(
-                        data.getValueMap(), new TypeReference<LinkedHashMap<String, String>>() {});
-                valueMapEntries = new ArrayList<>(valueMapObj.entrySet());
+                valueMapEntries = Arrays.asList(data.getValueMap().split(";"));
             }
 
             int rowCount = Math.max(keyMapEntries.size(), valueMapEntries.size());
@@ -256,8 +254,8 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
                 }
 
                 if (i < valueMapEntries.size()) {
-                    Map.Entry<String, String> valueEntry = valueMapEntries.get(i);
-                    row.setValueMap(valueEntry.getKey() + ";" + valueEntry.getValue());
+                    String valueEntry = valueMapEntries.get(i);
+                    row.setValueMap(valueEntry);
                 } else {
                     row.setValueMap(null);
                 }
@@ -266,7 +264,7 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
             }
             return rows;
         } catch (Exception e) {
-            throw new ServiceException("keyMap/valueMap JSON 格式错误：" + e.getMessage());
+            throw new ServiceException("keyMap JSON 格式错误：" + e.getMessage());
         }
     }
 

@@ -156,7 +156,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null
                 ? SecurityUtils.getUsername() : "MES To System");
 
-        int row = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+        int row = insert(vehicleInfo);
 
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
         vehicleLifecycle.setEntryId(vehicleInfo.getVehicleId());
@@ -512,7 +512,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null
                         ? SecurityUtils.getUsername() : "MES To System");
 
-                vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+                insert(vehicleInfo);
 
                 // 写入生命周期
                 VehicleLifecycle lifecycle = new VehicleLifecycle();
@@ -602,5 +602,17 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             }
         }
         return null;
+    }
+
+    private int insert(VehicleInfo vehicleInfo) {
+        Map<String, Object> map = vehicleInfo.getJsonMap();
+        // todo 根据值映射规则把值给给映射好后再转为字符串存储
+        try {
+            vehicleInfo.setJson(objectMapper.writeValueAsString(map));
+        } catch (Exception e) {
+            throw new RuntimeException("无法格式化JSON数据");
+        }
+        int row = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+        return row;
     }
 }
