@@ -7,6 +7,7 @@ import com.ruoyi.common.core.model.FieldValidationResult;
 import com.ruoyi.common.core.model.RuleViolation;
 import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.utils.DateUtils;
+import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.utils.uuid.UUID;
 import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.RemoteDictService;
@@ -123,6 +124,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         // TODO: 实现文件解析逻辑
         String json = parseFileToJson(file);
         VehicleTemplate t = new VehicleTemplate();
+        t.setUuid(UUID.randomUUID().toString());
         t.setJson(json);
         t.setStatus("0");
         t.setValidateResult("0");
@@ -143,7 +145,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         template.setValidateResult("0");
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(DateUtils.getNowDate());
-        template.setTvv(template.getType() + "," + template.getVariant() + "," + template.getVersionNo());
+        if (!StringUtils.isBlank(template.getType()) && !StringUtils.isBlank(template.getVariant()) && !StringUtils.isBlank(template.getVersion())) {
+            template.setTvv(template.getType() + "," + template.getVariant() + "," + template.getVersionNo());
+        }
         int row = templateMapper.insertVehicleTemplate(template);
         batchValidate(template.getTemplateId());
         return row;

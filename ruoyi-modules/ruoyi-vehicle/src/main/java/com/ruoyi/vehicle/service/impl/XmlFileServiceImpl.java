@@ -194,8 +194,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
         // 9. 将旧记录 is_latest 设为 0
         xmlFileMapper.updateIsLatestToFalse("vehicle_" + vin);
 
-        xmlFileMapper.updateIsLatestToFalse(newFileName);
-
         // 10. 更新 xml_file 表
         dbXmlFile.setFileName(newFileName);
         dbXmlFile.setFilePath(newFilePath);

@@ -38,6 +38,9 @@ public class VehicleInfo extends BaseEntity {
     /** WVTA证书编号 */
     private String wvtaNo;
 
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date manufactureDate;
+
     /** 发证日期 */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date issueDate;
@@ -98,6 +101,8 @@ public class VehicleInfo extends BaseEntity {
     private String validationReportJson;
 
     private String engineNumber;
+
+    private String batteryNumber;
 
     private String motorNumber;
 

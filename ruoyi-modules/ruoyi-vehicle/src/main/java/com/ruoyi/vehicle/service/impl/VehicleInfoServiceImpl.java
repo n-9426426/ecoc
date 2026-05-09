@@ -131,7 +131,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new RuntimeException("VIN[" + vehicleInfo.getVin() + "]已存在");
         }
 
-        // 通过物料号查模板
+        // 查模板
         Long vehicleTemplateId = vehicleTemplateMaterialMapper
                 .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(),
                         vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire());
