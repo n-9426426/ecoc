@@ -1049,7 +1049,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 .filter(a -> {
                     String[] parts = a.getAttrPath().split("\\.");
                     SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
-                    return d != null && !"NULL".equalsIgnoreCase(d.getDictValue());
+                    return d != null && !isStructNode(d);
                 }).collect(Collectors.toList());
 
         LoopDetectionResult loopResult = detectLoopPattern(leafNodes, dictCodeMap, jsonMap);
@@ -1072,7 +1072,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 if (p.split("\\.").length != loopContainerPath.split("\\.").length + 1) continue;
                 String[] parts = p.split("\\.");
                 SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
-                if (d == null || !"NULL".equalsIgnoreCase(d.getDictValue())) continue;
+                if (d == null || !isStructNode(d)) continue;
                 if (triggerPath.startsWith(p + ".")) {
                     result.add(p);
                 }
@@ -1135,7 +1135,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
                 if (dict == null) continue;
                 // 只处理叶子节点（dict_value != NULL）且有 keyMap 的字段
-                if ("NULL".equalsIgnoreCase(dict.getDictValue())) continue;
+                if (isStructNode(dict)) continue;
                 if (StringUtils.isBlank(dict.getKeyMap())) continue;
                 // ★ 不再跳过无规则字段，全部纳入 jsonMap 以支持条件规则上下文
 
@@ -1288,10 +1288,12 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     /**
      * 从数据库生成XML文件
-     *规则：
+     * 规则：
      * 1. json值中含分号 → 触发循环
      * 2. 所有含分号字段均为"前缀:值"格式 → 上级循环（父容器级别）
      * 3. 至少一个含分号字段为"值;值"无前缀格式 → 同级循环（子结构级别）
+     *
+     * ★ 改动：生成逻辑直接使用 dictLabel 匹配 jsonMap，不再通过 keyMap 取值
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -1329,9 +1331,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 throw new RuntimeException("未找到匹配的XML模板，VIN=" + vehicle.getVin());
             }
 
-            // 3. 查询字典数据，构建 dictCode -> SysDictData 映射
+            // 3. 查询字典数据，构建 uuid -> SysDictData 映射
             List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
-            Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 变为 uuid
+            Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 为 uuid
             for (SysDictData d : dictDataList) {
                 if (d.getUuid() != null) {
                     dictCodeMap.putIfAbsent(d.getUuid(), d);   // ★ uuid 为 key，一个uuid多行取第一个
@@ -1364,17 +1366,13 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 throw new ServiceException("模板存在多个顶层节点，XML 不允许多根节点");
             }
 
-            // 6. 按模板定义顺序排序：先按路径深度（父先于子），同深度下按各层级 sort_order 组合键排序
-            //    构建 attrPath → sortOrder 查找表，用于 comparator
+            // 6. 按模板定义顺序排序
             Map<String, Integer> pathSortOrderMap = new HashMap<>();
             for (XmlTemplateAttribute a : attrList) {
                 if (a.getAttrPath() != null) {
                     pathSortOrderMap.put(a.getAttrPath(), a.getSortOrder() != null ? a.getSortOrder() : 0);
                 }
             }
-            // comparator：将每个节点的 attrPath 按"."拆分，逐段累积路径查 sortOrder，
-            // 形成祖先链 sort_order 序列（如 [1,2,5,1]），按列表字典序比较，
-            // 保证父节点先于子节点、同级节点按 sort_order 正确排列。
             Comparator<XmlTemplateAttribute> templateOrderComparator = (a, b) -> {
                 String[] partsA = a.getAttrPath().split("\\.");
                 String[] partsB = b.getAttrPath().split("\\.");
@@ -1389,7 +1387,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     int soB = pathSortOrderMap.getOrDefault(prefixB.toString(), 0);
                     if (soA != soB) return Integer.compare(soA, soB);
                 }
-                // 前缀完全相同时，较短路径（祖先）排前面
                 return Integer.compare(partsA.length, partsB.length);
             };
             attrList.sort(templateOrderComparator);
@@ -1416,7 +1413,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     .filter(a -> {
                         String[] parts = a.getAttrPath().split("\\.");
                         SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
-                        return d != null && "NULL".equalsIgnoreCase(d.getDictValue());
+                        return d != null && isStructNode(d);
                     })
                     .map(XmlTemplateAttribute::getAttrPath)
                     .collect(Collectors.toSet());
@@ -1426,7 +1423,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     .filter(a -> {
                         String[] parts = a.getAttrPath().split("\\.");
                         SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
-                        return d != null && !"NULL".equalsIgnoreCase(d.getDictValue());
+                        return d != null && !isStructNode(d);
                     })
                     .collect(Collectors.toList());
 
@@ -1515,6 +1512,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             // 19. 更新状态
             vehicle.setUploadStatus(1);
+            vehicle.setJson(null);
             vehicleInfoService.updateVehicleInfo(vehicle);
 
             // 20. 记录生命周期
@@ -1544,35 +1542,36 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     /**
      * 检测循环模式：
-     * -遍历所有叶子节点，找出值中含分号的字段
-     * - 若所有含分号字段都是"前缀:值"格式→ PARENT_LEVEL（上级循环）
+     * - 遍历所有叶子节点，找出值中含分号的字段
+     * - 若所有含分号字段都是"前缀:值"格式 → PARENT_LEVEL（上级循环）
      * - 若至少一个含分号字段是"值;值"无前缀格式 → SIBLING_LEVEL（同级循环）
      * - 无含分号字段 → NONE
+     *
+     * ★ 改动：直接使用 dictLabel 匹配 jsonMap，不再通过 keyMap 取值
      */
-    private LoopDetectionResult detectLoopPattern(List<XmlTemplateAttribute> leafNodes,Map<String, SysDictData> dictCodeMap,
+    private LoopDetectionResult detectLoopPattern(List<XmlTemplateAttribute> leafNodes,
+                                                  Map<String, SysDictData> dictCodeMap,
                                                   Map<String, Object> jsonMap) {
         LoopDetectionResult result = new LoopDetectionResult();
 
-        boolean hasPrefix = false;      // 存在"前缀:值;前缀:值"格式
-        boolean hasNonPrefix = false;   // 存在"值;值"无前缀格式
+        boolean hasPrefix = false;
+        boolean hasNonPrefix = false;
         int maxRows = 1;
-        // ★修复：使用"路径最深"的触发字段，而非第一个，
-        //   避免浅层字段（如 CategoryHybridElectricVehicle）把循环容器定位到错误层级。
         XmlTemplateAttribute deepestTriggerAttr = null;
         Set<String> allPrefixes = new LinkedHashSet<>();
 
         for (XmlTemplateAttribute leaf : leafNodes) {
             String[] parts = leaf.getAttrPath().split("\\.");
             SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
-            if (d == null || StringUtils.isBlank(d.getKeyMap())) continue;
+            // ★ 改动：使用 dictLabel 匹配 jsonMap
+            if (d == null || StringUtils.isBlank(d.getDictLabel())) continue;
 
-            Object raw = jsonMap.get(d.getKeyMap());
+            Object raw = jsonMap.get(d.getDictLabel());
             if (raw == null) continue;
 
             String val = raw.toString().trim();
             if (!val.contains(";")) continue;
 
-            // 发现含分号字段 → 取路径最深的作为 triggerAttr
             if (deepestTriggerAttr == null ||
                     leaf.getAttrPath().split("\\.").length >
                             deepestTriggerAttr.getAttrPath().split("\\.").length) {
@@ -1582,7 +1581,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
             String[] items = val.split(";", -1);
             maxRows = Math.max(maxRows, items.length);
 
-            // 判断该字段是否所有项都有前缀（"xxx:yyy"格式）
             boolean allItemsHavePrefix = true;
             for (String item : items) {
                 item = item.trim();
@@ -1590,11 +1588,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 if (!item.contains(":")) {
                     allItemsHavePrefix = false;
                     break;
-                }}
+                }
+            }
 
             if (allItemsHavePrefix) {
                 hasPrefix = true;
-                // 提取所有前缀键
                 for (String item : items) {
                     item = item.trim();
                     if (item.isEmpty()) continue;
@@ -1609,7 +1607,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
         }
 
         if (deepestTriggerAttr == null) {
-            // 无分号字段，无需循环
             result.setLoopMode(LoopMode.NONE);
             return result;
         }
@@ -1617,15 +1614,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
         result.setTriggerAttr(deepestTriggerAttr);
 
         if (hasPrefix && !hasNonPrefix) {
-            // 所有字段均为前缀模式 → 上级循环
-            // ★ loopContainerPath = 触发字段上两级（ManufacturerGroup 的父 = ManufacturerTable）
             result.setLoopMode(LoopMode.PARENT_LEVEL);
             result.setGroupKeys(new ArrayList<>(allPrefixes));
             result.setLoopContainerPath(getParentPath(getParentPath(deepestTriggerAttr.getAttrPath())));
         } else {
-            // 至少一个字段无前缀 → 同级循环
-            // ★修复：loopContainerPath = 触发字段上两级（ManufacturerTable），
-            //   而非上一级（ManufacturerGroup）；循环的子结构才是 ManufacturerGroup。
             result.setLoopMode(LoopMode.SIBLING_LEVEL);
             result.setMaxRows(maxRows);
             result.setGroupKeys(IntStream.range(0, maxRows)
@@ -1643,6 +1635,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     /**
      * 构建无循环的普通XML树
+     * ★ 改动：直接使用 dictLabel 匹配 jsonMap
      */
     private void buildNormalTree(Document doc, Element root, List<XmlTemplateAttribute> attrList,
                                  Map<String, SysDictData> dictCodeMap, Map<String, Object> jsonMap,
@@ -1659,14 +1652,14 @@ public class XmlFileServiceImpl implements IXmlFileService {
             Element parentElement = pathNodeMap.get(parentPath);
             if (parentElement == null) continue;
 
-            if ("NULL".equalsIgnoreCase(dict.getDictValue())) {
+            if (isStructNode(dict)) {
                 // 结构节点
                 Element structElement = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
                 parentElement.appendChild(structElement);
                 pathNodeMap.put(attrPath, structElement);
-            } else if (StringUtils.isNotBlank(dict.getKeyMap())) {
-                // 叶子节点：直接取值（无分号说明无循环）
-                Object raw = jsonMap.get(dict.getKeyMap());
+            } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
+                // ★ 改动：直接使用 dictLabel 匹配 jsonMap
+                Object raw = jsonMap.get(dict.getDictLabel());
                 String value = getValueOrDefault(raw, attr.getDefaultValue());
                 addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
             }
@@ -1679,10 +1672,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     /**
      * 上级循环：每个前缀生成一套完整的 loopContainer 结构。
-     * ★ 顺序修复：不再"先建循环容器、再补同级节点"，
-     *   而是对 loopContainer 父级的所有直接子节点按 sort_order 顺序一次性遍历：
-     *   - 遇到循环容器节点 → 展开为 N 个循环容器
-     *   - 遇到其他节点     → 正常生成（结构节点/叶子节点）
+     * ★ 改动：叶子节点分支使用 dictLabel 匹配 jsonMap
      */
     private void buildParentLevelLoop(Document doc, Element root, List<XmlTemplateAttribute> attrList,
                                       Map<String, SysDictData> dictCodeMap, Map<String, Object> jsonMap,
@@ -1691,14 +1681,14 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
         String loopContainerPath = loopResult.getLoopContainerPath();
 
-        // 1. 构建到循环容器父节点为止（仅处理祖先链，不含同级及循环容器本身）
+        // 1. 构建到循环容器父节点为止
         buildTreeUpToPath(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, structNodePaths, loopContainerPath, rootAttrPath);
 
         // 2. 获取循环容器的父元素
         String parentPath = getParentPath(loopContainerPath);
         Element parentElement = pathNodeMap.getOrDefault(parentPath, root);
 
-        // 3. 按 sort_order 顺序遍历父节点的所有直接子节点，统一决定输出顺序
+        // 3. 按 sort_order 顺序遍历父节点的所有直接子节点
         int loopDepth = loopContainerPath.split("\\.").length;
         List<XmlTemplateAttribute> directSiblings = attrList.stream()
                 .filter(a -> {
@@ -1706,7 +1696,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     if (parentPath.isEmpty()) return p.split("\\.").length == loopDepth;
                     return p.startsWith(parentPath + ".") && p.split("\\.").length == loopDepth;
                 })
-                .collect(Collectors.toList()); // attrList 已全局按 templateOrderComparator 排好序
+                .collect(Collectors.toList());
 
         List<String> groupKeys = loopResult.getGroupKeys();
         for (XmlTemplateAttribute sibling : directSiblings) {
@@ -1715,13 +1705,13 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (dict == null) continue;
 
             if (sibling.getAttrPath().equals(loopContainerPath)) {
-                // 当前节点是循环容器 → 展开为 N 个循环容器（按前缀顺序）
+                // 当前节点是循环容器 → 展开为 N 个循环容器
                 for (int i = 0; i < groupKeys.size(); i++) {
                     generateParentLoopContainer(doc, parentElement, loopContainerPath,
                             attrList, dictCodeMap, jsonMap, structNodePaths, groupKeys.get(i), i, pathNodeMap);
                 }
-            } else if ("NULL".equalsIgnoreCase(dict.getDictValue())) {
-                // 结构节点（如 AllowedParameterValuesMultistageGroup）
+            } else if (isStructNode(dict)) {
+                // 结构节点
                 if (!pathNodeMap.containsKey(sibling.getAttrPath())) {
                     Element structElement = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
                     parentElement.appendChild(structElement);
@@ -1734,9 +1724,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
                             buildSubPathNodeMap(pathNodeMap, sibling.getAttrPath(), structElement),
                             sibling.getAttrPath());
                 }
-            } else if (StringUtils.isNotBlank(dict.getKeyMap())) {
-                // 叶子节点：含分号 → 循环字段跳过；无分号 → 正常生成（含空标签）
-                Object raw = jsonMap.get(dict.getKeyMap());
+            } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
+                // ★ 改动：使用 dictLabel 匹配 jsonMap；含分号 → 循环字段跳过；无分号 → 正常生成
+                Object raw = jsonMap.get(dict.getDictLabel());
                 String value = getValueOrDefault(raw, sibling.getDefaultValue());
                 if (!value.contains(";")) {
                     addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
@@ -1769,6 +1759,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     /**
      * 按前缀递归填充容器内容（上级循环专用）
+     * ★ 改动：使用 dictLabel 匹配 jsonMap
      */
     private void buildContainerByPrefix(Document doc, Element container, String containerPath,
                                         List<XmlTemplateAttribute> attrList,
@@ -1789,13 +1780,14 @@ public class XmlFileServiceImpl implements IXmlFileService {
             SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
             if (dict == null) continue;
 
-            if ("NULL".equalsIgnoreCase(dict.getDictValue())) {
+            if (isStructNode(dict)) {
                 Element structElement = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
                 structElement.setUserData("loopGenerated", Boolean.TRUE, null);
                 container.appendChild(structElement);
                 buildContainerByPrefix(doc, structElement, child.getAttrPath(), attrList, dictCodeMap, jsonMap, prefix, prefixIndex);
-            } else if (StringUtils.isNotBlank(dict.getKeyMap())) {
-                String value = extractValueByPrefix(jsonMap, dict.getKeyMap(), prefix, prefixIndex);
+            } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
+                // ★ 改动：使用 dictLabel 匹配 jsonMap
+                String value = extractValueByPrefix(jsonMap, dict.getDictLabel(), prefix, prefixIndex);
                 if (StringUtils.isBlank(value)) {
                     value = StringUtils.isNotBlank(child.getDefaultValue()) ? child.getDefaultValue() : "";
                 }
@@ -1810,8 +1802,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     /**
      * 同级循环：在同一个容器内，子结构循环多次。
-     * ★ 顺序修复：与 buildParentLevelLoop 相同策略——对 loopContainer 父级的所有直接子节点
-     *   按 sort_order 顺序一次性遍历，遇到循环容器时展开内部循环，其余节点正常生成。
+     * ★ 改动：叶子节点分支使用 dictLabel 匹配 jsonMap
      */
     private void buildSiblingLevelLoop(Document doc, Element root, List<XmlTemplateAttribute> attrList,
                                        Map<String, SysDictData> dictCodeMap, Map<String, Object> jsonMap,
@@ -1820,14 +1811,14 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
         String loopContainerPath = loopResult.getLoopContainerPath();
 
-        // 1. 构建到循环容器父节点为止（仅处理祖先链，不含同级及循环容器本身）
+        // 1. 构建到循环容器父节点为止
         buildTreeUpToPath(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, structNodePaths, loopContainerPath, rootAttrPath);
 
         // 2. 获取循环容器的父元素
         String parentOfContainerPath = getParentPath(loopContainerPath);
         Element parentElement = pathNodeMap.getOrDefault(parentOfContainerPath, root);
 
-        // 3. 按 sort_order 顺序遍历父节点的所有直接子节点，统一决定输出顺序
+        // 3. 按 sort_order 顺序遍历父节点的所有直接子节点
         int loopDepth = loopContainerPath.split("\\.").length;
         List<XmlTemplateAttribute> directSiblings = attrList.stream()
                 .filter(a -> {
@@ -1865,11 +1856,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
                         }
                     }
                 }
-                // 容器内不参与循环的直接子叶子节点（如 CategoryHybridElectricVehicle 在容器内的情形）
+                // 容器内不参与循环的直接子叶子节点
                 addNonLoopSiblingNodes(doc, container, loopContainerPath, loopStructPath, attrList, dictCodeMap, jsonMap);
 
-            } else if ("NULL".equalsIgnoreCase(dict.getDictValue())) {
-                // 结构节点（如 AllowedParameterValuesMultistageGroup）
+            } else if (isStructNode(dict)) {
+                // 结构节点
                 if (!pathNodeMap.containsKey(sibling.getAttrPath())) {
                     Element structElement = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
                     parentElement.appendChild(structElement);
@@ -1882,9 +1873,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
                             buildSubPathNodeMap(pathNodeMap, sibling.getAttrPath(), structElement),
                             sibling.getAttrPath());
                 }
-            } else if (StringUtils.isNotBlank(dict.getKeyMap())) {
-                // 叶子节点：含分号 → 循环字段跳过；无分号 → 正常生成（含空标签）
-                Object raw = jsonMap.get(dict.getKeyMap());
+            } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
+                // ★ 改动：使用 dictLabel 匹配 jsonMap；含分号 → 循环字段跳过；无分号 → 正常生成
+                Object raw = jsonMap.get(dict.getDictLabel());
                 String value = getValueOrDefault(raw, sibling.getDefaultValue());
                 if (!value.contains(";")) {
                     addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
@@ -1900,9 +1891,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                       Set<String> structNodePaths) {
         for (String structPath : structNodePaths) {
             if (!structPath.startsWith(containerPath + ".")) continue;
-            // 必须是容器的直接子节点
             if (structPath.split("\\.").length != containerPath.split("\\.").length + 1) continue;
-            // 触发字段必须在该结构节点之下
             if (triggerPath.startsWith(structPath + ".")) {
                 return structPath;
             }
@@ -1911,31 +1900,34 @@ public class XmlFileServiceImpl implements IXmlFileService {
     }
 
     /**
-     * 添加循环容器下不参与循环的同级节点（叶子节点，不在loopStructPath 下）
+     * 添加循环容器下不参与循环的同级节点（叶子节点，不在 loopStructPath 下）
+     * ★ 改动：使用 dictLabel 匹配 jsonMap
      */
-    private void addNonLoopSiblingNodes(Document doc, Element container, String containerPath,String loopStructPath, List<XmlTemplateAttribute> attrList,
+    private void addNonLoopSiblingNodes(Document doc, Element container, String containerPath,
+                                        String loopStructPath, List<XmlTemplateAttribute> attrList,
                                         Map<String, SysDictData> dictCodeMap,
                                         Map<String, Object> jsonMap) {
         List<XmlTemplateAttribute> directLeafs = attrList.stream()
                 .filter(a -> {
                     String p = a.getAttrPath();
                     if (!p.startsWith(containerPath + ".")) return false;
-                    // 必须是容器的直接子叶子节点
                     if (p.split("\\.").length != containerPath.split("\\.").length + 1) return false;
-                    // 不在循环结构下
                     if (loopStructPath != null && p.startsWith(loopStructPath + ".")) return false;
                     String[] parts = p.split("\\.");
                     SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
-                    return d != null && StringUtils.isNotBlank(d.getKeyMap());
+                    // ★ 改动：判断 dictLabel 非空
+                    return d != null && StringUtils.isNotBlank(d.getDictLabel())
+                            && !isStructNode(d);
                 })
                 .collect(Collectors.toList());
 
         for (XmlTemplateAttribute leaf : directLeafs) {
             String[] parts = leaf.getAttrPath().split("\\.");
             SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
-            if (dict == null || StringUtils.isBlank(dict.getKeyMap())) continue;
+            if (dict == null || StringUtils.isBlank(dict.getDictLabel())) continue;
 
-            Object raw = jsonMap.get(dict.getKeyMap());
+            // ★ 改动：使用 dictLabel 匹配 jsonMap
+            Object raw = jsonMap.get(dict.getDictLabel());
             String value = raw != null ? raw.toString() : "";
             // 若值含分号，说明该字段本身不是循环触发，取第一个值
             if (value.contains(";")) {
@@ -1944,13 +1936,13 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (StringUtils.isBlank(value)) {
                 value = StringUtils.isNotBlank(leaf.getDefaultValue()) ? leaf.getDefaultValue() : "";
             }
-            // 无论 value 是否为空，只要模板中定义了该标签，都必须生成（空标签保留）
             addElement(doc, container, sanitizeXmlTagName(dict.getDictLabel()), value);
         }
     }
 
     /**
      * 按索引填充子结构下的所有叶子字段（同级循环专用）
+     * ★ 改动：使用 dictLabel 匹配 jsonMap
      */
     private void fillStructByIndex(Document doc, Element structElement, String structPath,
                                    List<XmlTemplateAttribute> attrList,
@@ -1962,20 +1954,22 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 .filter(a -> {
                     String[] parts = a.getAttrPath().split("\\.");
                     SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
-                    return d != null && StringUtils.isNotBlank(d.getKeyMap());
+                    // ★ 改动：判断 dictLabel 非空
+                    return d != null && StringUtils.isNotBlank(d.getDictLabel())
+                            && !isStructNode(d);
                 })
                 .collect(Collectors.toList());
 
         for (XmlTemplateAttribute field : fields) {
             String[] parts = field.getAttrPath().split("\\.");
             SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
-            if (dict == null || StringUtils.isBlank(dict.getKeyMap())) continue;
+            if (dict == null || StringUtils.isBlank(dict.getDictLabel())) continue;
 
-            String value = extractValueByIndex(jsonMap, dict.getKeyMap(), index);
+            // ★ 改动：使用 dictLabel 匹配 jsonMap
+            String value = extractValueByIndex(jsonMap, dict.getDictLabel(), index);
             if (StringUtils.isBlank(value)) {
                 value = StringUtils.isNotBlank(field.getDefaultValue()) ? field.getDefaultValue() : "";
             }
-            // 无论 value 是否为空，只要模板中定义了该标签，都必须生成（空标签保留）
             addElement(doc, structElement, sanitizeXmlTagName(dict.getDictLabel()), value);
         }
     }
@@ -1986,12 +1980,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     /**
      * 构建循环容器祖先链上的节点（不含 targetPath 本身、其子孙节点、及其同级节点）。
-     *
-     * 职责划分：
-     *  - 本方法：只处理深度 < targetPath 深度 的节点（即 targetPath 的祖先），
-     *    以及其他与 targetPath 不在同一父级下的节点。
-     *  - buildParentLevelLoop / buildSiblingLevelLoop：通过统一的"直接子节点按 sort_order 顺序遍历"
-     *    处理所有同级节点（含循环容器本身），确保输出顺序与模板完全一致。
+     * ★ 改动：叶子节点分支使用 dictLabel 匹配 jsonMap
      */
     private void buildTreeUpToPath(Document doc, Element root, List<XmlTemplateAttribute> attrList,
                                    Map<String, SysDictData> dictCodeMap, Map<String, Object> jsonMap,
@@ -2008,10 +1997,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             // 跳过 targetPath（循环容器）本身及其所有子孙节点
             if (attrPath.equals(targetPath) || attrPath.startsWith(targetPath + ".")) continue;
 
-            // ★核心修复：跳过与 targetPath 同级的所有节点（含 VehicleIdentificationNumber、
-            //   ConsolidatedMaximum30MinutesPower、AllowedParameterValuesMultistageGroup、
-            //   CategoryHybridElectricVehicle 等）——它们统一由 addSiblingNodesAfterLoop 负责，
-            //   在此处处理会导致与 addSiblingNodesAfterLoop 重复生成。
+            // 跳过与 targetPath 同级的所有节点
             if (!targetParentPath.isEmpty()
                     && attrPath.startsWith(targetParentPath + ".")
                     && attrPath.split("\\.").length == targetDepth) {
@@ -2026,13 +2012,14 @@ public class XmlFileServiceImpl implements IXmlFileService {
             Element parentElement = pathNodeMap.get(parentPath);
             if (parentElement == null) continue;
 
-            if ("NULL".equalsIgnoreCase(dict.getDictValue())) {
-                // 结构节点：创建并注册到 pathNodeMap，供子节点挂载
+            if (isStructNode(dict)) {
+                // 结构节点：创建并注册到 pathNodeMap
                 Element structElement = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
                 parentElement.appendChild(structElement);
                 pathNodeMap.put(attrPath, structElement);
-            } else if (StringUtils.isNotBlank(dict.getKeyMap())) {
-                Object raw = jsonMap.get(dict.getKeyMap());
+            } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
+                // ★ 改动：使用 dictLabel 匹配 jsonMap
+                Object raw = jsonMap.get(dict.getDictLabel());
                 String value = getValueOrDefault(raw, attr.getDefaultValue());
                 // 含分号 → 循环字段，由循环逻辑处理，此处跳过
                 if (!value.contains(";")) {
@@ -2056,12 +2043,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
         String parentPath = getParentPath(loopContainerPath);
         int loopDepth = loopContainerPath.split("\\.").length;
 
-        // 找到所有与 loopContainerPath 同级的节点
-        // ★ 不再对 siblings 单独排序——attrList 已按模板 sort_order 全局排好序，stream 保持该顺序
         List<XmlTemplateAttribute> siblings = attrList.stream()
                 .filter(a -> {
                     String path = a.getAttrPath();
-                    if (path.equals(loopContainerPath)) return false; // 排除循环容器本身
+                    if (path.equals(loopContainerPath)) return false;
                     if (!path.startsWith(parentPath + ".")) return false;
                     return path.split("\\.").length == loopDepth;
                 })
@@ -2072,14 +2057,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
             SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
             if (dict == null) continue;
 
-            if ("NULL".equalsIgnoreCase(dict.getDictValue())) {
-                // 结构节点（如 AllowedParameterValuesMultistageGroup）：
-                // 防重：若 buildTreeUpToPath 已创建过（理论上不会，因为同级节点被跳过），则跳过
+            if (isStructNode(dict)) {
                 if (pathNodeMap.containsKey(sibling.getAttrPath())) continue;
                 Element structElement = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
                 parentElement.appendChild(structElement);
                 pathNodeMap.put(sibling.getAttrPath(), structElement);
-                // 递归填充该结构节点的所有子孙节点
                 buildSubTree(doc, structElement,
                         attrList.stream()
                                 .filter(a -> a.getAttrPath().startsWith(sibling.getAttrPath() + "."))
@@ -2087,9 +2069,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
                         dictCodeMap, jsonMap,
                         buildSubPathNodeMap(pathNodeMap, sibling.getAttrPath(), structElement),
                         sibling.getAttrPath());
-            } else if (StringUtils.isNotBlank(dict.getKeyMap())) {
-                // 叶子节点：含分号属于循环字段跳过；无分号时无论是否为空都必须生成（空标签保留）
-                Object raw = jsonMap.get(dict.getKeyMap());
+            } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
+                // ★ 改动：使用 dictLabel 匹配 jsonMap
+                Object raw = jsonMap.get(dict.getDictLabel());
                 String value = raw != null ? raw.toString() : "";
                 if (!value.contains(";")) {
                     addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
@@ -2099,7 +2081,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
     }
 
     /**
-     * 为子树构建构建一个局部 pathNodeMap，根节点已预先注册
+     * 为子树构建一个局部 pathNodeMap，根节点已预先注册
      */
     private Map<String, Element> buildSubPathNodeMap(Map<String, Element> existingMap,
                                                      String rootPath, Element rootElement) {
@@ -2109,7 +2091,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
     }
 
     /**
-     * 在指定父元素下构建子树（供 addSiblingNodesAfterLoop 递归使用）
+     * 在指定父元素下构建子树
+     * ★ 改动：使用 dictLabel 匹配 jsonMap
      */
     private void buildSubTree(Document doc, Element root, List<XmlTemplateAttribute> attrList,
                               Map<String, SysDictData> dictCodeMap, Map<String, Object> jsonMap,
@@ -2126,12 +2109,13 @@ public class XmlFileServiceImpl implements IXmlFileService {
             Element parentElement = pathNodeMap.get(parentPath);
             if (parentElement == null) continue;
 
-            if ("NULL".equalsIgnoreCase(dict.getDictValue())) {
+            if (isStructNode(dict)) {
                 Element structElement = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
                 parentElement.appendChild(structElement);
                 pathNodeMap.put(attrPath, structElement);
-            } else if (StringUtils.isNotBlank(dict.getKeyMap())) {
-                Object raw = jsonMap.get(dict.getKeyMap());
+            } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
+                // ★ 改动：使用 dictLabel 匹配 jsonMap
+                Object raw = jsonMap.get(dict.getDictLabel());
                 String value = raw != null ? raw.toString() : "";
                 addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
             }
@@ -2144,27 +2128,22 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     /**
      * 按前缀提取值（上级循环）
-     * 例：keyMap对应值="HEV1:北京;HEV2:柏林"，prefix="HEV1" → 返回"北京"
+     * 例：jsonMap中 key="ManufacturerPlaceOfResidence"，value="HEV1:北京;HEV2:柏林"，prefix="HEV1" → 返回"北京"
      * 若值不含分号，直接返回原值
-     * ★ fallbackIndex：当前缀在值中找不到匹配项时（如数据录入前缀有误），
-     *   按该索引位置取值，保证每一列数据都不丢失。
-     *   例："HEV1:CN;HEV1:DE"，prefix="HEV2"，fallbackIndex=1 → 返回"DE"
      */
-    private String extractValueByPrefix(Map<String, Object> jsonMap, String keyMap,
+    private String extractValueByPrefix(Map<String, Object> jsonMap, String dictLabel,
                                         String prefix, int fallbackIndex) {
-        Object raw = jsonMap.get(keyMap);
+        Object raw = jsonMap.get(dictLabel);
         if (raw == null) return "";
 
         String val = raw.toString().trim();
         if (!val.contains(";")) {
-            // 无分号：检查是否为"前缀:值"单项
             if (val.contains(":")) {
                 int colon = val.indexOf(':');
                 String itemPrefix = val.substring(0, colon).trim();
                 if (prefix.equals(itemPrefix)) {
                     return val.substring(colon + 1).trim();
                 }
-                // 前缀不匹配且只有一项，fallbackIndex=0 时回退取该值
                 return fallbackIndex == 0 ? val.substring(colon + 1).trim() : "";
             }
             return val;
@@ -2185,7 +2164,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
         }
 
-        // ★ 第二步：前缀匹配失败，按 fallbackIndex 位置取值（容错重复/错误前缀）
+        // 第二步：前缀匹配失败，按 fallbackIndex 位置取值
         if (fallbackIndex >= 0 && fallbackIndex < items.length) {
             String item = items[fallbackIndex].trim();
             if (!item.isEmpty()) {
@@ -2201,17 +2180,15 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     /**
      * 按索引提取值（同级循环）
-     * 例：keyMap对应值="北京;柏林"，index=0 → 返回"北京"
+     * 例：jsonMap中 key="ManufacturerPlaceOfResidence"，value="北京;柏林"，index=0 → 返回"北京"
      * 若值不含分号，直接返回原值（所有行共享同一值）
-     * 若项含冒号（"HEV1:北京"），取冒号后的值
      */
-    private String extractValueByIndex(Map<String, Object> jsonMap, String keyMap, int index) {
-        Object raw = jsonMap.get(keyMap);
+    private String extractValueByIndex(Map<String, Object> jsonMap, String dictLabel, int index) {
+        Object raw = jsonMap.get(dictLabel);
         if (raw == null) return "";
 
         String val = raw.toString().trim();
         if (!val.contains(";")) {
-            // 无分号：所有行共享该值
             if (val.contains(":")) {
                 int colon = val.indexOf(':');
                 return val.substring(colon + 1).trim();
@@ -2220,12 +2197,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
         }
 
         String[] items = val.split(";", -1);
-        if (index< 0 || index >= items.length) return "";
+        if (index < 0 || index >= items.length) return "";
 
         String item = items[index].trim();
         if (item.isEmpty()) return "";
 
-        // 若含冒号，取冒号后的值
         int colon = item.indexOf(':');
         if (colon > 0 && colon < item.length() - 1) {
             return item.substring(colon + 1).trim();
@@ -2285,13 +2261,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     /**
      * 递归移除空结构节点（dict_value='NULL' 且无有效子节点的节点）
-     * ★修复：只移除"动态循环生成但最终无内容"的结构节点（如前缀匹配失败的 ManufacturerGroup）；
-     *   模板本身配置的静态结构节点（在 pathNodeMap 中注册过的）不应删除，它们是合法的空容器标签。
-     *   判断依据：节点的 userData "loopGenerated" = true 才是循环动态生成的，才允许删除。
-     * ★修复2：不能只判断直接子节点数 == 0——循环生成的子结构（如 ManufacturerGroup）在
-     *   越界索引处会挂载空子标签（ManufacturerPlaceOfResidence/、ManufacturerCountryOfResidence/），
-     *   导致 getChildNodes().getLength() > 0 但实际无任何有效文本内容。
-     *   改为递归判断"所有后代是否均无非空文本"，只有全空才删除。
+     * ★修复：只移除"动态循环生成但最终无内容"的结构节点；
+     *        判断依据：节点的 userData "loopGenerated" = true 才是循环动态生成的，才允许删除。
      */
     private void removeEmptyStructNodes(Element element, List<XmlTemplateAttribute> attrList,
                                         Map<String, SysDictData> dictCodeMap) {
@@ -2336,6 +2307,15 @@ public class XmlFileServiceImpl implements IXmlFileService {
     /**
      * 清洗字符串为合法 XML tag 名
      */
+    /**
+     * 判断字典项是否为容器节点（结构节点）。
+     * dictValue 为 "NULL"、null 或空字符串时均视为容器节点，不含实际值。
+     */
+    private boolean isStructNode(SysDictData dict) {
+        return StringUtils.isBlank(dict.getDictValue())
+                || "NULL".equalsIgnoreCase(dict.getDictValue());
+    }
+
     private String sanitizeXmlTagName(String raw) {
         if (StringUtils.isBlank(raw)) return "field";
         String cleaned = raw.trim().replaceAll("[^a-zA-Z0-9_\\-.]", "_");
@@ -2346,7 +2326,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
     }
 
     /**
-     * 取 jsonMap 中对应 keyMap 的值；若值为空（null 或空白字符串），回退到模板属性的 defaultValue。
+     * 取 jsonMap 中对应 key 的值；若值为空（null 或空白字符串），回退到模板属性的 defaultValue。
      *
      * @param raw          已从 jsonMap 中取出的原始值（可为 null）
      * @param defaultValue XmlTemplateAttribute.defaultValue（可为 null）

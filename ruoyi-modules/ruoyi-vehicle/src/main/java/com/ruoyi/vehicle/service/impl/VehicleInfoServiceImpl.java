@@ -607,26 +607,25 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     private int insert(VehicleInfo vehicleInfo) {
         Map<String, Object> map = vehicleInfo.getJsonMap();
+        // 用于最终序列化的 map，默认指向原始 map
+        Map<String, Object> finalMap = map;
 
         if (map != null && !map.isEmpty()) {
             List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
 
             if (dictDataList != null && !dictDataList.isEmpty()) {
-                // 过滤掉 keyMap 或 valueMap 为空的脏数据，避免 null key 异常
                 Map<String, List<SysDictData>> keyMappingRules = dictDataList.stream()
-                        .filter(d -> StringUtils.isNotBlank(d.getKeyMap())
-                                && StringUtils.isNotBlank(d.getValueMap()))
+                        .filter(d -> StringUtils.isNotBlank(d.getKeyMap()))
                         .collect(Collectors.groupingBy(SysDictData::getKeyMap));
 
-                Map<String, Object> toAdd = new LinkedHashMap<>();
-                Set<String> toRemove = new HashSet<>();
+                Map<String, Object> result = new LinkedHashMap<>();
 
                 for (Map.Entry<String, Object> entry : map.entrySet()) {
                     String fieldName = entry.getKey();
                     List<SysDictData> matchedRules = keyMappingRules.get(fieldName);
 
-                    // 无映射规则：保留原始 key 和原始值
                     if (matchedRules == null || matchedRules.isEmpty()) {
+                        result.put(fieldName, entry.getValue());
                         continue;
                     }
 
@@ -635,20 +634,24 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                             : String.valueOf(entry.getValue());
 
                     for (SysDictData rule : matchedRules) {
-                        String converted = ValueMappingParser.convert(rawValue, rule.getValueMap());
-                        // 转换结果为空：回退使用原始值
-                        toAdd.put(rule.getDictLabel(), StringUtils.isNotBlank(converted) ? converted : rawValue);
+                        String converted;
+                        if (StringUtils.isBlank(rule.getValueMap())) {
+                            converted = "";
+                        } else {
+                            converted = ValueMappingParser.convert(rawValue, rule.getValueMap());
+                            converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
+                            converted = "N/A".equals(converted) ? "" : converted;
+                        }
+                        result.put(rule.getDictLabel(), converted);
                     }
-                    toRemove.add(fieldName);
                 }
 
-                toRemove.forEach(map::remove);
-                map.putAll(toAdd);
+                finalMap = result; // 直接用 result，不再依赖 map 的引用同步
             }
         }
 
         try {
-            vehicleInfo.setJson(objectMapper.writeValueAsString(map));
+            vehicleInfo.setJson(objectMapper.writeValueAsString(finalMap)); // 序列化映射后的数据
         } catch (Exception e) {
             throw new RuntimeException("无法格式化JSON数据");
         }
