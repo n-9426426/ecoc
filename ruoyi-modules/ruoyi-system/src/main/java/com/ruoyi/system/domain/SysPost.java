@@ -36,7 +36,11 @@ public class SysPost extends BaseEntity
     /** 用户是否存在此组标识 默认不存在 */
     private boolean flag = false;
 
-    private List<Long> menuIds;
+    private List<String> factoryCodes;
+
+    private List<String> countries;
+
+    private List<String> vehicleModels;
 
     public Long getPostId()
     {
@@ -117,11 +121,27 @@ public class SysPost extends BaseEntity
             .toString();
     }
 
-    public List<Long> getMenuIds() {
-        return menuIds;
+    public List<String> getFactoryCodes() {
+        return factoryCodes;
     }
 
-    public void setMenuIds(List<Long> menuIds) {
-        this.menuIds = menuIds;
+    public void setFactoryCodes(List<String> factoryCodes) {
+        this.factoryCodes = factoryCodes;
+    }
+
+    public List<String> getCountries() {
+        return countries;
+    }
+
+    public void setCountries(List<String> countries) {
+        this.countries = countries;
+    }
+
+    public List<String> getVehicleModels() {
+        return vehicleModels;
+    }
+
+    public void setVehicleModels(List<String> vehicleModels) {
+        this.vehicleModels = vehicleModels;
     }
 }

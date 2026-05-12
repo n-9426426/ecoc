@@ -5,16 +5,20 @@ import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.domain.SysPost;
-import com.ruoyi.system.domain.SysPostMenu;
+import com.ruoyi.system.domain.SysPostAuth;
+import com.ruoyi.system.mapper.SysPostAuthMapper;
 import com.ruoyi.system.mapper.SysPostMapper;
-import com.ruoyi.system.mapper.SysPostMenuMapper;
 import com.ruoyi.system.mapper.SysUserPostMapper;
 import com.ruoyi.system.service.ISysPostService;
+import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -32,7 +36,7 @@ public class SysPostServiceImpl implements ISysPostService
     private SysUserPostMapper userPostMapper;
 
     @Autowired
-    private SysPostMenuMapper postMenuMapper;
+    private SysPostAuthMapper postAuthMapper;
 
     @Autowired
     private RemoteTranslateService remoteTranslateService;
@@ -46,7 +50,30 @@ public class SysPostServiceImpl implements ISysPostService
     @Override
     public List<SysPost> selectPostList(SysPost post)
     {
-        return postMapper.selectPostList(post);
+        List<SysPost> sysPosts = postMapper.selectPostList(post);
+
+        if (CollectionUtils.isEmpty(sysPosts)) {
+            return sysPosts;
+        }
+
+        // 2. 提取所有 postId
+        List<Long> postIds = sysPosts.stream()
+                .map(SysPost::getPostId)
+                .collect(Collectors.toList());
+
+        // 3. 根据 postIds 批量查询权限关联数据
+        List<SysPostAuth> postAuths = postAuthMapper.selectByPostIds(postIds);
+
+        // 4. 将 postAuths 按 postId 分组
+        Map<Long, List<SysPostAuth>> postAuthMap = postAuths.stream().collect(Collectors.groupingBy(SysPostAuth::getPostId));
+
+        // 5. 遍历岗位列表，设置工厂编码和国家
+        for (SysPost sysPost : sysPosts) {
+            List<SysPostAuth> authList = postAuthMap.getOrDefault(sysPost.getPostId(), Collections.emptyList());
+            sysPostSetAuth(authList, sysPost);
+        }
+
+        return sysPosts;
     }
 
     /**
@@ -69,7 +96,13 @@ public class SysPostServiceImpl implements ISysPostService
     @Override
     public SysPost selectPostById(Long postId)
     {
-        return postMapper.selectPostById(postId);
+        SysPost sysPost = postMapper.selectPostById(postId);
+        List<SysPostAuth> sysPostAuths = postAuthMapper.selectByPostId(postId);
+        if (sysPostAuths.isEmpty()) {
+            return sysPost;
+        }
+        sysPostSetAuth(sysPostAuths, sysPost);
+        return sysPost;
     }
 
     /**
@@ -141,7 +174,9 @@ public class SysPostServiceImpl implements ISysPostService
     @Override
     public int deletePostById(Long postId)
     {
-        return postMapper.deletePostById(postId);
+        int row = postMapper.deletePostById(postId);
+        postAuthMapper.deleteByPostId(postId);
+        return row;
     }
 
     /**
@@ -162,7 +197,7 @@ public class SysPostServiceImpl implements ISysPostService
         }
         int row = postMapper.deletePostByIds(postIds);
         for (Long postId : postIds) {
-            postMenuMapper.deletePostMenuByPostId(postId);
+            postAuthMapper.deleteByPostId(postId);
         }
         return row;
     }
@@ -178,10 +213,14 @@ public class SysPostServiceImpl implements ISysPostService
     public int insertPost(SysPost post)
     {
         int row = postMapper.insertPost(post);
-        SysPostMenu postMenu = new SysPostMenu();
-        postMenu.setPostId(post.getPostId());
-        postMenu.setMenuIds(post.getMenuIds());
-        updatePostMenu(postMenu);
+        if (!post.getFactoryCodes().isEmpty() || !post.getCountries().isEmpty() || !post.getVehicleModels().isEmpty()) {
+            SysPostAuth postAuth = new SysPostAuth();
+            postAuth.setPostId(post.getPostId());
+            postAuth.setFactoryCode(StringUtils.join(post.getFactoryCodes(), ","));
+            postAuth.setCountry(StringUtils.join(post.getCountries(), ","));
+            postAuth.setVehicleModel(StringUtils.join(post.getVehicleModels(), ","));
+            postAuthMapper.insertBatch(Collections.singletonList(postAuth));
+        }
         return row;
     }
 
@@ -194,26 +233,54 @@ public class SysPostServiceImpl implements ISysPostService
     @Override
     public int updatePost(SysPost post)
     {
-        return postMapper.updatePost(post);
+        int row = postMapper.updatePost(post);
+        insertPostAuth(post.getPostId(), post.getFactoryCodes(), post.getCountries(), post.getVehicleModels());
+        return row;
     }
 
-    @Override
-    public List<Long> getPostMenuIds(Long postId) {
-        return postMenuMapper.selectMenuIdsByPostId(postId);
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public int updatePostMenu(SysPostMenu postMenu) {
-        // 先删除旧关联
-        postMenuMapper.deletePostMenuByPostId(postMenu.getPostId());
-        // 插入新关联
-        if (!postMenu.getMenuIds().isEmpty()) {
-            List<SysPostMenu> list = postMenu.getMenuIds().stream()
-                    .map(menuId -> new SysPostMenu(postMenu.getPostId(), menuId))
-                    .collect(Collectors.toList());
-            return postMenuMapper.batchInsertPostMenu(list);
+    private void insertPostAuth(Long postId, List<String> factoryCodes, List<String> countries, List<String> vehicleModels) {
+        postAuthMapper.deleteByPostId(postId);
+        if (!factoryCodes.isEmpty() || !countries.isEmpty() || !vehicleModels.isEmpty()) {
+            SysPostAuth postAuth = new SysPostAuth();
+            postAuth.setPostId(postId);
+            postAuth.setFactoryCode(StringUtils.join(factoryCodes, ","));
+            postAuth.setCountry(StringUtils.join(countries, ","));
+            postAuth.setVehicleModel(StringUtils.join(vehicleModels, ","));
+            postAuthMapper.insertBatch(Collections.singletonList(postAuth));
         }
-        return 0;
+    }
+
+    private void sysPostSetAuth(List<SysPostAuth> postAuths, SysPost sysPost) {
+        List<String> factoryCodes = postAuths.stream()
+                .map(SysPostAuth::getFactoryCode)          // 获取逗号拼接字符串 "1001,1002"
+                .filter(StringUtils::isNotBlank)            // 过滤空字符串
+                .flatMap(s -> Arrays.stream(s.split(","))) // 按逗号拆分展平
+                .map(String::trim)                          // 去除空格
+                .filter(StringUtils::isNotBlank)            // 过滤拆分后空值
+                .distinct()                                 // 去重
+                .collect(Collectors.toList());
+        sysPost.setFactoryCodes(factoryCodes);
+
+        // 设置国家列表：将逗号拼接的字符串转为 List<Long>
+        List<String> countries = postAuths.stream()
+                .map(SysPostAuth::getCountry)              // 获取逗号拼接字符串
+                .filter(StringUtils::isNotBlank)            // 过滤空字符串
+                .flatMap(s -> Arrays.stream(s.split(","))) // 按逗号拆分展平
+                .map(String::trim)                          // 去除空格
+                .filter(StringUtils::isNotBlank)            // 过滤拆分后空值
+                .distinct()                                 // 去重
+                .collect(Collectors.toList());
+        sysPost.setCountries(countries);
+
+        // 设置车型列表：将逗号拼接的字符串转为 List<Long>
+        List<String> vehicleModels = postAuths.stream()
+                .map(SysPostAuth::getVehicleModel)              // 获取逗号拼接字符串
+                .filter(StringUtils::isNotBlank)            // 过滤空字符串
+                .flatMap(s -> Arrays.stream(s.split(","))) // 按逗号拆分展平
+                .map(String::trim)                          // 去除空格
+                .filter(StringUtils::isNotBlank)            // 过滤拆分后空值
+                .distinct()                                 // 去重
+                .collect(Collectors.toList());
+        sysPost.setVehicleModels(vehicleModels);
     }
 }

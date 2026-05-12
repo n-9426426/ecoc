@@ -313,12 +313,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         AbnormalClassify abnormalClassify;
         for (Long vehicleInfoId : vehicleInfoIds) {
             VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleInfoId);
-            List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_attribute").getData();
-            sysDictData = sysDictData.stream()
-                    .filter(data -> vehicleInfo.getVehicleModel().equals(data.getDictTypeAffiliation()))
-                    .collect(Collectors.toList());
-            SysDictData vehicleModel = remoteDictService.getDataByDictCode(vehicleInfo.getVehicleModel()).getData();
-            ValidationReport validationReport = vehicleValidationService.validate(vehicleInfo.getJson(), vehicleModel.getDictValue(), null);
+            ValidationReport validationReport = vehicleValidationService.validate(vehicleInfo.getJson(), vehicleInfo.getVehicleModel(), null);
             if (validationReport.isAllValid()) {
                 vehicleInfo.setValidationResult(1);
             } else {
@@ -381,7 +376,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_model").getData();
         for (SysDictData dictData : sysDictData) {
             if (dictData.getDictLabel().equals(vehicleDto.getVehicleModel())) {
-                vehicleInfo.setVehicleModel(dictData.getDictCode());
+                vehicleInfo.setVehicleModel(dictData.getDictValue());
                 break;
             }
         }
@@ -444,30 +439,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                     continue;
                 }
 
-                // 车型代码 dictValue -> dictCode
-                Long vehicleModelCode = null;
-                if (StringUtils.isNotBlank(vehicleModel)) {
-                    vehicleModelCode = vehicleModelDicts.stream()
-                            .filter(d -> vehicleModel.equals(d.getDictValue()))
-                            .map(SysDictData::getDictCode)
-                            .findFirst()
-                            .orElse(null);
-                    if (vehicleModelCode == null) {
-                        errorMsgs.add("第" + (rowIndex + 1) + "行：车型代码[" + vehicleModel + "]在字典中不存在，跳过");
-                        continue;
-                    }
-                }
-
-                // 出口国家 dictValue -> dictCode（存dictCode还是dictValue根据你的字段决定）
-                String countryCode = null;
-                if (StringUtils.isNotBlank(country)) {
-                    countryCode = countryDicts.stream()
-                            .filter(d -> country.equals(d.getDictLabel()))
-                            .map(SysDictData::getDictValue)
-                            .findFirst()
-                            .orElse(country); // 找不到就存原值
-                }
-
                 // 通过物料号查模板ID
                 Long templateId = vehicleTemplateMaterialMapper
                         .selectVehicleTemplateIdByMaterialNo(materialNo, brand, weight, saleName, tire);
@@ -487,12 +458,12 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 // 组装 VehicleInfo
                 VehicleInfo vehicleInfo = new VehicleInfo();
                 vehicleInfo.setVin(vin);
-                vehicleInfo.setVehicleModel(vehicleModelCode);
+                vehicleInfo.setVehicleModel(vehicleModel);
                 vehicleInfo.setFactoryCode(factoryCode);
                 vehicleInfo.setMaterialNo(materialNo);
                 vehicleInfo.setColor(color);
                 vehicleInfo.setSecondaryColor(secondaryColor);
-                vehicleInfo.setCountry(countryCode);
+                vehicleInfo.setCountry(country);
                 vehicleInfo.setIssueDate(issueDate);
                 vehicleInfo.setBrand(brand);
                 vehicleInfo.setWeight(weight);

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.system.mapper.SysPostAuthMapper">
+
+    <resultMap id="SysPostAuthResult" type="com.ruoyi.system.domain.SysPostAuth">
+        <result property="postId"      column="post_id"/>
+        <result property="factoryCode" column="factory_code"/>
+        <result property="country"     column="country"/>
+        <result property="vehicleModel" column="vehicle_model"/>
+    </resultMap>
+
+    <select id="selectByPostId" resultMap="SysPostAuthResult">
+        SELECT post_id, factory_code, country, vehicle_model
+        FROM sys_post_auth
+        WHERE post_id = #{postId}
+    </select>
+
+    <select id="selectByPostIds" resultMap="SysPostAuthResult">
+        SELECT post_id, factory_code, country, vehicle_model
+        FROM sys_post_auth
+        WHERE post_id IN
+        <foreach collection="postIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <insert id="insertBatch">
+        INSERT INTO sys_post_auth (post_id, factory_code, country, vehicle_model) VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.postId}, #{item.factoryCode}, #{item.country}, #{item.vehicleModel})
+        </foreach>
+    </insert>
+
+    <delete id="deleteByPostId">
+        DELETE FROM sys_post_auth WHERE post_id = #{postId}
+    </delete>
+
+</mapper>

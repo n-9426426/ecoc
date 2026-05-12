@@ -5,7 +5,6 @@ import com.ruoyi.common.core.constant.UserConstants;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.system.api.domain.SysRole;
 import com.ruoyi.system.api.domain.SysUser;
-import com.ruoyi.system.mapper.SysPostMenuMapper;
 import com.ruoyi.system.mapper.SysUserPostMapper;
 import com.ruoyi.system.service.ISysMenuService;
 import com.ruoyi.system.service.ISysPermissionService;
@@ -31,9 +30,6 @@ public class SysPermissionServiceImpl implements ISysPermissionService
 
     @Autowired
     private SysUserPostMapper userPostMapper;
-
-    @Autowired
-    private SysPostMenuMapper postMenuMapper;
 
     @Autowired
     private ISysMenuService menuService;
@@ -86,11 +82,6 @@ public class SysPermissionServiceImpl implements ISysPermissionService
                 }
             } else {
                 perms.addAll(menuService.selectMenuPermsByUserId(user.getUserId()));
-            }
-            List<Long> postIds = userPostMapper.selectPostIdsByUserId(user.getUserId());
-            if (!postIds.isEmpty()) {
-                List<String> postPerms = postMenuMapper.selectPermsByPostIds(postIds);
-                perms.addAll(postPerms);
             }
         }
         return perms;
