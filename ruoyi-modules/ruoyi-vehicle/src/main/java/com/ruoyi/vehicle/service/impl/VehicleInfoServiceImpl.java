@@ -7,6 +7,7 @@ import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.model.FieldValidationResult;
 import com.ruoyi.common.core.model.RuleViolation;
 import com.ruoyi.common.core.model.ValidationReport;
+import com.ruoyi.common.core.parser.ValueMappingParser;
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.utils.bean.BeanUtils;
@@ -606,13 +607,52 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     private int insert(VehicleInfo vehicleInfo) {
         Map<String, Object> map = vehicleInfo.getJsonMap();
-        // todo 根据值映射规则把值给给映射好后再转为字符串存储
+
+        if (map != null && !map.isEmpty()) {
+            List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
+
+            if (dictDataList != null && !dictDataList.isEmpty()) {
+                // 过滤掉 keyMap 或 valueMap 为空的脏数据，避免 null key 异常
+                Map<String, List<SysDictData>> keyMappingRules = dictDataList.stream()
+                        .filter(d -> StringUtils.isNotBlank(d.getKeyMap())
+                                && StringUtils.isNotBlank(d.getValueMap()))
+                        .collect(Collectors.groupingBy(SysDictData::getKeyMap));
+
+                Map<String, Object> toAdd = new LinkedHashMap<>();
+                Set<String> toRemove = new HashSet<>();
+
+                for (Map.Entry<String, Object> entry : map.entrySet()) {
+                    String fieldName = entry.getKey();
+                    List<SysDictData> matchedRules = keyMappingRules.get(fieldName);
+
+                    // 无映射规则：保留原始 key 和原始值
+                    if (matchedRules == null || matchedRules.isEmpty()) {
+                        continue;
+                    }
+
+                    String rawValue = entry.getValue() == null
+                            ? null
+                            : String.valueOf(entry.getValue());
+
+                    for (SysDictData rule : matchedRules) {
+                        String converted = ValueMappingParser.convert(rawValue, rule.getValueMap());
+                        // 转换结果为空：回退使用原始值
+                        toAdd.put(rule.getDictLabel(), StringUtils.isNotBlank(converted) ? converted : rawValue);
+                    }
+                    toRemove.add(fieldName);
+                }
+
+                toRemove.forEach(map::remove);
+                map.putAll(toAdd);
+            }
+        }
+
         try {
             vehicleInfo.setJson(objectMapper.writeValueAsString(map));
         } catch (Exception e) {
             throw new RuntimeException("无法格式化JSON数据");
         }
-        int row = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
-        return row;
+
+        return vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
     }
 }
