@@ -26,4 +26,10 @@ public @interface DataScope
      * 权限字符（用于多个角色匹配符合要求的权限）默认根据权限注解@RequiresPermissions获取，多个权限用逗号分隔开来
      */
     public String permission() default "";
+
+    /**
+     * 业务表别名，用于工厂+国家维度过滤
+     * 例：@DataScope(tableAlias = "vi") 会拼接 vi.factory_code / vi.country
+     */
+    String tableAlias() default "";
 }

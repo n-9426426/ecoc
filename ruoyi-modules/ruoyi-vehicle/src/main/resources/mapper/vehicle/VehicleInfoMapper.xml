@@ -126,6 +126,7 @@
 			<if test="reclaim == null or !reclaim">
 				AND deleted = 0
 			</if>
+			${params.dataScope}
 		</where>
 		order by update_time desc
 	</select>

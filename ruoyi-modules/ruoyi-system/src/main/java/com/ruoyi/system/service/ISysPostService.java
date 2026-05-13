@@ -1,7 +1,6 @@
 package com.ruoyi.system.service;
 
 import com.ruoyi.system.domain.SysPost;
-import com.ruoyi.system.domain.SysPostMenu;
 
 import java.util.List;
 
@@ -98,8 +97,4 @@ public interface ISysPostService
      * @return 结果
      */
     public int updatePost(SysPost post);
-
-    List<Long> getPostMenuIds(Long postId);
-
-    int updatePostMenu(SysPostMenu postMenu);
 }

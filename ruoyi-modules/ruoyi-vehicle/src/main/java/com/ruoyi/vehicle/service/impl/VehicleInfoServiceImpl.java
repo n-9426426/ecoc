@@ -134,7 +134,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
         // 查模板
         Long vehicleTemplateId = vehicleTemplateMaterialMapper
-                .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(),
+                .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getTvv(), vehicleInfo.getBrand(),
                         vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire());
         if (vehicleTemplateId == null) {
             throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎无对应的可用车辆模板");
@@ -186,7 +186,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     public int updateVehicleInfo(VehicleInfo vehicleInfo) {
         if (StringUtils.isNotBlank(vehicleInfo.getMaterialNo())) {
             Long vehicleTemplateId = vehicleTemplateMaterialMapper
-                    .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(),
+                    .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getTvv(), vehicleInfo.getBrand(),
                             vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire());
             if (vehicleTemplateId == null) {
                 throw new RuntimeException("该物料号无对应的可用车辆模板");
@@ -313,12 +313,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         AbnormalClassify abnormalClassify;
         for (Long vehicleInfoId : vehicleInfoIds) {
             VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleInfoId);
-            List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_attribute").getData();
-            sysDictData = sysDictData.stream()
-                    .filter(data -> vehicleInfo.getVehicleModel().equals(data.getDictTypeAffiliation()))
-                    .collect(Collectors.toList());
-            SysDictData vehicleModel = remoteDictService.getDataByDictCode(vehicleInfo.getVehicleModel()).getData();
-            ValidationReport validationReport = vehicleValidationService.validate(vehicleInfo.getJson(), vehicleModel.getDictValue(), null);
+            ValidationReport validationReport = vehicleValidationService.validate(vehicleInfo.getJson(), vehicleInfo.getVehicleModel(), null);
             if (validationReport.isAllValid()) {
                 vehicleInfo.setValidationResult(1);
             } else {
@@ -381,7 +376,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_model").getData();
         for (SysDictData dictData : sysDictData) {
             if (dictData.getDictLabel().equals(vehicleDto.getVehicleModel())) {
-                vehicleInfo.setVehicleModel(dictData.getDictCode());
+                vehicleInfo.setVehicleModel(dictData.getDictValue());
                 break;
             }
         }
@@ -433,6 +428,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             String weight        = getCellStringValue(row.getCell(9));
             String saleName      = getCellStringValue(row.getCell(10));
             String tire          = getCellStringValue(row.getCell(11));
+            // 确定导入文档中是否有tvv
+            String tvv           = null;
 
             // 跳过空行
             if (StringUtils.isBlank(vin)) continue;
@@ -444,33 +441,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                     continue;
                 }
 
-                // 车型代码 dictValue -> dictCode
-                Long vehicleModelCode = null;
-                if (StringUtils.isNotBlank(vehicleModel)) {
-                    vehicleModelCode = vehicleModelDicts.stream()
-                            .filter(d -> vehicleModel.equals(d.getDictValue()))
-                            .map(SysDictData::getDictCode)
-                            .findFirst()
-                            .orElse(null);
-                    if (vehicleModelCode == null) {
-                        errorMsgs.add("第" + (rowIndex + 1) + "行：车型代码[" + vehicleModel + "]在字典中不存在，跳过");
-                        continue;
-                    }
-                }
-
-                // 出口国家 dictValue -> dictCode（存dictCode还是dictValue根据你的字段决定）
-                String countryCode = null;
-                if (StringUtils.isNotBlank(country)) {
-                    countryCode = countryDicts.stream()
-                            .filter(d -> country.equals(d.getDictLabel()))
-                            .map(SysDictData::getDictValue)
-                            .findFirst()
-                            .orElse(country); // 找不到就存原值
-                }
-
                 // 通过物料号查模板ID
-                Long templateId = vehicleTemplateMaterialMapper
-                        .selectVehicleTemplateIdByMaterialNo(materialNo, brand, weight, saleName, tire);
+                Long templateId = vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(materialNo, tvv, brand, weight, saleName, tire);
                 if (templateId == null) {
                     errorMsgs.add("第" + (rowIndex + 1) + "行：物料号[" + materialNo + "]未找到可用关联模板，跳过");
                     continue;
@@ -487,12 +459,12 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 // 组装 VehicleInfo
                 VehicleInfo vehicleInfo = new VehicleInfo();
                 vehicleInfo.setVin(vin);
-                vehicleInfo.setVehicleModel(vehicleModelCode);
+                vehicleInfo.setVehicleModel(vehicleModel);
                 vehicleInfo.setFactoryCode(factoryCode);
                 vehicleInfo.setMaterialNo(materialNo);
                 vehicleInfo.setColor(color);
                 vehicleInfo.setSecondaryColor(secondaryColor);
-                vehicleInfo.setCountry(countryCode);
+                vehicleInfo.setCountry(country);
                 vehicleInfo.setIssueDate(issueDate);
                 vehicleInfo.setBrand(brand);
                 vehicleInfo.setWeight(weight);
@@ -546,13 +518,12 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Override
     public Long selectVehicleTemplateIdByMaterialNo(String materialNo) {
-        return vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(materialNo, null, null, null, null);
+        return vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(materialNo, null, null, null, null, null);
     }
 
     @Override
     public VehicleTemplate selectVehicleTemplateById(Long templateId) {
-        VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(templateId);
-        return template;
+        return vehicleTemplateMapper.selectVehicleTemplateById(templateId);
     }
 
     @Override
@@ -607,26 +578,25 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     private int insert(VehicleInfo vehicleInfo) {
         Map<String, Object> map = vehicleInfo.getJsonMap();
+        // 用于最终序列化的 map，默认指向原始 map
+        Map<String, Object> finalMap = map;
 
         if (map != null && !map.isEmpty()) {
             List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
 
             if (dictDataList != null && !dictDataList.isEmpty()) {
-                // 过滤掉 keyMap 或 valueMap 为空的脏数据，避免 null key 异常
                 Map<String, List<SysDictData>> keyMappingRules = dictDataList.stream()
-                        .filter(d -> StringUtils.isNotBlank(d.getKeyMap())
-                                && StringUtils.isNotBlank(d.getValueMap()))
+                        .filter(d -> StringUtils.isNotBlank(d.getKeyMap()))
                         .collect(Collectors.groupingBy(SysDictData::getKeyMap));
 
-                Map<String, Object> toAdd = new LinkedHashMap<>();
-                Set<String> toRemove = new HashSet<>();
+                Map<String, Object> result = new LinkedHashMap<>();
 
                 for (Map.Entry<String, Object> entry : map.entrySet()) {
                     String fieldName = entry.getKey();
                     List<SysDictData> matchedRules = keyMappingRules.get(fieldName);
 
-                    // 无映射规则：保留原始 key 和原始值
                     if (matchedRules == null || matchedRules.isEmpty()) {
+                        result.put(fieldName, entry.getValue());
                         continue;
                     }
 
@@ -635,20 +605,24 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                             : String.valueOf(entry.getValue());
 
                     for (SysDictData rule : matchedRules) {
-                        String converted = ValueMappingParser.convert(rawValue, rule.getValueMap());
-                        // 转换结果为空：回退使用原始值
-                        toAdd.put(rule.getDictLabel(), StringUtils.isNotBlank(converted) ? converted : rawValue);
+                        String converted;
+                        if (StringUtils.isBlank(rule.getValueMap())) {
+                            converted = "";
+                        } else {
+                            converted = ValueMappingParser.convert(rawValue, rule.getValueMap());
+                            converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
+                            converted = "N/A".equals(converted) ? "" : converted;
+                        }
+                        result.put(rule.getDictLabel(), converted);
                     }
-                    toRemove.add(fieldName);
                 }
 
-                toRemove.forEach(map::remove);
-                map.putAll(toAdd);
+                finalMap = result; // 直接用 result，不再依赖 map 的引用同步
             }
         }
 
         try {
-            vehicleInfo.setJson(objectMapper.writeValueAsString(map));
+            vehicleInfo.setJson(objectMapper.writeValueAsString(finalMap)); // 序列化映射后的数据
         } catch (Exception e) {
             throw new RuntimeException("无法格式化JSON数据");
         }

@@ -70,7 +70,7 @@ public class VehicleInfo extends BaseEntity {
     private String vin;
 
     /** 车型代码 */
-    private Long vehicleModel;
+    private String vehicleModel;
 
     private String vehicleModelStr;
 
@@ -105,6 +105,8 @@ public class VehicleInfo extends BaseEntity {
     private String batteryNumber;
 
     private String motorNumber;
+
+    private String tvv;
 
     private String brand;
 

@@ -6,6 +6,7 @@ import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.core.web.page.TableDataInfo;
+import com.ruoyi.common.datascope.annotation.DataScope;
 import com.ruoyi.common.log.annotation.Log;
 import com.ruoyi.common.log.enums.BusinessType;
 import com.ruoyi.common.security.annotation.RequiresPermissions;
@@ -61,6 +62,7 @@ public class VehicleInfoController extends BaseController {
      */
     @GetMapping("/list")
     @RequiresPermissions("vehicle:info:query")
+    @DataScope(tableAlias = "vi")
     public TableDataInfo list(VehicleInfo vehicleInfo) {
         // 手动输入的vin按逗号/换行拆分成vinList
         if (StringUtils.isNotBlank(vehicleInfo.getVin())) {

@@ -69,10 +69,16 @@ public class FinalRuleExecutor {
                             rule.getErrorMessageZh());
 
                 case VALUE_IS_PRESENT:
-                    return buildViolation(rule, fieldName, actualValue, "Field is required", "必填字段不能为空");
+                    if (isAbsent(actualValue)) {
+                        return buildViolation(rule, fieldName, actualValue, "Field is required", "必填字段不能为空");
+                    }
+                    return null;
 
                 case VALUE_IS_ABSENT:
-                    return buildViolation(rule, fieldName, actualValue, "Field must be absent", "该字段在此场景下必须为空");
+                    if (!isAbsent(actualValue)) {
+                        return buildViolation(rule, fieldName, actualValue, "Field must be absent", "该字段在此场景下必须为空");
+                    }
+                    return null;
 
                 case VALUE_IN:
                     strVal = String.valueOf(actualValue);

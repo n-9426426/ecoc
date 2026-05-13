@@ -4,6 +4,7 @@ import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.core.web.page.TableDataInfo;
+import com.ruoyi.common.datascope.annotation.DataScope;
 import com.ruoyi.common.log.annotation.Log;
 import com.ruoyi.common.log.enums.BusinessType;
 import com.ruoyi.common.security.annotation.RequiresPermissions;
@@ -55,6 +56,7 @@ public class XmlController extends BaseController {
      */
     @GetMapping("/list")
     @RequiresPermissions("system:xml:query")
+    @DataScope(tableAlias = "xl")
     public TableDataInfo list(XmlFile xmlFile) {
         // VIN：逗号/换行拆分成 vinList
         if (StringUtils.isNotBlank(xmlFile.getVin())) {
@@ -98,11 +100,7 @@ public class XmlController extends BaseController {
 
         // 转 Map
         // 车型单独建一个以 dictCode 为 key 的 Map
-        Map<Long, String> modelMap = vehicleModelList.stream().collect(Collectors.toMap(
-                SysDictData::getDictCode,
-                SysDictData::getDictLabel,
-                (a, b) -> a
-        ));
+        Map<String, String> modelMap          = toMap(vehicleModelList);
         Map<String, String> countryMap        = toMap(countryList);
         Map<String, String> uploadResultMap   = toMap(uploadResultList);
         Map<String, String> validateResultMap = toMap(validateResultList);
@@ -110,9 +108,9 @@ public class XmlController extends BaseController {
 
         // 设置翻译字段
         for (XmlFile xml : xmlFiles) {
-            // modelCode 存的是 Long 类型的 dictCode
+            // modelCode 存的是 String 类型的 dictValue
             xml.setModelName(xml.getModelCode() != null
-                    ? modelMap.getOrDefault(Long.parseLong(xml.getModelCode()), xml.getModelCode())
+                    ? modelMap.getOrDefault(xml.getModelCode(), xml.getModelCode())
                     : "");
             xml.setCountryLabel(countryMap.getOrDefault(
                     xml.getCountry(), xml.getCountry()));
@@ -129,8 +127,6 @@ public class XmlController extends BaseController {
 
         excelUtil.exportExcel(response, xmlFiles, "xml_file", "XML File");
     }
-
-
 
     // 工具方法：把字典列表转成 dictValue -> dictLabel 的 Map
     private Map<String, String> toMap(List<SysDictData> list) {

@@ -85,6 +85,8 @@ public class SysUserController extends BaseController
         {
             return R.fail("用户名或密码错误");
         }
+        // 组id集合
+        sysUser.setPostIds(postService.selectPostListByUserId(sysUser.getUserId()).toArray(new Long[0]));
         // 角色集合
         Set<String> roles = permissionService.getRolePermission(sysUser);
         // 权限集合

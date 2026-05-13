@@ -121,6 +121,7 @@
             <if test="!reclaim">
                 AND xl.deleted = 0
             </if>
+            ${params.dataScope}
         </where>
         order by xl.create_time desc
     </select>

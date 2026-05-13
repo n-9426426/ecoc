@@ -50,7 +50,7 @@ public class SysMenuServiceImpl implements ISysMenuService
     private SysUserPostMapper userPostMapper;
 
     @Autowired
-    private SysPostMenuMapper postMenuMapper;
+    private SysPostAuthMapper postMenuMapper;
 
     @Autowired
     private RemoteTranslateService remoteTranslateService;
@@ -146,16 +146,6 @@ public class SysMenuServiceImpl implements ISysMenuService
             menus = menuMapper.selectMenuTreeAll();
         } else {
             menus = menuMapper.selectMenuTreeByUserId(userId);
-
-            List<Long> postIds = userPostMapper.selectPostIdsByUserId(userId);
-            if (!postIds.isEmpty()) {
-                List<SysMenu> postMenus = menuMapper.selectMenusByPostIds(postIds);
-                // 合并，按 menu_id 去重
-                Map<Long, SysMenu> menuMap = new LinkedHashMap<>();
-                menus.forEach(m -> menuMap.put(m.getMenuId(), m));
-                postMenus.forEach(m -> menuMap.putIfAbsent(m.getMenuId(), m));
-                menus = new ArrayList<>(menuMap.values());
-            }
         }
         return getChildPerms(menus, MENU_ROOT_ID);
     }

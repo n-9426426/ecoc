@@ -16,6 +16,7 @@ public interface VehicleTemplateMaterialMapper {
     int deleteByTemplateIds(Long[] templateIds);
 
     Long selectVehicleTemplateIdByMaterialNo(@Param("materialNo") String materialNo,
+                                             @Param("tvv") String tvv,
                                              @Param("brand") String brand,
                                              @Param("weight") String weight,
                                              @Param("saleName") String saleName,
