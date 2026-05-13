@@ -106,6 +106,8 @@ public class VehicleInfo extends BaseEntity {
 
     private String motorNumber;
 
+    private String tvv;
+
     private String brand;
 
     private String weight;

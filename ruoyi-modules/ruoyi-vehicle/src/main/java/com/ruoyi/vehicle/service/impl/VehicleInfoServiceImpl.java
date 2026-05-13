@@ -134,7 +134,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
         // 查模板
         Long vehicleTemplateId = vehicleTemplateMaterialMapper
-                .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(),
+                .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getTvv(), vehicleInfo.getBrand(),
                         vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire());
         if (vehicleTemplateId == null) {
             throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎无对应的可用车辆模板");
@@ -186,7 +186,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     public int updateVehicleInfo(VehicleInfo vehicleInfo) {
         if (StringUtils.isNotBlank(vehicleInfo.getMaterialNo())) {
             Long vehicleTemplateId = vehicleTemplateMaterialMapper
-                    .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(),
+                    .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getTvv(), vehicleInfo.getBrand(),
                             vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire());
             if (vehicleTemplateId == null) {
                 throw new RuntimeException("该物料号无对应的可用车辆模板");
@@ -428,6 +428,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             String weight        = getCellStringValue(row.getCell(9));
             String saleName      = getCellStringValue(row.getCell(10));
             String tire          = getCellStringValue(row.getCell(11));
+            // 确定导入文档中是否有tvv
+            String tvv           = null;
 
             // 跳过空行
             if (StringUtils.isBlank(vin)) continue;
@@ -440,8 +442,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 }
 
                 // 通过物料号查模板ID
-                Long templateId = vehicleTemplateMaterialMapper
-                        .selectVehicleTemplateIdByMaterialNo(materialNo, brand, weight, saleName, tire);
+                Long templateId = vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(materialNo, tvv, brand, weight, saleName, tire);
                 if (templateId == null) {
                     errorMsgs.add("第" + (rowIndex + 1) + "行：物料号[" + materialNo + "]未找到可用关联模板，跳过");
                     continue;
@@ -517,13 +518,12 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Override
     public Long selectVehicleTemplateIdByMaterialNo(String materialNo) {
-        return vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(materialNo, null, null, null, null);
+        return vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(materialNo, null, null, null, null, null);
     }
 
     @Override
     public VehicleTemplate selectVehicleTemplateById(Long templateId) {
-        VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(templateId);
-        return template;
+        return vehicleTemplateMapper.selectVehicleTemplateById(templateId);
     }
 
     @Override

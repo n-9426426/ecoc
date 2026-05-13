@@ -71,19 +71,29 @@
         select vtm.template_id
         from vehicle_template_material vtm
         left join vehicle_template vt on vtm.template_id = vt.template_id
-        where vt.validate_result = 1 and vtm.material_no = #{materialNo}
-        <if test="brand != null and brand != ''">
-            AND JSON_UNQUOTE(JSON_EXTRACT(vt.json, '$.brand')) = #{brand}
-        </if>
-        <if test="weight != null and weight != ''">
-            AND JSON_UNQUOTE(JSON_EXTRACT(vt.json, '$.weight')) = #{weight}
-        </if>
-        <if test="saleName != null and saleName != ''">
-            AND JSON_UNQUOTE(JSON_EXTRACT(vt.json, '$.saleName')) = #{saleName}
-        </if>
-        <if test="tire != null and tire != ''">
-            AND JSON_UNQUOTE(JSON_EXTRACT(vt.json, '$.tire')) = #{tire}
-        </if>
+        where vt.validate_result = 1
+        <choose>
+            <when test="materialNo != null and materialNo != ''">
+                AND vtm.material_no = #{materialNo}
+            </when>
+            <otherwise>
+                <if test="tvv != null and tvv != ''">
+                    AND REPLACE(vt.tvv, ',', '') = #{tvv}
+                </if>
+                <if test="brand != null and brand != ''">
+                    AND JSON_UNQUOTE(JSON_EXTRACT(vt.json, '$.brand')) = #{brand}
+                </if>
+                <if test="weight != null and weight != ''">
+                    AND JSON_UNQUOTE(JSON_EXTRACT(vt.json, '$.weight')) = #{weight}
+                </if>
+                <if test="saleName != null and saleName != ''">
+                    AND JSON_UNQUOTE(JSON_EXTRACT(vt.json, '$.saleName')) = #{saleName}
+                </if>
+                <if test="tire != null and tire != ''">
+                    AND JSON_UNQUOTE(JSON_EXTRACT(vt.json, '$.tire')) = #{tire}
+                </if>
+            </otherwise>
+        </choose>
         order by vt.version desc
         limit 1
     </select>

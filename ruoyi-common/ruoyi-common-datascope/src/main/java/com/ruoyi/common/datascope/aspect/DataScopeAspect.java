@@ -129,6 +129,12 @@ public class DataScopeAspect
             case "xl":
                 modelField = alias + "model_code";
                 break;
+            case "vt":
+                modelField = alias + "model_no";
+                break;
+            case "xt":
+                modelField = alias + "model_dict_code";
+                break;
             default:
                 break;
         }
@@ -136,9 +142,11 @@ public class DataScopeAspect
         sqlString.append(" AND EXISTS (")
                 .append("SELECT 1 FROM sys_post_auth spa")
                 .append(" INNER JOIN sys_user_post sup ON spa.post_id = sup.post_id")
-                .append(" WHERE sup.user_id = ").append(userId)
-                .append(" AND (spa.factory_code IS NULL OR spa.factory_code = '' OR FIND_IN_SET(").append(alias).append("factory_code, spa.factory_code))")
-                .append(" AND (spa.country IS NULL OR spa.country = '' OR FIND_IN_SET(").append(alias).append("country, spa.country))");
+                .append(" WHERE sup.user_id = ").append(userId);
+        if (!tableAlias.equals("vt") && !tableAlias.equals("xt")) {
+            sqlString.append(" AND (spa.factory_code IS NULL OR spa.factory_code = '' OR FIND_IN_SET(").append(alias).append("factory_code, spa.factory_code))");
+        }
+        sqlString.append(" AND (spa.country IS NULL OR spa.country = '' OR FIND_IN_SET(").append(alias).append("country, spa.country))");
         if (StringUtils.isNotBlank(modelField)) {
             sqlString.append(" AND (spa.model_code IS NULL OR spa.model_code = '' OR FIND_IN_SET(").append(modelField).append(", spa.model_code))");
         }
