@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.vehicle.mapper.SysHeartbeatConfigMapper">
+
+    <resultMap id="BaseResultMap" type="com.ruoyi.vehicle.domain.SysHeartbeatConfig">
+        <id     column="id"                      property="id"/>
+        <result column="country_code"             property="countryCode"/>
+        <result column="normal_interval"          property="normalInterval"/>
+        <result column="exception_interval"       property="exceptionInterval"/>
+        <result column="timeout_seconds"          property="timeoutSeconds"/>
+        <result column="max_reconnect_times"      property="maxReconnectTimes"/>
+        <result column="reconnect_interval"       property="reconnectInterval"/>
+        <result column="reconnect_pause"          property="reconnectPause"/>
+        <result column="notify_duration"          property="notifyDuration"/>
+        <result column="notify_reconnect_times"   property="notifyReconnectTimes"/>
+        <result column="disable_duration"         property="disableDuration"/>
+        <result column="create_time"              property="createTime"/>
+        <result column="update_time"              property="updateTime"/>
+    </resultMap>
+
+    <!--
+        优先返回国家专属配置；若无，则返回全局默认（country_code IS NULL）
+        ORDER BY: 非NULL排在前面（country_code IS NULL → 1，有值 → 0），取第一条
+    -->
+    <select id="selectByCountryOrDefault" resultMap="BaseResultMap">
+        SELECT *
+        FROM sys_heartbeat_config
+        WHERE country_code = #{countryCode}
+           OR country_code IS NULL
+        ORDER BY (country_code IS NULL) ASC
+            LIMIT 1
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.vehicle.domain.SysHeartbeatConfig"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sys_heartbeat_config (
+            country_code, normal_interval, exception_interval, timeout_seconds,
+            max_reconnect_times, reconnect_interval, reconnect_pause,
+            notify_duration, notify_reconnect_times, disable_duration,
+            create_time, update_time
+        ) VALUES (
+                     #{countryCode}, #{normalInterval}, #{exceptionInterval}, #{timeoutSeconds},
+                     #{maxReconnectTimes}, #{reconnectInterval}, #{reconnectPause},
+                     #{notifyDuration}, #{notifyReconnectTimes}, #{disableDuration},
+                     NOW(), NOW()
+                 )
+    </insert>
+
+    <update id="updateById" parameterType="com.ruoyi.vehicle.domain.SysHeartbeatConfig">
+        UPDATE sys_heartbeat_config
+        <set>
+            <if test="normalInterval != null">normal_interval = #{normalInterval},</if>
+            <if test="exceptionInterval != null">exception_interval = #{exceptionInterval},</if>
+            <if test="timeoutSeconds != null">timeout_seconds = #{timeoutSeconds},</if>
+            <if test="maxReconnectTimes != null">max_reconnect_times = #{maxReconnectTimes},</if>
+            <if test="reconnectInterval != null">reconnect_interval = #{reconnectInterval},</if>
+            <if test="reconnectPause != null">reconnect_pause = #{reconnectPause},</if>
+            <if test="notifyDuration != null">notify_duration = #{notifyDuration},</if>
+            <if test="notifyReconnectTimes != null">notify_reconnect_times = #{notifyReconnectTimes},</if>
+            <if test="disableDuration != null">disable_duration = #{disableDuration},</if>
+            update_time = NOW()
+        </set>
+        WHERE id = #{id}
+    </update>
+
+</mapper>

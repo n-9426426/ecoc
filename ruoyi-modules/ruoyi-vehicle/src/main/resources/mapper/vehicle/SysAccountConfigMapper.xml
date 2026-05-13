@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.vehicle.mapper.SysAccountConfigMapper">
+
+    <resultMap id="BaseResultMap" type="com.ruoyi.vehicle.domain.SysAccountConfig">
+        <id     column="id"                  property="id"/>
+        <result column="country_code"         property="countryCode"/>
+        <result column="country_name"         property="countryName"/>
+        <result column="account"              property="account"/>
+        <result column="password"             property="password"/>
+        <result column="api_url"              property="apiUrl"/>
+        <result column="backup_api_url"       property="backupApiUrl"/>
+        <result column="heartbeat_status"     property="heartbeatStatus"/>
+        <result column="enable_status"        property="enableStatus"/>
+        <result column="api_available"        property="apiAvailable"/>
+        <result column="last_heartbeat_time"  property="lastHeartbeatTime"/>
+        <result column="remark"               property="remark"/>
+        <result column="create_by"            property="createBy"/>
+        <result column="create_time"          property="createTime"/>
+        <result column="update_by"            property="updateBy"/>
+        <result column="update_time"          property="updateTime"/>
+        <result column="deleted"              property="deleted"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, country_code, country_name, account, password,
+        api_url, backup_api_url, heartbeat_status, enable_status, api_available,
+        last_heartbeat_time, remark, create_by, create_time, update_by, update_time, deleted
+    </sql>
+
+    <!-- 列表查询（PageHelper 在 Service 层调用 startPage() 注入分页，此处无需写 LIMIT） -->
+    <select id="selectList" resultMap="BaseResultMap"
+            parameterType="com.ruoyi.vehicle.domain.SysAccountConfigQuery">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM sys_account_config
+        WHERE deleted = 0
+        <if test="countryCode != null and countryCode != ''">
+            AND country_code = #{countryCode}
+        </if>
+        <if test="heartbeatStatus != null">
+            AND heartbeat_status = #{heartbeatStatus}
+        </if>
+        <if test="enableStatus != null">
+            AND enable_status = #{enableStatus}
+        </if>
+        <if test="beginTime != null and beginTime != ''">
+            AND create_time &gt;= #{beginTime}
+        </if>
+        <if test="endTime != null and endTime != ''">
+            AND create_time &lt;= #{endTime}
+        </if>
+        ORDER BY create_time DESC
+    </select>
+
+    <!-- 按主键查询 -->
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM sys_account_config
+        WHERE id = #{id}
+        AND deleted = 0
+    </select>
+
+    <!-- 查询所有启用且接口可用的账号（心跳调度） -->
+    <select id="selectEnabledAndAvailable" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM sys_account_config
+        WHERE deleted = 0
+        AND enable_status = 1
+        AND api_available = 1
+    </select>
+
+    <!-- 新增 -->
+    <insert id="insert" parameterType="com.ruoyi.vehicle.domain.SysAccountConfig"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sys_account_config (
+            country_code, country_name, account, password,
+            api_url, backup_api_url, heartbeat_status, enable_status,
+            api_available, remark, create_by, create_time,
+            update_by, update_time, deleted
+        ) VALUES (
+                     #{countryCode}, #{countryName}, #{account}, #{password},
+                     #{apiUrl}, #{backupApiUrl}, #{heartbeatStatus}, #{enableStatus},
+                     #{apiAvailable}, #{remark}, #{createBy}, NOW(),
+                     #{updateBy}, NOW(), 0
+                 )
+    </insert>
+
+    <!-- 按主键更新（只更新非null字段） -->
+    <update id="updateById" parameterType="com.ruoyi.vehicle.domain.SysAccountConfig">
+        UPDATE sys_account_config
+        <set>
+            <if test="countryCode != null and countryCode != ''">country_code = #{countryCode},</if>
+            <if test="countryName != null and countryName != ''">country_name = #{countryName},</if>
+            <if test="account != null and account != ''">account = #{account},</if>
+            <if test="password != null and password != ''">password = #{password},</if>
+            <if test="apiUrl != null and apiUrl != ''">api_url = #{apiUrl},</if>
+            <if test="backupApiUrl != null">backup_api_url = #{backupApiUrl},</if>
+            <if test="enableStatus != null">enable_status = #{enableStatus},</if>
+            <if test="apiAvailable != null">api_available = #{apiAvailable},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+            update_time = NOW()
+        </set>
+        WHERE id = #{id}
+        AND deleted = 0
+    </update>
+
+    <!-- 更新心跳状态 + 最后心跳时间 -->
+    <update id="updateHeartbeatStatus">
+        UPDATE sys_account_config
+        SET heartbeat_status    = #{heartbeatStatus},
+            last_heartbeat_time = NOW(),
+            update_time         = NOW()
+        WHERE id = #{id}
+          AND deleted = 0
+    </update>
+
+    <!-- 更新接口可用标记 -->
+    <update id="updateApiAvailable">
+        UPDATE sys_account_config
+        SET api_available = #{apiAvailable},
+            update_time   = NOW()
+        WHERE id = #{id}
+          AND deleted = 0
+    </update>
+
+    <!-- 逻辑删除 -->
+    <update id="deleteById">
+        UPDATE sys_account_config
+        SET deleted     = 1,
+            update_time = NOW()
+        WHERE id = #{id}
+          AND deleted = 0
+    </update>
+
+</mapper>

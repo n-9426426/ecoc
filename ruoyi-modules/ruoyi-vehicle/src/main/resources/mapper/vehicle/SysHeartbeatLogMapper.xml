@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.vehicle.mapper.SysHeartbeatLogMapper">
+
+    <resultMap id="BaseResultMap" type="com.ruoyi.vehicle.domain.SysHeartbeatLog">
+        <id     column="id"               property="id"/>
+        <result column="account_id"        property="accountId"/>
+        <result column="country_code"      property="countryCode"/>
+        <result column="api_url"           property="apiUrl"/>
+        <result column="check_time"        property="checkTime"/>
+        <result column="check_result"      property="checkResult"/>
+        <result column="response_code"     property="responseCode"/>
+        <result column="exception_type"    property="exceptionType"/>
+        <result column="exception_msg"     property="exceptionMsg"/>
+        <result column="is_reconnect"      property="isReconnect"/>
+        <result column="reconnect_count"   property="reconnectCount"/>
+        <result column="reconnect_result"  property="reconnectResult"/>
+        <result column="create_time"       property="createTime"/>
+    </resultMap>
+
+    <!-- 日志列表查询（PageHelper 分页） -->
+    <select id="selectList" resultMap="BaseResultMap"
+            parameterType="com.ruoyi.vehicle.domain.SysHeartbeatLogQuery">
+        SELECT *
+        FROM sys_heartbeat_log
+        WHERE 1 = 1
+        <if test="countryCode != null and countryCode != ''">
+            AND country_code = #{countryCode}
+        </if>
+        <if test="checkResult != null">
+            AND check_result = #{checkResult}
+        </if>
+        <if test="accountId != null">
+            AND account_id = #{accountId}
+        </if>
+        <if test="beginTime != null and beginTime != ''">
+            AND check_time &gt;= #{beginTime}
+        </if>
+        <if test="endTime != null and endTime != ''">
+            AND check_time &lt;= #{endTime}
+        </if>
+        ORDER BY check_time DESC
+    </select>
+
+    <!-- 新增日志 -->
+    <insert id="insert" parameterType="com.ruoyi.vehicle.domain.SysHeartbeatLog"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sys_heartbeat_log (
+            account_id, country_code, api_url, check_time,
+            check_result, response_code, exception_type, exception_msg,
+            is_reconnect, reconnect_count, reconnect_result, create_time
+        ) VALUES (
+                     #{accountId}, #{countryCode}, #{apiUrl}, #{checkTime},
+                     #{checkResult}, #{responseCode}, #{exceptionType}, #{exceptionMsg},
+                     #{isReconnect}, #{reconnectCount}, #{reconnectResult}, NOW()
+                 )
+    </insert>
+
+    <!-- 查询某账号最近N分钟内异常记录数 -->
+    <select id="countExceptionInMinutes" resultType="int">
+        SELECT COUNT(*)
+        FROM sys_heartbeat_log
+        WHERE account_id = #{accountId}
+          AND check_result = 1
+          AND check_time &gt;= DATE_SUB(NOW(), INTERVAL #{minutes} MINUTE)
+    </select>
+
+    <!-- 查询某账号当前异常周期累计重连次数（从最后一次正常心跳之后算起） -->
+    <select id="countReconnectTimes" resultType="int">
+        SELECT COALESCE(SUM(reconnect_count), 0)
+        FROM sys_heartbeat_log
+        WHERE account_id = #{accountId}
+          AND is_reconnect = 1
+          AND check_time &gt;= (
+            SELECT COALESCE(MAX(t2.check_time), '1970-01-01')
+            FROM sys_heartbeat_log t2
+            WHERE t2.account_id = #{accountId}
+              AND t2.check_result = 0
+              AND t2.is_reconnect = 0
+        )
+    </select>
+
+    <!-- 清理90天前日志 -->
+    <delete id="deleteExpiredLogs">
+        DELETE FROM sys_heartbeat_log
+        WHERE check_time &lt; DATE_SUB(NOW(), INTERVAL 90 DAY)
+    </delete>
+
+</mapper>
