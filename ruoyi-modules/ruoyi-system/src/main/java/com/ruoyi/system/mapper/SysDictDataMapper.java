@@ -114,4 +114,9 @@ public interface SysDictDataMapper
 
     // 聚合总数
     long countDictDataListAggregated(SysDictData dictData);
+
+    /**
+     * 查询指定字典类型和 dict_sort 集合的字典数据
+     */
+    List<SysDictData> selectDictDataBySortList(@Param("dictType") String dictType, @Param("sortList") List<Integer> sortList);
 }

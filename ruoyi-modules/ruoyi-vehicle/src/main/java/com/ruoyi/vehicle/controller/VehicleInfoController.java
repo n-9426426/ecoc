@@ -192,7 +192,7 @@ public class VehicleInfoController extends BaseController {
     @PostMapping("/export/excel")
     public void exportExcel(HttpServletResponse response, @RequestBody VehicleInfo vehicleInfo) throws Exception {
         List<VehicleInfo> list = vehicleInfoService.selectVehicleInfoList(vehicleInfo);
-        excelUtil.exportExcel(response, list, "vehicle", "Vehicle");
+        excelUtil.exportExcel(response, list, "vehicle_info", "Vehicle");
     }
 
     /**

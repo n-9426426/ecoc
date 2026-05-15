@@ -1,90 +1,160 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper
-PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
-"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.ruoyi.system.mapper.SysNoticeMapper">
-    
+
     <resultMap type="SysNotice" id="SysNoticeResult">
-        <result property="noticeId"       column="notice_id"       />
-        <result property="noticeTitle"    column="notice_title"    />
-        <result property="noticeType"     column="notice_type"     />
-        <result property="noticeContent"  column="notice_content"  />
-        <result property="status"         column="status"          />
-        <result property="createBy"       column="create_by"       />
-        <result property="createTime"     column="create_time"     />
-        <result property="updateBy"       column="update_by"       />
-        <result property="updateTime"     column="update_time"     />
-        <result property="remark"         column="remark"          />
+        <result property="noticeId"      column="notice_id"      />
+        <result property="noticeTitle"   column="notice_title"   />
+        <result property="noticeType"    column="notice_type"    />
+        <result property="noticeContent" column="notice_content" />
+        <result property="status"        column="status"         />
+        <result property="createBy"      column="create_by"      />
+        <result property="createTime"    column="create_time"    />
+        <result property="updateBy"      column="update_by"      />
+        <result property="updateTime"    column="update_time"    />
+        <result property="remark"        column="remark"         />
+        <!-- 联查岗位ID列表 -->
+        <collection property="postIds" ofType="java.lang.Long"
+                    select="selectPostIdsByNoticeId" column="notice_id"/>
+        <!-- 联查角色ID列表 -->
+        <collection property="roleIds" ofType="java.lang.Long"
+                    select="selectRoleIdsByNoticeId" column="notice_id"/>
     </resultMap>
-    
+
     <sql id="selectNoticeVo">
-        select notice_id, notice_title, notice_type, cast(notice_content as char) as notice_content, status, create_by, create_time, update_by, update_time, remark 
-		from sys_notice
+        select notice_id, notice_title, notice_type, cast(notice_content as char) as notice_content,
+               status, create_by, create_time, update_by, update_time, remark
+        from sys_notice
     </sql>
-    
+
+    <!-- 供 resultMap collection 调用的子查询 -->
+    <select id="selectPostIdsByNoticeId" resultType="java.lang.Long">
+        SELECT post_id FROM sys_notice_post WHERE notice_id = #{noticeId}
+    </select>
+
+    <select id="selectRoleIdsByNoticeId" resultType="java.lang.Long">
+        SELECT role_id FROM sys_notice_role WHERE notice_id = #{noticeId}
+    </select>
+
+    <!-- 查询详情，resultMap 自动触发 collection 子查询 -->
     <select id="selectNoticeById" parameterType="Long" resultMap="SysNoticeResult">
         <include refid="selectNoticeVo"/>
         where notice_id = #{noticeId}
     </select>
-    
-    <select id="selectNoticeList" parameterType="SysNotice" resultMap="SysNoticeResult">
+
+    <!-- 查询列表，resultMap 自动触发 collection 子查询 -->
+    <select id="selectNoticeList" resultMap="SysNoticeResult">
         <include refid="selectNoticeVo"/>
         <where>
-			<if test="noticeTitle != null and noticeTitle != ''">
-				AND notice_title like concat('%', #{noticeTitle}, '%')
-			</if>
-			<if test="noticeType != null and noticeType != ''">
-				AND notice_type = #{noticeType}
-			</if>
-			<if test="createBy != null and createBy != ''">
-				AND create_by like concat('%', #{createBy}, '%')
-			</if>
-		</where>
-		order by notice_id desc
+            <if test="notice.noticeTitle != null and notice.noticeTitle != ''">
+                AND notice_title like concat('%', #{notice.noticeTitle}, '%')
+            </if>
+            <if test="notice.noticeType != null and notice.noticeType != ''">
+                AND notice_type = #{notice.noticeType}
+            </if>
+            <if test="notice.createBy != null and notice.createBy != ''">
+                AND create_by like concat('%', #{notice.createBy}, '%')
+            </if>
+            <if test="userId != null">
+                AND (
+                    <!-- 全量：该用户在 notice_group/notice_role 两张表都没有配置 -->
+                    notice_id NOT IN (SELECT notice_id FROM sys_notice_post) AND notice_id NOT IN (SELECT notice_id FROM sys_notice_role)
+                    OR
+                    <!-- 按岗位权限 -->
+                    notice_id IN (SELECT np.notice_id FROM sys_notice_post np INNER JOIN sys_user_post up ON np.post_id = up.post_id WHERE up.user_id = #{userId})
+                    OR
+                    <!-- 按角色权限 -->
+                    notice_id IN (SELECT nr.notice_id FROM sys_notice_role nr INNER JOIN sys_user_role ur ON nr.role_id = ur.role_id WHERE ur.user_id = #{userId})
+                )
+            </if>
+        </where>
+        order by notice_id desc
     </select>
-    
-    <insert id="insertNotice" parameterType="SysNotice">
+
+    <insert id="insertNotice" parameterType="SysNotice" useGeneratedKeys="true" keyProperty="noticeId">
         insert into sys_notice (
-			<if test="noticeTitle != null and noticeTitle != '' ">notice_title, </if>
-			<if test="noticeType != null and noticeType != '' ">notice_type, </if>
-			<if test="noticeContent != null and noticeContent != '' ">notice_content, </if>
-			<if test="status != null and status != '' ">status, </if>
-			<if test="remark != null and remark != ''">remark,</if>
- 			<if test="createBy != null and createBy != ''">create_by,</if>
- 			create_time
- 		)values(
-			<if test="noticeTitle != null and noticeTitle != ''">#{noticeTitle}, </if>
-			<if test="noticeType != null and noticeType != ''">#{noticeType}, </if>
-			<if test="noticeContent != null and noticeContent != ''">#{noticeContent}, </if>
-			<if test="status != null and status != ''">#{status}, </if>
-			<if test="remark != null and remark != ''">#{remark},</if>
- 			<if test="createBy != null and createBy != ''">#{createBy},</if>
- 			sysdate()
-		)
+        <if test="noticeTitle != null and noticeTitle != ''">notice_title, </if>
+        <if test="noticeType != null and noticeType != ''">notice_type, </if>
+        <if test="noticeContent != null and noticeContent != ''">notice_content, </if>
+        <if test="status != null and status != ''">status, </if>
+        <if test="remark != null and remark != ''">remark, </if>
+        <if test="createBy != null and createBy != ''">create_by, </if>
+        create_time
+        ) values (
+        <if test="noticeTitle != null and noticeTitle != ''">#{noticeTitle}, </if>
+        <if test="noticeType != null and noticeType != ''">#{noticeType}, </if>
+        <if test="noticeContent != null and noticeContent != ''">#{noticeContent}, </if>
+        <if test="status != null and status != ''">#{status}, </if>
+        <if test="remark != null and remark != ''">#{remark}, </if>
+        <if test="createBy != null and createBy != ''">#{createBy}, </if>
+        sysdate()
+        )
     </insert>
-	 
+
+    <!-- 批量插入岗位关联 -->
+    <insert id="insertNoticePost">
+        INSERT INTO sys_notice_post (notice_id, post_id) VALUES
+        <foreach collection="postIds" item="postId" separator=",">
+            (#{noticeId}, #{postId})
+        </foreach>
+    </insert>
+
+    <!-- 批量插入角色关联 -->
+    <insert id="insertNoticeRole">
+        INSERT INTO sys_notice_role (notice_id, role_id) VALUES
+        <foreach collection="roleIds" item="roleId" separator=",">
+            (#{noticeId}, #{roleId})
+        </foreach>
+    </insert>
+
     <update id="updateNotice" parameterType="SysNotice">
-        update sys_notice 
+        update sys_notice
         <set>
             <if test="noticeTitle != null and noticeTitle != ''">notice_title = #{noticeTitle}, </if>
             <if test="noticeType != null and noticeType != ''">notice_type = #{noticeType}, </if>
             <if test="noticeContent != null">notice_content = #{noticeContent}, </if>
             <if test="status != null and status != ''">status = #{status}, </if>
-            <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
- 			update_time = sysdate()
+            <if test="updateBy != null and updateBy != ''">update_by = #{updateBy}, </if>
+            update_time = sysdate()
         </set>
         where notice_id = #{noticeId}
     </update>
-	
+
+    <!-- 删除单条通知及其关联数据 -->
     <delete id="deleteNoticeById" parameterType="Long">
         delete from sys_notice where notice_id = #{noticeId}
     </delete>
-    
+
+    <delete id="deleteNoticePostByNoticeId" parameterType="Long">
+        DELETE FROM sys_notice_post WHERE notice_id = #{noticeId}
+    </delete>
+
+    <delete id="deleteNoticeRoleByNoticeId" parameterType="Long">
+        DELETE FROM sys_notice_role WHERE notice_id = #{noticeId}
+    </delete>
+
+    <!-- 批量删除通知及其关联数据 -->
     <delete id="deleteNoticeByIds" parameterType="Long">
-        delete from sys_notice where notice_id in 
+        delete from sys_notice where notice_id in
         <foreach item="noticeId" collection="array" open="(" separator="," close=")">
             #{noticeId}
         </foreach>
     </delete>
-    
+
+    <delete id="deleteNoticePostByNoticeIds" parameterType="Long">
+        DELETE FROM sys_notice_post WHERE notice_id IN
+        <foreach item="noticeId" collection="array" open="(" separator="," close=")">
+            #{noticeId}
+        </foreach>
+    </delete>
+
+    <delete id="deleteNoticeRoleByNoticeIds" parameterType="Long">
+        DELETE FROM sys_notice_role WHERE notice_id IN
+        <foreach item="noticeId" collection="array" open="(" separator="," close=")">
+            #{noticeId}
+        </foreach>
+    </delete>
+
 </mapper>

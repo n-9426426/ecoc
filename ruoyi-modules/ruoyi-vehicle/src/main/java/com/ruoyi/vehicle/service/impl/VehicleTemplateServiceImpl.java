@@ -143,8 +143,11 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         template.setVersion("1.0");
         template.setStatus("1");
         template.setValidateResult("0");
+        template.setValidateTime(null);
+        template.setValidateMsg(null);
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(DateUtils.getNowDate());
+        template.setIsLast(1);
         if (!StringUtils.isBlank(template.getType()) && !StringUtils.isBlank(template.getVariant()) && !StringUtils.isBlank(template.getVersion())) {
             template.setTvv(template.getType() + "," + template.getVariant() + "," + template.getVersionNo());
         }
@@ -165,6 +168,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         }
         template.setUuid(existTemplate.getUuid());
         template.setTemplateId(null);
+        template.setStatus(existTemplate.getStatus());
         template.setVersion(templateVersion);
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(DateUtils.getNowDate());
@@ -289,6 +293,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             templateMapper.batchUpdateValidateResult(updateList);
         }
         sysNotice.setNoticeContent(msg.toString());
+        sysNotice.setSorts(Arrays.asList(8, 9));
         remoteNoticeService.innerAdd(sysNotice);
         return reports;
     }

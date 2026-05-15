@@ -58,14 +58,15 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
 
         // 3. 查询字典
         Map<Long, SysDictData> attrDictMap = getDictMap("vehicle_attribute");
-        Map<Long, SysDictData> modelDictMap = getDictMap("vehicle_model");
+        Map<String, SysDictData> modelDictMap = getDictMapByValue("vehicle_model");
 
         // 4. 组装VO
         XmlTemplateVo vo = new XmlTemplateVo();
         BeanUtils.copyProperties(template, vo);
+        vo.setModelDictLabel(template.getModelDictCode());
 
         SysDictData modelDict = modelDictMap.get(template.getModelDictCode());
-        vo.setModelDictLabel(modelDict != null ? modelDict.getDictLabel() : "");
+        vo.setModelDictCode(modelDict != null ? modelDict.getDictCode() : null);
         Map<String, SysDictData> uuidDictMap = getUuidDictMap("vehicle_attribute");
         vo.setAttributeTree(buildAttributeTree(attrList, uuidDictMap));
 
@@ -189,15 +190,16 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
 
         // 5. 一次性查询字典，所有模板共用
         Map<Long, SysDictData> attrDictMap = getDictMap("vehicle_attribute");
-        Map<Long, SysDictData> modelDictMap = getDictMap("vehicle_model");
+        Map<String, SysDictData> modelDictMap = getDictMapByValue("vehicle_model");
 
         // 6. 组装VO（每个模板均携带属性树）
         return templateList.stream().map(template -> {
             XmlTemplateVo vo = new XmlTemplateVo();
             BeanUtils.copyProperties(template, vo);
+            vo.setModelDictLabel(template.getModelDictCode());
 
             SysDictData modelDict = modelDictMap.get(template.getModelDictCode());
-            vo.setModelDictLabel(modelDict != null ? modelDict.getDictLabel() : "");
+            vo.setModelDictCode(modelDict != null ? modelDict.getDictCode() : null);
 
             List<XmlTemplateAttribute> attrList = attrGroupMap.getOrDefault(template.getTemplateId(), Collections.emptyList());
             Map<String, SysDictData> uuidDictMap = getUuidDictMap("vehicle_attribute");
@@ -311,6 +313,11 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
     private Map<Long, SysDictData> getDictMap(String dictType) {
         List<SysDictData> list = remoteDictService.getDictDataByType(dictType).getData();
         return list.stream().collect(Collectors.toMap(SysDictData::getDictCode, d -> d));
+    }
+
+    private Map<String, SysDictData> getDictMapByValue(String dictType) {
+        List<SysDictData> list = remoteDictService.getDictDataByType(dictType).getData();
+        return list.stream().collect(Collectors.toMap(SysDictData::getDictValue, d -> d));
     }
 
     // 新增工具方法：构建 dictCode -> uuid 的映射

@@ -24,8 +24,13 @@
     <select id="selectByVinAndDateRange" resultMap="BaseResultMap">
         SELECT id, vin, time, operate, result
         FROM vehicle_lifecycle
-        WHERE vin = #{vin} and time &gt;= #{startTime}
-          AND time &lt;= #{endTime}
+        <where>
+            <if test="vin != null and vin != ''">
+                AND vin = #{vin}
+            </if>
+            AND time &gt;= #{startTime}
+            AND time &lt;= #{endTime}
+        </where>
         ORDER BY time ASC
     </select>
 

@@ -11,6 +11,8 @@ import com.ruoyi.system.api.domain.ExcelColumnConfig;
 import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.system.mapper.DictDataExcelColumnConfigMapper;
 import com.ruoyi.system.mapper.SysDictDataMapper;
+import com.ruoyi.system.mapper.SysPostMapper;
+import com.ruoyi.system.mapper.SysRoleMapper;
 import com.ruoyi.system.service.ISysDictDataService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -31,6 +33,12 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
 
     @Autowired
     private SysDictDataMapper dictDataMapper;
+
+    @Autowired
+    private SysRoleMapper roleMapper;
+
+    @Autowired
+    private SysPostMapper postMapper;
 
     @Autowired
     private DictDataExcelColumnConfigMapper dictDataExcelColumnConfigMapper;
@@ -240,6 +248,46 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
     @Override
     public String selectDictLabel(String dictType, String dictValue) {
         return dictDataMapper.selectDictLabel(dictType, dictValue);
+    }
+
+    @Override
+    public Map<String, List<Long>> selectNoticeGroupAuth(List<Integer> sortList)
+    {
+        // 1. 查询字典记录
+        List<SysDictData> dictList = dictDataMapper.selectDictDataBySortList("notice_group", sortList);
+
+        List<String> roleKeys = new ArrayList<>();
+        List<String> postNames = new ArrayList<>();
+
+        // 2. 按奇偶拆分 dict_value
+        for (SysDictData dict : dictList) {
+            // dict_value 为空则跳过
+            if (dict.getDictValue() == null || dict.getDictValue().trim().isEmpty())
+            {
+                continue;
+            }
+            List<String> trimmed = Arrays.stream(dict.getDictValue().split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .collect(Collectors.toList());
+
+            if (dict.getDictSort() % 2 == 0) {
+                roleKeys.addAll(trimmed);
+            } else {
+                postNames.addAll(trimmed);
+            }
+        }
+
+        // 3. 分别查询 ID 并组装 Map
+        Map<String, List<Long>> result = new HashMap<>();
+        result.put("roleIds", roleKeys.isEmpty()
+                ? Collections.emptyList()
+                : roleMapper.selectRoleIdsByRoleKeys(roleKeys));
+        result.put("postIds", postNames.isEmpty()
+                ? Collections.emptyList()
+                : postMapper.selectPostIdsByPostNames(postNames));
+
+        return result;
     }
 
     // ================================================================

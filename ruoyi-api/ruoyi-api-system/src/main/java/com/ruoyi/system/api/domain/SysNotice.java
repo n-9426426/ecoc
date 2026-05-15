@@ -8,6 +8,7 @@ import org.apache.commons.lang3.builder.ToStringStyle;
 
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Size;
+import java.util.List;
 
 /**
  * 通知公告表 sys_notice
@@ -40,6 +41,15 @@ public class SysNotice extends BaseEntity
     private Integer pageNum;
 
     private Integer pageSize;
+
+    /** 关联岗位ID列表 */
+    private List<Long> postIds;
+
+    /** 关联角色ID列表 */
+    private List<Long> roleIds;
+
+    // 系统内部发送通知时，字典中dict_type="notice_group"中的排序
+    private List<Integer> sorts;
 
     public Long getNoticeId()
     {
@@ -134,5 +144,29 @@ public class SysNotice extends BaseEntity
 
     public void setPageSize(Integer pageSize) {
         this.pageSize = pageSize;
+    }
+
+    public List<Long> getPostIds() {
+        return postIds;
+    }
+
+    public void setPostIds(List<Long> postIds) {
+        this.postIds = postIds;
+    }
+
+    public List<Long> getRoleIds() {
+        return roleIds;
+    }
+
+    public void setRoleIds(List<Long> roleIds) {
+        this.roleIds = roleIds;
+    }
+
+    public List<Integer> getSorts() {
+        return sorts;
+    }
+
+    public void setSorts(List<Integer> sorts) {
+        this.sorts = sorts;
     }
 }

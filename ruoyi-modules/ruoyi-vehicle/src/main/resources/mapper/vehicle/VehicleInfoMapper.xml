@@ -63,6 +63,12 @@
 	<select id="selectVehicleInfoList" parameterType="VehicleInfo" resultMap="VehicleInfoResult">
 		<include refid="selectVehicleInfoVo"/>
 		<where>
+			<if test="vehicleIds != null and vehicleIds.size() > 0">
+				and vehicle_id in
+				<foreach item="vehicleId" collection="vehicleIds" open="(" separator="," close=")">
+					#{vehicleId}
+				</foreach>
+			</if>
 			<if test="vinList != null and vinList.size() > 0">
 				AND (
 				<foreach collection="vinList" item="v" separator=" OR ">
@@ -120,7 +126,7 @@
 				AND status = #{status}
 			</if>
 			<if test="cocTemplateNo != null and cocTemplateNo != ''">
-				AND coc_template_no = #{cocTemplateNo}
+				AND coc_template_no like concat('%', #{cocTemplateNo}, '%')
 			</if>
 			<if test="reclaim != null and reclaim">
 				AND deleted = 2
@@ -129,10 +135,25 @@
 				AND deleted = 0
 			</if>
 			<if test="tvv != null and tvv != ''">
-				and tvv = #{tvv}
+				and tvv like concat('%', #{tvv}, '%')
 			</if>
 			<if test="breakpointTime != null">
 				AND DATE(breakpoint_time) = DATE(#{breakpointTime})
+			</if>
+			<if test="brand != null and brand != ''">
+				and brand like concat('%', #{brand}, '%')
+			</if>
+			<if test="saleName != null and saleName != ''">
+				and sale_name like concat('%', #{saleName}, '%')
+			</if>
+			<if test="engineNumber != null and engineNumber != ''">
+				and engine_number like concat('%', #{engineNumber}, '%')
+			</if>
+			<if test="manufactureBeginTime != null">
+				AND manufacture_date >= #{manufactureBeginTime}
+			</if>
+			<if test="manufactureEndTime != null">
+				AND manufacture_date &lt;= #{manufactureEndTime}
 			</if>
 			${params.dataScope}
 		</where>

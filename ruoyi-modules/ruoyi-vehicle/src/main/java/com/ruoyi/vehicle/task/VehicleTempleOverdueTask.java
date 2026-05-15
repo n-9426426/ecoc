@@ -11,6 +11,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -70,6 +71,7 @@ public class VehicleTempleOverdueTask {
         sysNotice.setNoticeContent(msg.toString());
         sysNotice.setCreateBy("自动提醒");
         sysNotice.setCreateTime(new Date());
+        sysNotice.setSorts(Arrays.asList(4, 5));
         return remoteNoticeService.innerAdd(sysNotice);
     }
 }

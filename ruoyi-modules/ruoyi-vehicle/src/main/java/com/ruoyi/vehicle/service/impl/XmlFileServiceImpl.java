@@ -719,6 +719,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 abnormalClassifyMapper.batchInsert(abnormalClassifies);
             }
             sysNotice.setNoticeContent(msg.toString());
+            sysNotice.setSorts(Arrays.asList(12, 13));
             remoteNoticeService.innerAdd(sysNotice);
             return finalReport;
         } catch (Exception e) {
@@ -1311,19 +1312,16 @@ public class XmlFileServiceImpl implements IXmlFileService {
         if (vehicle.getStatus().equals(1)) {
             throw new RuntimeException("车辆信息已停用");
         }
+        SysNotice sysNotice = new SysNotice();
+        sysNotice.setIsRead(false);
+        sysNotice.setNoticeType("1");
+        sysNotice.setNoticeTitle("XML文件生成通知");
+        StringBuilder msg = new StringBuilder("XML文件");
+        msg.append(System.lineSeparator());
+        msg.append("Vin");
+        msg.append(vehicle.getVin());
+        msg.append("的生成结果为: ");
         try {
-            SysNotice sysNotice = new SysNotice();
-            sysNotice.setIsRead(false);
-            sysNotice.setNoticeType("1");
-            sysNotice.setNoticeTitle("XML文件生成通知");
-            StringBuilder msg = new StringBuilder("XML文件");
-            msg.append(System.lineSeparator());
-            msg.append("Vin");
-
-            // 1. 查询车辆信息
-
-            msg.append(vehicle.getVin());
-            msg.append("的生成结果为");
             Map<String, Object> jsonMap = vehicle.getJsonMap();
             if (jsonMap == null) {
                 jsonMap = new HashMap<>();
@@ -1334,6 +1332,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (xmlTemplate == null) {
                 msg.append("失败");
                 sysNotice.setNoticeContent(msg.toString());
+                sysNotice.setSorts(Arrays.asList(14, 15));
                 remoteNoticeService.innerAdd(sysNotice);
                 throw new RuntimeException("未找到匹配的XML模板，VIN=" + vehicle.getVin());
             }
@@ -1352,6 +1351,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (attrList == null || attrList.isEmpty()) {
                 msg.append("失败");
                 sysNotice.setNoticeContent(msg.toString());
+                sysNotice.setSorts(Arrays.asList(14, 15));
                 remoteNoticeService.innerAdd(sysNotice);
                 throw new ServiceException("模板无属性定义，无法生成XML");
             }
@@ -1363,12 +1363,14 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (topLevelAttrs.isEmpty()) {
                 msg.append("失败");
                 sysNotice.setNoticeContent(msg.toString());
+                sysNotice.setSorts(Arrays.asList(14, 15));
                 remoteNoticeService.innerAdd(sysNotice);
                 throw new ServiceException("模板无顶层节点，XML必须有唯一根节点");
             }
             if (topLevelAttrs.size() > 1) {
                 msg.append("失败");
                 sysNotice.setNoticeContent(msg.toString());
+                sysNotice.setSorts(Arrays.asList(14, 15));
                 remoteNoticeService.innerAdd(sysNotice);
                 throw new ServiceException("模板存在多个顶层节点，XML 不允许多根节点");
             }
@@ -1532,6 +1534,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             msg.append("成功");
             sysNotice.setNoticeContent(msg.toString());
+            sysNotice.setSorts(Arrays.asList(14, 15));
             remoteNoticeService.innerAdd(sysNotice);
 
             return xmlContent;
@@ -1543,6 +1546,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
             vehicleLifecycle.setOperate("2");
             vehicleLifecycle.setResult(1);
             vehicleLifecycleMapper.insert(vehicleLifecycle);
+
+            msg.append("失败");
+            sysNotice.setNoticeContent(msg.toString());
+            sysNotice.setSorts(Arrays.asList(14, 15));
+            remoteNoticeService.innerAdd(sysNotice);
             throw new RuntimeException("生成XML失败: " + e.getMessage());
         }
     }

@@ -30,6 +30,7 @@ import java.util.List;
 public class SysAccountConfigController extends BaseController {
 
     private final SysAccountConfigService accountConfigService;
+
     private final HeartbeatService heartbeatService;
 
     /**

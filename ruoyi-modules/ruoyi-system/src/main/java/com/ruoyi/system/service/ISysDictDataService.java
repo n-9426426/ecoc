@@ -3,6 +3,7 @@ package com.ruoyi.system.service;
 import com.ruoyi.system.api.domain.SysDictData;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 字典 业务层
@@ -58,4 +59,6 @@ public interface ISysDictDataService
      * @return 结果
      */
     public int updateDictData(SysDictData dictData);
+
+    Map<String, List<Long>> selectNoticeGroupAuth(List<Integer> sortList);
 }

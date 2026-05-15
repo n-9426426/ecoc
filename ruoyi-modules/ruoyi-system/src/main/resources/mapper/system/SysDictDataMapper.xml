@@ -301,4 +301,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		GROUP BY sdd.uuid
 		) t
 	</select>
+
+	<select id="selectDictDataBySortList" resultType="com.ruoyi.system.api.domain.SysDictData">
+		SELECT dict_sort AS dictSort, dict_value AS dictValue
+		FROM sys_dict_data
+		WHERE dict_type = #{dictType}
+		AND dict_sort IN
+		<foreach collection="sortList" item="sort" open="(" separator="," close=")">
+			#{sort}
+		</foreach>
+	</select>
 </mapper> 

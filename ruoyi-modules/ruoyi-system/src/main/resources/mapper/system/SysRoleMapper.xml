@@ -148,5 +148,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
  			#{roleId}
         </foreach> 
  	</delete>
+
+	<select id="selectRoleIdsByRoleKeys" resultType="java.lang.Long">
+		SELECT role_id
+		FROM sys_role
+		WHERE role_key IN
+		<foreach collection="roleKeys" item="roleKey" open="(" separator="," close=")">
+			#{roleKey}
+		</foreach>
+	</select>
  	
 </mapper> 

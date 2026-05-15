@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- SysNoticeRoleMapper.xml -->
+<mapper namespace="com.ruoyi.system.mapper.SysNoticeRoleMapper">
+
+    <select id="selectRoleIdsByNoticeId" resultType="java.lang.Long">
+        SELECT role_id
+        FROM sys_notice_role
+        WHERE notice_id = #{noticeId}
+    </select>
+
+    <select id="selectUserIdsByRoleIds" resultType="java.lang.Long">
+        SELECT DISTINCT user_id
+        FROM sys_user_role
+        WHERE role_id IN
+        <foreach collection="roleIds" item="roleId" open="(" separator="," close=")">
+            #{roleId}
+        </foreach>
+    </select>
+
+</mapper>

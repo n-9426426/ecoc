@@ -356,6 +356,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             abnormalClassifyMapper.batchInsert(abnormalClassifies);
         }
         sysNotice.setNoticeContent(msg.toString());
+        sysNotice.setSorts(Arrays.asList(10, 11));
         remoteNoticeService.innerAdd(sysNotice);
         return validationReports;
     }

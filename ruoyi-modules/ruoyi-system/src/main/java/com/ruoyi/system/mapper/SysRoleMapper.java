@@ -1,6 +1,7 @@
 package com.ruoyi.system.mapper;
 
 import com.ruoyi.system.api.domain.SysRole;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
@@ -105,4 +106,9 @@ public interface SysRoleMapper
      * @return 结果
      */
     public int deleteRoleByIds(Long[] roleIds);
+
+    /**
+     * 根据角色标识列表查询角色ID列表
+     */
+    List<Long> selectRoleIdsByRoleKeys(@Param("roleKeys") List<String> roleKeys);
 }

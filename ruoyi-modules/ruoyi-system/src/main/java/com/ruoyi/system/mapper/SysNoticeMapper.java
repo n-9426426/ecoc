@@ -1,61 +1,74 @@
 package com.ruoyi.system.mapper;
 
 import com.ruoyi.system.api.domain.SysNotice;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
 /**
- * 通知公告表 数据层
- * 
+ * 公告 数据层
+ *
  * @author ruoyi
  */
 public interface SysNoticeMapper
 {
     /**
-     * 查询公告信息
-     * 
-     * @param noticeId 公告ID
-     * @return 公告信息
+     * 查询公告信息（含岗位/角色关联）
      */
-    public SysNotice selectNoticeById(Long noticeId);
+    SysNotice selectNoticeById(Long noticeId);
 
     /**
-     * 查询公告列表
-     * 
-     * @param notice 公告信息
-     * @return 公告集合
+     * 查询公告列表（含岗位/角色关联）
      */
-    public List<SysNotice> selectNoticeList(SysNotice notice);
+    List<SysNotice> selectNoticeList(@Param("notice") SysNotice notice, @Param("userId") Long userId);
 
     /**
      * 新增公告
-     * 
-     * @param notice 公告信息
-     * @return 结果
      */
-    public int insertNotice(SysNotice notice);
+    int insertNotice(SysNotice notice);
+
+    /**
+     * 批量插入通知岗位关联
+     */
+    int insertNoticePost(@Param("noticeId") Long noticeId, @Param("postIds") List<Long> postIds);
+
+    /**
+     * 批量插入通知角色关联
+     */
+    int insertNoticeRole(@Param("noticeId") Long noticeId, @Param("roleIds") List<Long> roleIds);
 
     /**
      * 修改公告
-     * 
-     * @param notice 公告信息
-     * @return 结果
      */
-    public int updateNotice(SysNotice notice);
+    int updateNotice(SysNotice notice);
+
+    /**
+     * 删除公告
+     */
+    int deleteNoticeById(Long noticeId);
+
+    /**
+     * 删除单条通知的岗位关联
+     */
+    int deleteNoticePostByNoticeId(Long noticeId);
+
+    /**
+     * 删除单条通知的角色关联
+     */
+    int deleteNoticeRoleByNoticeId(Long noticeId);
 
     /**
      * 批量删除公告
-     * 
-     * @param noticeId 公告ID
-     * @return 结果
      */
-    public int deleteNoticeById(Long noticeId);
+    int deleteNoticeByIds(Long[] noticeIds);
 
     /**
-     * 批量删除公告信息
-     * 
-     * @param noticeIds 需要删除的公告ID
-     * @return 结果
+     * 批量删除通知岗位关联
      */
-    public int deleteNoticeByIds(Long[] noticeIds);
+    int deleteNoticePostByNoticeIds(Long[] noticeIds);
+
+    /**
+     * 批量删除通知角色关联
+     */
+    int deleteNoticeRoleByNoticeIds(Long[] noticeIds);
 }

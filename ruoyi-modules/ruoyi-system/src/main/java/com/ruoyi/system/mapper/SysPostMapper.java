@@ -1,6 +1,7 @@
 package com.ruoyi.system.mapper;
 
 import com.ruoyi.system.domain.SysPost;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
@@ -97,4 +98,9 @@ public interface SysPostMapper
      * @return 结果
      */
     public SysPost checkPostCodeUnique(String postCode);
+
+    /**
+     * 根据岗位名称列表查询岗位ID列表
+     */
+    List<Long> selectPostIdsByPostNames(@Param("postNames") List<String> postNames);
 }

@@ -94,7 +94,7 @@
                 </if>
             </otherwise>
         </choose>
-        order by vt.version desc
+        ORDER BY CAST(vt.version AS DECIMAL(10, 2)) DESC
         limit 1
     </select>
 

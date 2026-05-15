@@ -5,6 +5,8 @@ import com.alibaba.otter.canal.client.CanalConnectors;
 import com.alibaba.otter.canal.protocol.CanalEntry;
 import com.alibaba.otter.canal.protocol.Message;
 import com.ruoyi.system.controller.SysNoticeController;
+import com.ruoyi.system.mapper.SysNoticePostMapper;
+import com.ruoyi.system.mapper.SysNoticeRoleMapper;
 import com.ruoyi.system.service.ISysNoticeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,10 +16,9 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
+import javax.annotation.Resource;
 import java.net.InetSocketAddress;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -62,6 +63,12 @@ public class NoticeListener {
 
     @Autowired
     private ISysNoticeService noticeService;
+
+    @Resource
+    private SysNoticePostMapper sysNoticePostMapper;
+
+    @Resource
+    private SysNoticeRoleMapper sysNoticeRoleMapper;
 
     private volatile boolean running = true;
     private CanalConnector connector;
@@ -180,6 +187,8 @@ public class NoticeListener {
 
             for (CanalEntry.RowData rowData : rowChange.getRowDatasList()) {
                 if (rowChange.getEventType() == CanalEntry.EventType.INSERT) {
+
+                    // 构建推送数据
                     Map<String, Object> data = new HashMap<>();
                     data.put("database", entry.getHeader().getSchemaName());
                     data.put("table", entry.getHeader().getTableName());
@@ -187,8 +196,32 @@ public class NoticeListener {
                     data.put("timestamp", System.currentTimeMillis());
                     data.put("rows", parseRow(rowData));
 
-                    SysNoticeController.broadcast(data);
-                    log.info("新增公告: {}", getColumnValue(rowData.getAfterColumnsList(), "notice_title"));
+                    // 取出 notice_id
+                    String noticeIdStr = getColumnValue(rowData.getAfterColumnsList(), "notice_id");
+                    Long noticeId = Long.parseLong(noticeIdStr);
+
+                    // 查询通知关联的 post_id 和 role_id
+                    List<Long> postIds = sysNoticePostMapper.selectPostIdsByNoticeId(noticeId);
+                    List<Long> roleIds = sysNoticeRoleMapper.selectRoleIdsByNoticeId(noticeId);
+
+                    if (postIds.isEmpty() && roleIds.isEmpty()) {
+                        // 两张关联表均无数据，全员推送
+                        SysNoticeController.broadcast(data);
+                    } else {
+                        // 按岗位查用户
+                        Set<Long> targetUserIds = new HashSet<>();
+                        if (!postIds.isEmpty()) {
+                            targetUserIds.addAll(sysNoticePostMapper.selectUserIdsByPostIds(postIds));
+                        }
+                        // 按角色查用户，union 去重
+                        if (!roleIds.isEmpty()) {
+                            targetUserIds.addAll(sysNoticeRoleMapper.selectUserIdsByRoleIds(roleIds));
+                        }
+                        // 定向推送
+                        SysNoticeController.broadcastToUsers(targetUserIds, data);
+                    }
+
+                    log.info("新增公告: {}, 目标岗位: {}, 目标角色: {}", getColumnValue(rowData.getAfterColumnsList(), "notice_title"), postIds, roleIds);
 
                 } else if (rowChange.getEventType() == CanalEntry.EventType.UPDATE) {
                     log.info("修改公告: {}", getColumnValue(rowData.getAfterColumnsList(), "notice_title"));

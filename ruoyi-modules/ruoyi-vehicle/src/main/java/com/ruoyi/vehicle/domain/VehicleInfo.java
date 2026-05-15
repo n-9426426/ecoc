@@ -41,6 +41,10 @@ public class VehicleInfo extends BaseEntity {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date manufactureDate;
 
+    private Date manufactureBeginTime;
+
+    private Date manufactureEndTime;
+
     /** 发证日期 */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date issueDate;

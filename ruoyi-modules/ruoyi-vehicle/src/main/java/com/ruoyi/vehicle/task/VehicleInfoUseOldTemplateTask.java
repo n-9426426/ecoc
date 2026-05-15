@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -58,6 +59,7 @@ public class VehicleInfoUseOldTemplateTask {
         sysNotice.setNoticeContent(msg.toString());
         sysNotice.setCreateBy("自动提醒");
         sysNotice.setCreateTime(new Date());
+        sysNotice.setSorts(Arrays.asList(0, 1));
         return remoteNoticeService.innerAdd(sysNotice);
     }
 }

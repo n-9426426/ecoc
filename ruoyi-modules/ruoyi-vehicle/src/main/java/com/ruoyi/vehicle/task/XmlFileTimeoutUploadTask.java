@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.text.SimpleDateFormat;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -72,6 +73,7 @@ public class XmlFileTimeoutUploadTask {
         sysNotice.setNoticeContent(msg.toString());
         sysNotice.setCreateBy("自动提醒");
         sysNotice.setCreateTime(new Date());
+        sysNotice.setSorts(Arrays.asList(6, 7));
         return remoteNoticeService.innerAdd(sysNotice);
     }
 }

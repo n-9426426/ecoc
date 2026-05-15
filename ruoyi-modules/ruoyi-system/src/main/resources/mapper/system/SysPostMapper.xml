@@ -119,4 +119,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         </foreach> 
  	</delete>
 
+	<select id="selectPostIdsByPostNames" resultType="java.lang.Long">
+		SELECT post_id
+		FROM sys_post
+		WHERE post_name IN
+		<foreach collection="postNames" item="postName" open="(" separator="," close=")">
+			#{postName}
+		</foreach>
+	</select>
+
 </mapper> 

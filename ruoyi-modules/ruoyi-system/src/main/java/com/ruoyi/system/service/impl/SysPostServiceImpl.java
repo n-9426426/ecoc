@@ -84,7 +84,14 @@ public class SysPostServiceImpl implements ISysPostService
     @Override
     public List<SysPost> selectPostAll()
     {
-        return postMapper.selectPostAll();
+        List<SysPost> sysPostList = postMapper.selectPostAll();
+        List<SysPostAuth> postAuths = postAuthMapper.selectByPostIds(sysPostList.stream().map(SysPost::getPostId).collect(Collectors.toList()));
+        for (SysPost sysPost : sysPostList) {
+            Map<Long, List<SysPostAuth>> postAuthMap = postAuths.stream().collect(Collectors.groupingBy(SysPostAuth::getPostId));
+            List<SysPostAuth> authList = postAuthMap.getOrDefault(sysPost.getPostId(), Collections.emptyList());
+            sysPostSetAuth(authList, sysPost);
+        }
+        return sysPostList;
     }
 
     /**

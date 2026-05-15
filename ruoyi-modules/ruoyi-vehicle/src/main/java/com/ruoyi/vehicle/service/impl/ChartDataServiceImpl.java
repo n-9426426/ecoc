@@ -124,21 +124,22 @@ public class ChartDataServiceImpl implements IChartDataService {
     public List<CalendarDayVo> getCalendarByMonth(String vin, int year, int month) {
         int totalStages = remoteDictService.getDictDataByType("vehicle_lifecycle").getData().size();
 
-        if (StringUtils.isBlank(vin)) {
-            return Collections.emptyList();
-        }
-
-        // 1. 计算当月起止时间
+        // 1. 计算当月起止
         LocalDate firstDay = LocalDate.of(year, month, 1);
         LocalDate lastDay  = firstDay.withDayOfMonth(firstDay.lengthOfMonth());
-        LocalDateTime monthStart = firstDay.atStartOfDay();
-        LocalDateTime monthEnd   = lastDay.atTime(23, 59, 59, 999_999_999);
 
-        // 2. 查询当月所有记录（用于圆点逻辑）
-        List<VehicleLifecycle> monthRecords = vehicleLifecycleMapper.selectByVinAndDateRange(vin, monthStart, monthEnd);
+        // 扩展范围：上月末7天 + 下月初7天
+        LocalDate rangeStart = firstDay.minusDays(7);
+        LocalDate rangeEnd   = lastDay.plusDays(7);
 
-        // 按日期分组：key=yyyy-MM-dd
-        Map<String, List<VehicleLifecycle>> recordsByDay = monthRecords.stream()
+        LocalDateTime rangeStartTime = rangeStart.atStartOfDay();
+        LocalDateTime rangeEndTime   = rangeEnd.atTime(23, 59, 59, 999_999_999);
+
+        // 2. 红点数据：不区分 vin，查全部车辆在扩展范围内的记录
+        List<VehicleLifecycle> allRecords = vehicleLifecycleMapper.selectByVinAndDateRange(null, rangeStartTime, rangeEndTime);
+
+        // 按日期分组，用于红点判断
+        Map<String, List<VehicleLifecycle>> dotRecordsByDay = allRecords.stream()
                 .collect(Collectors.groupingBy(r ->
                         r.getTime()
                                 .toInstant()
@@ -146,58 +147,81 @@ public class ChartDataServiceImpl implements IChartDataService {
                                 .toLocalDate()
                                 .toString()));
 
-        // 3. 逐天构建 CalendarDayVo
+        // 3. 阶段数据：只有 vin 不为空时才查
+        Map<String, List<VehicleLifecycle>> stageRecordsByDay = Collections.emptyMap();
+        if (StringUtils.isNotBlank(vin)) {
+            List<VehicleLifecycle> vinRecords = vehicleLifecycleMapper.selectByVinAndDateRange(vin, rangeStartTime, rangeEndTime);
+            stageRecordsByDay = vinRecords.stream()
+                    .collect(Collectors.groupingBy(r ->
+                            r.getTime()
+                                    .toInstant()
+                                    .atZone(ZoneId.systemDefault())
+                                    .toLocalDate()
+                                    .toString()));
+        }
+
+        // 4. 逐天构建 CalendarDayVo（扩展范围）
         List<CalendarDayVo> result = new ArrayList<>();
 
-        for (LocalDate cursor = firstDay; !cursor.isAfter(lastDay); cursor = cursor.plusDays(1)) {
+        for (LocalDate cursor = rangeStart; !cursor.isAfter(rangeEnd); cursor = cursor.plusDays(1)) {
             String dateStr = cursor.toString();
-            LocalDateTime dayEnd = cursor.atTime(23, 59, 59, 999_999_999);
 
-            // ---- 阶段显示逻辑 ----
-            // 查询截至当天结束时刻，每个 operate 的最新一条记录
-            List<VehicleLifecycle> latestPerOperate = vehicleLifecycleMapper.selectLatestPerOperateBeforeTime(vin, dayEnd);
-
-            // 构建 Map<operate, VehicleLifecycle>，保留完整记录（time + result）
-            Map<Integer, VehicleLifecycle> operateRecordMap = latestPerOperate.stream()
-                    .collect(Collectors.toMap(
-                            r -> Integer.parseInt(r.getOperate()),
-                            r -> r,
-                            (existing, replacement) -> existing // 理论上已去重，保留先者
-                    ));
-            // 确定当前最大已完成阶段
-            int currentOperate = operateRecordMap.keySet().stream()
-                    .mapToInt(Integer::intValue)
-                    .max()
-                    .orElse(-1);
-
-            // 构建各阶段状态
+            // ---- 阶段显示逻辑（无 vin 时全部置灰）----
             List<CalendarDayVo.StageStatus> stages = new ArrayList<>(totalStages);
-            for (int i = 0; i < totalStages; i++) {
-                String status;
-                Date operateTime = null;
-                Integer stageResult = null;
+            if (StringUtils.isNotBlank(vin)) {
+                LocalDateTime dayEnd = cursor.atTime(23, 59, 59, 999_999_999);
+                List<VehicleLifecycle> latestPerOperate = vehicleLifecycleMapper.selectLatestPerOperateBeforeTime(vin, dayEnd);
 
-                if (currentOperate != -1 && i <= currentOperate) {
-                    status = "active";
-                    VehicleLifecycle record = operateRecordMap.get(i);
-                    if (record != null) {
-                        operateTime = record.getTime();
-                        stageResult = record.getResult();
+                Map<Integer, VehicleLifecycle> operateRecordMap = latestPerOperate.stream()
+                        .collect(Collectors.toMap(
+                                r -> Integer.parseInt(r.getOperate()),
+                                r -> r,
+                                (existing, replacement) -> existing
+                        ));
+
+                int currentOperate = operateRecordMap.keySet().stream()
+                        .mapToInt(Integer::intValue)
+                        .max()
+                        .orElse(-1);
+
+                for (int i = 0; i < totalStages; i++) {
+                    String status;
+                    Date operateTime = null;
+                    Integer stageResult = null;
+
+                    if (currentOperate != -1 && i <= currentOperate) {
+                        status = "active";
+                        VehicleLifecycle record = operateRecordMap.get(i);
+                        if (record != null) {
+                            operateTime = record.getTime();
+                            stageResult = record.getResult();
+                        }
+                    } else {
+                        status = "grey";
                     }
-                } else {
-                    status = "grey";
+
+                    stages.add(CalendarDayVo.StageStatus.builder()
+                            .operate(i)
+                            .status(status)
+                            .time(operateTime)
+                            .result(stageResult)
+                            .build());
                 }
-
-                stages.add(CalendarDayVo.StageStatus.builder()
-                        .operate(i)
-                        .status(status)
-                        .time(operateTime)
-                        .result(stageResult)
-                        .build());
             }
+//            else {
+//                // 无 vin：阶段全部置灰
+//                for (int i = 0; i < totalStages; i++) {
+//                    stages.add(CalendarDayVo.StageStatus.builder()
+//                            .operate(i)
+//                            .status("grey")
+//                            .time(null)
+//                            .result(null)
+//                            .build());
+//                }
+//            }
 
-            // ---- 圆点逻辑 ----
-            List<VehicleLifecycle> todayRecords = recordsByDay.get(dateStr);
+            // ---- 红点逻辑（与 vin 无关，始终基于全量数据）----
+            List<VehicleLifecycle> todayRecords = dotRecordsByDay.get(dateStr);
             String dotColor;
             if (todayRecords == null || todayRecords.isEmpty()) {
                 dotColor = "none";

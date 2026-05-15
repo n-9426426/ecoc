@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -60,6 +61,7 @@ public class VehicleTemplateExpiredTask {
         sysNotice.setNoticeContent(msg.toString());
         sysNotice.setCreateBy("自动提醒");
         sysNotice.setCreateTime(new Date());
+        sysNotice.setSorts(Arrays.asList(2, 3));
         return remoteNoticeService.innerAdd(sysNotice);
     }
 }

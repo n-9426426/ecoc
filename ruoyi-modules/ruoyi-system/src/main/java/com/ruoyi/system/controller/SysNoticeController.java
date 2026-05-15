@@ -9,6 +9,7 @@ import com.ruoyi.common.security.annotation.RequiresPermissions;
 import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.domain.SysNotice;
 import com.ruoyi.system.api.model.LoginUser;
+import com.ruoyi.system.service.ISysDictDataService;
 import com.ruoyi.system.service.ISysNoticeReadService;
 import com.ruoyi.system.service.ISysNoticeService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,9 +23,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
 import java.time.Duration;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -41,6 +40,9 @@ public class SysNoticeController extends BaseController
 
     @Autowired
     private ISysNoticeReadService noticeReadService;
+
+    @Autowired
+    private ISysDictDataService dictDataService;
 
     /**
      * 获取通知公告列表
@@ -84,6 +86,9 @@ public class SysNoticeController extends BaseController
     @PostMapping("/inner")
     public AjaxResult innerAdd(@Validated @RequestBody SysNotice notice)
     {
+        Map<String, List<Long>> noticeGroup = dictDataService.selectNoticeGroupAuth(notice.getSorts());
+        notice.setRoleIds(noticeGroup.get("roleIds"));
+        notice.setPostIds(noticeGroup.get("postIds"));
         return toAjax(noticeService.insertNotice(notice));
     }
 
@@ -159,7 +164,6 @@ public class SysNoticeController extends BaseController
     private static final Map<String, Sinks.Many<ServerSentEvent<Object>>> sinks = new ConcurrentHashMap<>();
 
     @Operation(summary = "建立SSE单向通信连接")
-    @RequiresPermissions("system:notice:query")
     @GetMapping(value = "/subscribe", produces =  MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<Object>> subscribe() {
         LoginUser loginUser = SecurityUtils.getLoginUser();
@@ -196,18 +200,39 @@ public class SysNoticeController extends BaseController
     }
 
     public static void broadcast(Object data) {
-        sinks.forEach((userId, sink) -> {
-            ServerSentEvent<Object> event = ServerSentEvent.builder()
-                    .data(data)
-                    .event("message")
-                    .id(String.valueOf(System.currentTimeMillis()))
-                    .build();
+        sinks.forEach((userId, sink) -> emitToSink(userId, sink, data));
+    }
 
-            Sinks.EmitResult result = sink.tryEmitNext(event);
-            if (result.isFailure()) {
-                System.out.println("[SSE] 发送失败, userId: " + userId + ", result: " + result);
-                sinks.remove(userId);
+
+    public static void broadcastToUsers(Set<Long> targetUserIds, Object data) {
+        // 固定追加 admin
+        Set<Long> finalUserIds = new HashSet<>(targetUserIds);
+        LoginUser loginUser = SecurityUtils.getLoginUser();
+        if (SecurityUtils.isAdmin(loginUser.getUserid())) {
+            finalUserIds.add(loginUser.getUserid());
+        }
+
+        finalUserIds.forEach(userId -> {
+            String userIdStr = userId.toString();
+            Sinks.Many<ServerSentEvent<Object>> sink = sinks.get(userIdStr);
+            if (sink == null) {
+                return;
             }
+            emitToSink(userIdStr, sink, data);
         });
+    }
+
+    private static void emitToSink(String userId, Sinks.Many<ServerSentEvent<Object>> sink, Object data) {
+        ServerSentEvent<Object> event = ServerSentEvent.builder()
+                .data(data)
+                .event("message")
+                .id(String.valueOf(System.currentTimeMillis()))
+                .build();
+
+        Sinks.EmitResult result = sink.tryEmitNext(event);
+        if (result.isFailure()) {
+            System.out.println("[SSE] 发送失败, userId: " + userId + ", result: " + result);
+            sinks.remove(userId);
+        }
     }
 }
