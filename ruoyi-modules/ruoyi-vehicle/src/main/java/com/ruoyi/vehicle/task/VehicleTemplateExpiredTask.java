@@ -25,6 +25,9 @@ public class VehicleTemplateExpiredTask {
     public void vehicleTemplateExpiredJobHandler(){
         log.info("Scheduled:vehicleTemplateExpiredJobHandler():分钟");
         List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectExpiringTemplates();
+        if (vehicleTemplateList.isEmpty()) {
+            return;
+        }
         StringBuilder msg = new StringBuilder();
         for (VehicleTemplate vehicleTemplate : vehicleTemplateList) {
             msg.append("WVTA-COC编号为: ")

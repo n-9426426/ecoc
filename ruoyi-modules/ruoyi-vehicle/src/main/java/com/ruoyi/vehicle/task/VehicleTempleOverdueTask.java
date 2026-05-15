@@ -35,6 +35,9 @@ public class VehicleTempleOverdueTask {
     public void vehicleTemplateOverdueButNoNextVersionJobHandler() {
         log.info("Scheduled:vehicleTemplateOverdueButNoNextVersionJobHandler():小时");
         List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectVehicleTemplateOverdueButNoNextVersion();
+        if (vehicleTemplateList.isEmpty()) {
+            return;
+        }
         StringBuilder msg = new StringBuilder();
         for (VehicleTemplate vehicleTemplate : vehicleTemplateList) {
             msg.append("TVV为 ")

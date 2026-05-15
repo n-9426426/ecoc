@@ -28,6 +28,9 @@ public class VehicleInfoUseOldTemplateTask {
     public void vehicleInfoUseOldTemplateJobHandler(){
         log.info("Scheduled:vehicleInfoUseOldTemplateJobHandler():分钟");
         List<VehicleInfo> vehicleInfoList = vehicleInfoMapper.checkOldTemplate();
+        if (vehicleInfoList.isEmpty()) {
+            return;
+        }
         StringBuilder msg = new StringBuilder("以下车辆信息:");
         msg.append(System.lineSeparator());
         for (VehicleInfo vehicleInfo : vehicleInfoList) {

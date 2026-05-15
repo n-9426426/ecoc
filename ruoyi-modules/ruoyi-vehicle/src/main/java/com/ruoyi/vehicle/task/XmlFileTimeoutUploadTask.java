@@ -31,6 +31,9 @@ public class XmlFileTimeoutUploadTask {
     public void xmlFileTimeoutUploadJobHandler(){
         log.info("Scheduled:xmlFileTimeoutUploadJobHandler():小时");
         List<XmlFile> xmlFileList = xmlFileMapper.checkXmlFileTimeoutUpload();
+        if (xmlFileList.isEmpty()) {
+            return;
+        }
         StringBuilder msg = new StringBuilder();
         for (XmlFile xmlFile : xmlFileList) {
             StringBuilder overdueTime = new StringBuilder();
