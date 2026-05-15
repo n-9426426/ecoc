@@ -126,7 +126,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         VehicleTemplate t = new VehicleTemplate();
         t.setUuid(UUID.randomUUID().toString());
         t.setJson(json);
-        t.setStatus("0");
+        t.setStatus("1");
         t.setValidateResult("0");
         t.setCreateTime(DateUtils.getNowDate());
         return templateMapper.insertVehicleTemplate(t);
@@ -141,7 +141,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     public int insertVehicleTemplate(VehicleTemplate template) {
         template.setUuid(UUID.randomUUID().toString());
         template.setVersion("1.0");
-        template.setStatus("0");
+        template.setStatus("1");
         template.setValidateResult("0");
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(DateUtils.getNowDate());
@@ -182,6 +182,16 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
     @Override
     public int updateStatus(Long templateId, String status) {
+        VehicleTemplate template = templateMapper.selectVehicleTemplateById(templateId);
+        if (template == null) {
+            throw new RuntimeException("该车辆模版不存在");
+        }
+        if (status.equals(template.getStatus())) {
+            return 1;
+        }
+        if (status.equals("0") && new Date().after(template.getOverdueDate())) {
+            throw new RuntimeException("已超过失效时间，操作无法执行。如需启用该模版请先修改失效时间后重试");
+        }
         return templateMapper.updateStatus(templateId, status);
     }
 
@@ -279,7 +289,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             templateMapper.batchUpdateValidateResult(updateList);
         }
         sysNotice.setNoticeContent(msg.toString());
-        remoteNoticeService.add(sysNotice);
+        remoteNoticeService.innerAdd(sysNotice);
         return reports;
     }
 
@@ -401,7 +411,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 }
                 template.setUuid(UUID.randomUUID().toString());
                 template.setVersion("1.0");
-                template.setStatus("0");
+                template.setStatus("1");
                 template.setValidateResult("0");
                 template.setCreateBy(SecurityUtils.getUsername());
                 template.setCreateTime(DateUtils.getNowDate());

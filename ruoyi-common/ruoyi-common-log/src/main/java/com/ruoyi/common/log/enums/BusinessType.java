@@ -71,4 +71,6 @@ public enum BusinessType
      * 校验
      */
     VALIDATION,
+
+    UPLOAD,
 }

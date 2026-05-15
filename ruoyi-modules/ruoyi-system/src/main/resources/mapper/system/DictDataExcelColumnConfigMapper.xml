@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ruoyi.system.mapper.DictDataExcelColumnConfigMapper">
+
+    <resultMap id="ExcelColumnConfigResult" type="com.ruoyi.system.api.domain.ExcelColumnConfig">
+        <id property="id"             column="id"/>
+        <result property="tableName"      column="table_name"/>
+        <result property="fieldName"      column="field_name"/>
+        <result property="columnNameZhCn" column="column_name_zh_cn"/>
+        <result property="columnNameEnUs" column="column_name_en_us"/>
+        <result property="sort"           column="sort"/>
+        <result property="enabled"        column="enabled"/>
+        <result property="entity"         column="entity"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.ruoyi.system.api.domain.ExcelColumnConfig" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO excel_column_config (table_name, field_name, column_name_zh_cn, column_name_en_us, sort, enabled, entity)
+        VALUES (#{tableName}, #{fieldName}, #{columnNameZhCn}, #{columnNameEnUs}, #{sort}, #{enabled}, #{entity})
+    </insert>
+
+    <insert id="batchInsert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO excel_column_config (table_name, field_name, column_name_zh_cn, column_name_en_us, sort, enabled, entity)
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.tableName}, #{item.fieldName}, #{item.columnNameZhCn}, #{item.columnNameEnUs}, #{item.sort}, #{item.enabled}, #{item.entity})
+        </foreach>
+    </insert>
+
+    <delete id="deleteByEntityAndTableNameAndFieldName">
+        DELETE FROM excel_column_config
+        WHERE table_name = #{tableName}
+        <if test="fieldName != null and fieldName != ''">
+            AND field_name = #{fieldName}
+        </if>
+        AND entity IN
+        <foreach collection="entityList" item="entity" open="(" separator="," close=")">
+            #{entity}
+        </foreach>
+    </delete>
+
+    <select id="selectOneByEntityAndTableNameAndFieldName" resultMap="ExcelColumnConfigResult">
+        SELECT id, table_name, field_name,
+        column_name_zh_cn, column_name_en_us,
+        sort, enabled, entity
+        FROM excel_column_config
+        WHERE table_name = #{tableName}
+        <if test="fieldName != null and fieldName != ''">
+            AND field_name = #{fieldName}
+        </if>
+        AND entity IN
+        <foreach collection="entityList" item="entity" open="(" separator="," close=")">
+            #{entity}
+        </foreach>
+        LIMIT 1
+    </select>
+
+</mapper>

@@ -103,22 +103,32 @@ public class ExcelUtil {
 
             // 写数据行
             for (int rowIdx = 0; rowIdx < dataList.size(); rowIdx++) {
-                Row row  = sheet.createRow(rowIdx + 1);
-                T entity = dataList.get(rowIdx);
-                for (int colIdx = 0; colIdx < configs.size(); colIdx++) {
-                    Cell  cell      = row.createCell(colIdx);
-                    String fieldName = configs.get(colIdx).getFieldName();
-                    Object value    = getFieldValue(entity, fieldName);
+                Row row    = sheet.createRow(rowIdx + 1);
+                T   entity = dataList.get(rowIdx);
 
-                    // 问题1修复：vehicleType 字段走字典翻译
-                    if ("vehicleType".equals(fieldName) && value != null) {
-                        try {
-                            Long dictCode = Long.parseLong(value.toString());
-                            SysDictData dictData = remoteDictService.getDataByDictCode(dictCode).getData();
-                            value = (dictData != null) ? dictData.getDictLabel() : value.toString();
-                        } catch (Exception e) {
-                            log.warn("vehicleType 字典翻译失败，原始值={}，{}", value, e.getMessage());
-                            // 翻译失败保留原始值
+                // 预解析 json 字段为扁平 Map，key=最终叶子key，value=分号拼接的所有匹配值
+                Map<String, String> flatJsonMap = resolveFlatJsonMap(entity);
+
+                for (int colIdx = 0; colIdx < configs.size(); colIdx++) {
+                    Cell   cell      = row.createCell(colIdx);
+                    String fieldName = configs.get(colIdx).getFieldName();
+                    Object value;
+
+                    if (fieldName.startsWith("json.")) {
+                        // 去掉 "json." 前缀，直接用叶子 key 从扁平 Map 取值
+                        String leafKey = fieldName.substring("json.".length());
+                        value = flatJsonMap.getOrDefault(leafKey, null);
+                    } else {
+                        value = getFieldValue(entity, fieldName);
+
+                        if ("vehicleType".equals(fieldName) && value != null) {
+                            try {
+                                Long dictCode = Long.parseLong(value.toString());
+                                SysDictData dictData = remoteDictService.getDataByDictCode(dictCode).getData();
+                                value = (dictData != null) ? dictData.getDictLabel() : value.toString();
+                            } catch (Exception e) {
+                                log.warn("vehicleType 字典翻译失败，原始值={}，{}", value, e.getMessage());
+                            }
                         }
                     }
 
@@ -126,12 +136,66 @@ public class ExcelUtil {
                 }
             }
 
-            // 输出响应
             response.setContentType(
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             response.setHeader("Content-Disposition",
                     "attachment;filename=" + URLEncoder.encode(fileName + ".xlsx", "UTF-8"));
             workbook.write(response.getOutputStream());
+        }
+    }
+
+    /**
+     * 从实体对象中取出 json 字段（String 类型）并解析为 JsonNode。
+     * json 字段不存在、为空、解析失败时返回 null，不影响其他列导出。
+     */
+    private <T> Map<String, String> resolveFlatJsonMap(T entity) {
+        Map<String, String> result = new LinkedHashMap<>();
+        try {
+            Field field = findField(entity.getClass(), "json");
+            if (field == null) return result;
+            field.setAccessible(true);
+            Object raw = field.get(entity);
+            if (raw == null || raw.toString().trim().isEmpty()) return result;
+
+            com.fasterxml.jackson.databind.JsonNode root =
+                    new com.fasterxml.jackson.databind.ObjectMapper().readTree(raw.toString());
+
+            // 递归展开所有叶子节点
+            flattenJsonNode(root, result);
+        } catch (Exception e) {
+            log.warn("扁平化 json 字段失败：{}", e.getMessage());
+        }
+        return result;
+    }
+
+
+    /**
+     * 按点路径从 JsonNode 中取值，支持任意层级深度。
+     * 示例：path="engine.displacement" 对应 json 结构 {"engine":{"displacement":"2.0T"}}
+     * 路径不存在或类型不匹配时返回 null。
+     *
+     * @param root JsonNode 根节点
+     * @param path 点分隔路径，如 "brand"、"engine.type"、"a.b.c"
+     * @return 叶子节点的值（String/Number/Boolean），非叶子节点转为 JSON 字符串
+     */
+    private void flattenJsonNode(com.fasterxml.jackson.databind.JsonNode node,
+                                 Map<String, String> result) {
+        if (node == null || node.isNull()) return;
+
+        if (node.isObject()) {
+            node.fields().forEachRemaining(entry -> {
+                com.fasterxml.jackson.databind.JsonNode child = entry.getValue();
+                if (child.isObject() || child.isArray()) {
+                    // 非叶子：继续递归
+                    flattenJsonNode(child, result);
+                } else {
+                    // 叶子：按 key 收集，同名用 ";" 拼接
+                    String leafValue = child.isNull() ? "" : child.asText();
+                    result.merge(entry.getKey(), leafValue, (oldVal, newVal) -> oldVal + ";" + newVal);
+                }
+            });
+        } else if (node.isArray()) {
+            node.forEach(item -> flattenJsonNode(item, result));
         }
     }
 

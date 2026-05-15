@@ -11,6 +11,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 @FeignClient(contextId = "remoteNoticeService", value = ServiceNameConstants.SYSTEM_SERVICE, fallbackFactory = RemoteNoticeFallbackFactory.class)
 public interface RemoteNoticeService {
-    @PostMapping("/notice")
-    public R<?> add(@Validated @RequestBody SysNotice notice);
+    @PostMapping("/notice/inner")
+    public R<?> innerAdd(@Validated @RequestBody SysNotice notice);
 }

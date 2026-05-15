@@ -39,6 +39,8 @@
 		<result property="weight" column="weight"/>
 		<result property="saleName" column="sale_name"/>
 		<result property="tire" column="tire"/>
+		<result property="tvv" column="tvv"/>
+		<result property="breakpointTime" column="breakpoint_time"/>
 	</resultMap>
 
 	<sql id="selectVehicleInfoVo">
@@ -46,11 +48,11 @@
 			   upload_status, validation_result, status, country, color, secondary_color,
 			   certificate_version, wvta_no, manufacture_date, issue_date, json, xml_template_id, vehicle_template_id,
 			   deleted, create_by, create_time, update_by, update_time, remark, validation_report_json,
-			   engine_number, motor_number, brand, weight, sale_name, tire, battery_number,
+			   engine_number, motor_number, brand, weight, sale_name, tire, battery_number, tvv, breakpoint_time,
 			   sdd.dict_label as vehicle_model_str, vt.filepath as vehicle_template_filepath, vt.coc_template_no as coc_template_no
 		from vehicle_info vi
 		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
-		left join (select template_id, filepath, coc_template_no from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
+		left join (select template_id, filepath, coc_template_no, is_last from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
 	</sql>
 
 	<select id="selectVehicleInfoById" parameterType="Long" resultMap="VehicleInfoResult">
@@ -126,6 +128,12 @@
 			<if test="reclaim == null or !reclaim">
 				AND deleted = 0
 			</if>
+			<if test="tvv != null and tvv != ''">
+				and tvv = #{tvv}
+			</if>
+			<if test="breakpointTime != null">
+				AND DATE(breakpoint_time) = DATE(#{breakpointTime})
+			</if>
 			${params.dataScope}
 		</where>
 		order by update_time desc
@@ -160,6 +168,8 @@
 		<if test="weight != null and weight != ''">weight,</if>
 		<if test="saleName != null and saleName != ''">sale_name,</if>
 		<if test="tire != null and tire != ''">tire,</if>
+		<if test="tvv != null and tvv != ''">tvv,</if>
+		<if test="breakpointTime != null">breakpoint_time,</if>
 		<if test="createBy != null and createBy != ''">create_by, </if>
 		create_time
 		) values (
@@ -190,6 +200,8 @@
 		<if test="weight != null and weight != ''">#{weight},</if>
 		<if test="saleName != null and saleName != ''">#{saleName},</if>
 		<if test="tire != null and tire != ''">#{tire},</if>
+		<if test="tvv != null and tvv != ''">#{tvv},</if>
+		<if test="breakpointTime != null">#{breakpointTime},</if>
 		<if test="createBy != null and createBy != ''">#{createBy}, </if>
 		sysdate()
 		)
@@ -227,6 +239,8 @@
 			<if test="weight != null and weight != ''">weight = #{weight},</if>
 			<if test="saleName != null and saleName != ''">sale_name = #{saleName},</if>
 			<if test="tire != null and tire != ''">tire = #{tire},</if>
+			<if test="tvv != null and tvv != ''">tvv = #{tvv},</if>
+		    <if test="breakpointTime != null">breakpoint_time = #{breakpointTime},</if>
 			update_time = sysdate()
 		</set>
 		where vehicle_id = #{vehicleId}
@@ -295,4 +309,20 @@
 			#{vehicleId}
 		</foreach>
 	</select>
+
+	<select id="checkOldTemplate" resultMap="VehicleInfoResult">
+		<include refid="selectVehicleInfoVo"/>
+		where vt.is_last = 0 and vi.old_template_notice = 0 and vi.deleted = 0
+	</select>
+
+	<update id="updateVehicleInfoOldTemplate">
+		UPDATE vehicle_info
+		SET old_template_notice = #{status},
+		update_time = NOW()
+		WHERE vehicle_id IN
+		<foreach collection="vehicleIds" item="id" open="(" separator="," close=")">
+			#{id}
+		</foreach>
+		AND deleted = 0
+	</update>
 </mapper>

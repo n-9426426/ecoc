@@ -12,15 +12,16 @@
         <result property="columnNameEnUs" column="column_name_en_us"/>
         <result property="sort"           column="sort"/>
         <result property="enabled"        column="enabled"/>
+        <result property="entity"         column="entity"/>
     </resultMap>
 
     <select id="selectByTableName" resultMap="ExcelColumnConfigResult">
         SELECT id, table_name, field_name,
                column_name_zh_cn, column_name_en_us,
-               sort, enabled
+               sort, enabled, entity
         FROM excel_column_config
-        WHERE table_name = #{tableName}AND enabled = 1
-        ORDER BY sort
+        WHERE table_name = #{tableName} AND enabled = 1
+        ORDER BY CASE WHEN field_name LIKE 'json.%' THEN 1 ELSE 0 END, sort
     </select>
 
 </mapper>

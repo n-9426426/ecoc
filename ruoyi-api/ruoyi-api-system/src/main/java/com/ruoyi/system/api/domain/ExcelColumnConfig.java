@@ -20,10 +20,12 @@ public class ExcelColumnConfig {
     private String columnNameEnUs;
 
     /** 列顺序 */
-    private Integer sort;
+    private Long sort;
 
     /** 是否启用（1=启用 0=禁用） */
     private Integer enabled;
+
+    private String entity;
 
     /**
      * 根据语言参数返回对应列头

@@ -59,9 +59,8 @@
     </resultMap>
 
     <select id="selectVehicleModelVoList" resultMap="VehicleModelVo">
-        SELECT YEAR(create_time)  AS year, MONTH(create_time) AS month, sdd.dict_label AS vehicle_model, COUNT(*) AS total
+        SELECT YEAR(create_time)  AS year, MONTH(create_time) AS month, model_code AS vehicle_model, COUNT(*) AS total
         FROM xml_file xf
-        left join (select dict_code, dict_label, dict_value from sys_dict_data where dict_type = 'vehicle_model') sdd on xf.model_code = sdd.dict_code
         WHERE deleted = 0 and is_latest = 1
             <choose>
                 <when test="month != null">

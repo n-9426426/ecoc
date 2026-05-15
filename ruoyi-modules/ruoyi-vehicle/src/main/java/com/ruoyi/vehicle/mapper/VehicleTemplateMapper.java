@@ -40,4 +40,14 @@ public interface VehicleTemplateMapper {
             @Param("saleName") String saleName,
             @Param("tire") String tire
     );
+
+    int updateStatusByOverdueDate();
+
+    int updateStatusByEffectiveDate();
+
+    List<VehicleTemplate> selectVehicleTemplateOverdueButNoNextVersion();
+
+    int updateVehicleTemplateNoNextVersion(@Param("vehicleTemplateIds") List<Long> vehicleTemplateIds, @Param("status") Integer status);
+
+    int updateVehicleTemplateExpired(@Param("vehicleTemplateIds") List<Long> vehicleTemplateIds, @Param("status") Integer status);
 }

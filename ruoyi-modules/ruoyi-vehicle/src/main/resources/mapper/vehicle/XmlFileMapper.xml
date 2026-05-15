@@ -271,4 +271,40 @@
         UPDATE xml_file SET is_latest = 0 WHERE file_name LIKE CONCAT(#{fileName}, '%')
     </update>
 
+    <select id="checkXmlFileTimeoutUpload" resultMap="XmlFileResult">
+        SELECT xl.id, xl.vin,
+            xl.file_name, xl.file_path, xl.file_size, xl.file_level, xl.version, xl.is_latest,
+            xl.pdf_path, xl.status, xl.deleted, xl.create_by, xl.create_time, xl.update_by,
+            NOW() AS update_time, xl.remark, xl.xml_template_id, xl.model_code, xl.factory_code,
+            xl.vehicle_material_no, xl.country, xl.upload_result, xl.upload_date, xl.issue_date,
+            xl.validate_result, xl.validation_report_json,
+            sdd.dict_label AS model_name
+        FROM xml_file xl
+        INNER JOIN (
+            select *
+            from sys_dict_data
+            where dict_type = 'reminder_time' AND status = '0' and dict_sort = 1
+        ) sdd ON 1 = 1
+        INNER JOIN (
+            SELECT entry_id, MAX(time) AS latest_time
+            FROM vehicle_lifecycle
+            WHERE operate = '3'
+            GROUP BY entry_id
+        ) vl_latest ON vl_latest.entry_id = xl.id
+        INNER JOIN vehicle_lifecycle vl ON vl.operate = '3' AND vl.entry_id = xl.id AND vl.time = vl_latest.latest_time
+        WHERE xl.upload_result = 2 AND xl.deleted = '0' AND xl.is_latest = 1 and xl.timeout_notice = 0
+            AND TIMESTAMPDIFF(MICROSECOND, NOW(), vl.time) / 1000 &lt;= CAST(sdd.dict_value AS SIGNED)
+    </select>
+
+    <update id="updateXmlFileTimeoutUpload">
+        UPDATE xml_file
+        SET timeout_notice = #{status},
+        update_time = NOW()
+        WHERE id IN
+        <foreach collection="xmlFileIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND deleted = '0'
+    </update>
+
 </mapper>

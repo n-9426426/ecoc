@@ -42,6 +42,8 @@ public interface IXmlFileService {
      */
     String uploadXmlFile(MultipartFile file, Long xmlId);
 
+    int uploadXmlFilesToApprove(List<Long> xmlIds);
+
     /**
      * 预览XML文件
      */

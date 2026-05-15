@@ -14,7 +14,7 @@ public class XmlTemplate extends BaseEntity {
 
     private String templateName;
 
-    private Long modelDictCode;
+    private String modelDictCode;
 
     private Integer status;
 
@@ -64,11 +64,11 @@ public class XmlTemplate extends BaseEntity {
         this.templateName = templateName;
     }
 
-    public Long getModelDictCode() {
+    public String getModelDictCode() {
         return modelDictCode;
     }
 
-    public void setModelDictCode(Long modelDictCode) {
+    public void setModelDictCode(String modelDictCode) {
         this.modelDictCode = modelDictCode;
     }
 

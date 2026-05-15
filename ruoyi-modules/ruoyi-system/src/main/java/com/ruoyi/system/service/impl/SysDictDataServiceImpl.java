@@ -7,7 +7,9 @@ import com.github.pagehelper.PageHelper;
 import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.security.utils.DictUtils;
+import com.ruoyi.system.api.domain.ExcelColumnConfig;
 import com.ruoyi.system.api.domain.SysDictData;
+import com.ruoyi.system.mapper.DictDataExcelColumnConfigMapper;
 import com.ruoyi.system.mapper.SysDictDataMapper;
 import com.ruoyi.system.service.ISysDictDataService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,10 +26,14 @@ import java.util.stream.Collectors;
 public class SysDictDataServiceImpl implements ISysDictDataService {
 
     private static final String VEHICLE_ATTRIBUTE = "vehicle_attribute";
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Autowired
     private SysDictDataMapper dictDataMapper;
+
+    @Autowired
+    private DictDataExcelColumnConfigMapper dictDataExcelColumnConfigMapper;
 
     // ----------------------------------------------------------------
     // 查询：列表（vehicle_attribute 类型聚合还原JSON）
@@ -53,6 +59,7 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
 
             // 还原 JSON 字段
             List<SysDictData> result = convertAggFields(aggList);
+            sysDictDataListSetExcelColumnConfig(result);
 
             // 构造 PageInfo 让若依框架正确返回分页信息
             Page<SysDictData> resultPage = new Page<>((int) pageNum, (int) pageSize);
@@ -61,6 +68,29 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
             return resultPage;
         }
         return dictDataMapper.selectDictDataList(dictData);
+    }
+
+    private void sysDictDataListSetExcelColumnConfig(List<SysDictData> dataList) {
+        if (dataList.isEmpty()) return;
+        List<String> uuids = dataList.stream()
+                .map(SysDictData::getUuid)
+                .collect(Collectors.toList());
+        List<ExcelColumnConfig> excelColumnConfigs = selectExcelColumnConfig("vehicle_info", null,uuids);
+        Map<String, ExcelColumnConfig> excelColumnConfigMap = excelColumnConfigs.stream()
+                .collect(Collectors.toMap(
+                        ExcelColumnConfig::getEntity,
+                        config -> config,
+                        (k1, k2) -> k1
+                ));
+        for (SysDictData sysDictData : dataList) {
+            if (excelColumnConfigMap.get(sysDictData.getUuid()) == null) {
+                continue;
+            }
+            sysDictData.setTableName(excelColumnConfigMap.get(sysDictData.getUuid()).getTableName());
+            sysDictData.setExcelColumnNameEnUs(excelColumnConfigMap.get(sysDictData.getUuid()).getColumnNameEnUs());
+            sysDictData.setExcelColumnNameZhCn(excelColumnConfigMap.get(sysDictData.getUuid()).getColumnNameZhCn());
+            sysDictData.setExcelColumnSort(excelColumnConfigMap.get(sysDictData.getUuid()).getSort());
+        }
     }
 
     // ----------------------------------------------------------------
@@ -79,6 +109,7 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
                 SysDictData result = aggregated.get(0);
                 result.setDictCode(dictCode);
                 result.setUuid(row.getUuid());
+                sysDictDataListSetExcelColumnConfig(Collections.singletonList(result));
                 return result;
             }
         }
@@ -93,6 +124,14 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
     public int insertDictData(SysDictData data) {
         if (VEHICLE_ATTRIBUTE.equals(data.getDictType())) {
             List<SysDictData> rows = splitToRows(data);
+            insertExcelColumnConfig(
+                    "vehicle_info",
+                    "json." + data.getDictLabel(),
+                    data.getExcelColumnNameEnUs(),
+                    data.getExcelColumnNameZhCn(),
+                    data.getExcelColumnSort(),
+                    rows.get(0).getUuid()
+            );
             int count = 0;
             for (SysDictData row : rows) {
                 count += dictDataMapper.insertDictData(row);
@@ -120,12 +159,23 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
             }
             // 按uuid找同组所有旧行删除
             List<SysDictData> oldRows = dictDataMapper.selectSiblingRows(current.getUuid());
+            deleteExcelColumnConfig("vehicle_info", null,
+                    oldRows.stream().map(SysDictData::getUuid).collect(Collectors.toList())
+            );
             for (SysDictData old : oldRows) {
                 dictDataMapper.deleteDictDataById(old.getDictCode());
             }
             // 复用原uuid，保证前端持有的uuid不失效
             data.setUuid(current.getUuid());
             List<SysDictData> newRows = splitToRows(data);
+            insertExcelColumnConfig(
+                    "vehicle_info",
+                    "json." + data.getDictLabel(),
+                    data.getExcelColumnNameEnUs(),
+                    data.getExcelColumnNameZhCn(),
+                    data.getExcelColumnSort(),
+                    data.getUuid()
+            );
             int count = 0;
             for (SysDictData row : newRows) {
                 count += dictDataMapper.insertDictData(row);
@@ -164,6 +214,9 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
                                 "字典数据【%s】已被模板属性引用，无法删除！", sibling.getDictLabel()));
                     }
                 }
+                deleteExcelColumnConfig("vehicle_info", null,
+                        siblings.stream().map(SysDictData::getUuid).collect(Collectors.toList())
+                );
                 for (SysDictData sibling : siblings) {
                     dictDataMapper.deleteDictDataById(sibling.getDictCode());
                 }
@@ -387,5 +440,26 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
             }
         }
         return aggList;
+    }
+
+    private int insertExcelColumnConfig(String tableName, String fieldName, String excelColumnNameEnUs, String excelColumnNameZhCn, Long sort, String entity) {
+        dictDataExcelColumnConfigMapper.deleteByEntityAndTableNameAndFieldName(tableName, fieldName, Collections.singletonList(entity));
+        ExcelColumnConfig excelColumnConfig = new ExcelColumnConfig();
+        excelColumnConfig.setTableName(tableName);
+        excelColumnConfig.setFieldName(fieldName);
+        excelColumnConfig.setColumnNameEnUs(excelColumnNameEnUs);
+        excelColumnConfig.setColumnNameZhCn(excelColumnNameZhCn);
+        excelColumnConfig.setSort(sort);
+        excelColumnConfig.setEnabled(1);
+        excelColumnConfig.setEntity(entity);
+        return dictDataExcelColumnConfigMapper.insert(excelColumnConfig);
+    }
+
+    private int deleteExcelColumnConfig(String tableName, String fieldName, List<String> entityList) {
+        return dictDataExcelColumnConfigMapper.deleteByEntityAndTableNameAndFieldName(tableName, fieldName, entityList);
+    }
+
+    private List<ExcelColumnConfig> selectExcelColumnConfig(String tableName, String fieldName, List<String> entityList) {
+        return dictDataExcelColumnConfigMapper.selectOneByEntityAndTableNameAndFieldName(tableName, fieldName, entityList);
     }
 }

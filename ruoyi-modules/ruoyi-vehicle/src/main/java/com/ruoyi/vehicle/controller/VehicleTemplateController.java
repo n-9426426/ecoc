@@ -170,7 +170,7 @@ public class VehicleTemplateController extends BaseController {
     }
 
     /**
-     * ✅ 批量校验（支持单个或多个 ID）
+     * 批量校验
      */
     @RequiresPermissions("vehicle:template:validate")
     @Log(title = "车辆模板管理", businessType = BusinessType.VALIDATION)

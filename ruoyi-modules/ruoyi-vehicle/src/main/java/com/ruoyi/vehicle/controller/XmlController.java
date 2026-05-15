@@ -151,7 +151,7 @@ public class XmlController extends BaseController {
     /**
      * 上传XML文件
      */
-    @Operation(summary = "上传XML文件")
+    @Operation(summary = "上传XML文件到本系统")
     @RequiresPermissions("system:xml:add")
     @Log(title = "XML文件管理", businessType = BusinessType.IMPORT)
     @PostMapping("/upload")
@@ -160,6 +160,18 @@ public class XmlController extends BaseController {
         try {
             String filePath = xmlFileService.uploadXmlFile(file, xmlId);
             return success(filePath);
+        } catch (Exception e) {
+            return error("上传失败: " + e.getMessage());
+        }
+    }
+
+    @Operation(summary = "上传XML文件到各国交通部审批")
+    @RequiresPermissions("system:xml:add")
+    @Log(title = "XML文件管理", businessType = BusinessType.UPLOAD)
+    @PostMapping("/approve")
+    public AjaxResult uploadXmlFilesToApprove(@RequestBody  List<Long> xmlIds) {
+        try {
+            return success(xmlFileService.uploadXmlFilesToApprove(xmlIds));
         } catch (Exception e) {
             return error("上传失败: " + e.getMessage());
         }

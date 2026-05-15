@@ -3,6 +3,7 @@ package com.ruoyi.vehicle.mapper;
 import com.ruoyi.vehicle.domain.VehicleTemplateMaterial;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.Date;
 import java.util.List;
 
 public interface VehicleTemplateMaterialMapper {
@@ -20,7 +21,8 @@ public interface VehicleTemplateMaterialMapper {
                                              @Param("brand") String brand,
                                              @Param("weight") String weight,
                                              @Param("saleName") String saleName,
-                                             @Param("tire") String tire);
+                                             @Param("tire") String tire,
+                                             @Param("breakpointTime") Date breakpointTime);
 
     List<String> selectAllMaterialNos();
 }

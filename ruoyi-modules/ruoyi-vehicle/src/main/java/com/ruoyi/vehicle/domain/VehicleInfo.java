@@ -116,6 +116,9 @@ public class VehicleInfo extends BaseEntity {
 
     private String tire;
 
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date breakpointTime;
+
     /** VIN批量查询列表 */
     private List<String> vinList;
 

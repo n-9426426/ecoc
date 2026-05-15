@@ -22,6 +22,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
 import java.time.Duration;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -75,6 +76,14 @@ public class SysNoticeController extends BaseController
     public AjaxResult add(@Validated @RequestBody SysNotice notice)
     {
         notice.setCreateBy(SecurityUtils.getUsername());
+        notice.setCreateTime(new Date());
+        return toAjax(noticeService.insertNotice(notice));
+    }
+
+    @Operation(summary = "新增通知消息内部接口")
+    @PostMapping("/inner")
+    public AjaxResult innerAdd(@Validated @RequestBody SysNotice notice)
+    {
         return toAjax(noticeService.insertNotice(notice));
     }
 

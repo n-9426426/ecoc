@@ -1,7 +1,7 @@
 package com.ruoyi.vehicle.controller;
 
+import com.alibaba.fastjson2.util.DateUtils;
 import com.ruoyi.common.core.domain.R;
-import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
@@ -12,10 +12,10 @@ import com.ruoyi.common.log.enums.BusinessType;
 import com.ruoyi.common.security.annotation.RequiresPermissions;
 import com.ruoyi.system.api.RemoteLoginService;
 import com.ruoyi.system.api.RemoteTranslateService;
-import com.ruoyi.system.api.domain.LoginBody;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
+import com.ruoyi.vehicle.utils.ExcelUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,8 +23,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.Arrays;
-import java.util.List;
+import javax.servlet.http.HttpServletResponse;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @RestController
@@ -42,19 +42,35 @@ public class VehicleInfoController extends BaseController {
     @Autowired
     private RemoteLoginService remoteLoginService;
 
+    @Autowired
+    private ExcelUtil excelUtil;
+
     @Operation(summary = "MES数据推送至本系统")
     @Log(title = "数据推送", businessType = BusinessType.INSERT)
     @PostMapping("/to-system")
-    public AjaxResult MesToSystem(VehicleDto vehicleDto) {
-        LoginBody body = new LoginBody();
-        body.setUsername(vehicleDto.getUsername());
-        body.setPassword(vehicleDto.getPassword());
-        int loginResultCode = remoteLoginService.login(body).getCode();
-        if (loginResultCode != 200) {
-            throw new ServiceException("MES数据推送至本系统时用户名或密码错误");
+    public AjaxResult MesToSystem(List<VehicleDto> vehicleDtos) {
+        List<Map<String, Object>> result = new LinkedList<>();
+        Date now = new Date();
+        for (VehicleDto vehicleDto : vehicleDtos) {
+//            LoginBody body = new LoginBody();
+//            body.setUsername(vehicleDto.getUsername());
+//            body.setPassword(vehicleDto.getPassword());
+//            int loginResultCode = remoteLoginService.login(body).getCode();
+//            if (loginResultCode != 200) {
+//                throw new ServiceException("MES数据推送至本系统时用户名或密码错误");
+//            }
+            Map<String, Object> resultItem = new LinkedHashMap<>();
+            try {
+                resultItem = vehicleInfoService.getVehicleInfoFromMes(vehicleDto, now);
+                result.add(resultItem);
+            } catch (Exception e) {
+                resultItem.put("vin", vehicleDto.getVin());
+                resultItem.put("recordId", null);
+                resultItem.put("receiveTime", DateUtils.format(now, "yyyy-MM-dd HH:mm:ss"));
+                resultItem.put("cause", e.getMessage());
+            }
         }
-        vehicleInfoService.getVehicleInfoFromMes(vehicleDto);
-        return AjaxResult.success();
+        return AjaxResult.success(result);
     }
 
     /**
@@ -170,6 +186,13 @@ public class VehicleInfoController extends BaseController {
         }
         vehicleInfoService.importVehicleInfoFromExcel(file);
         return R.ok();
+    }
+
+    @RequiresPermissions("vehicle:info:export")
+    @PostMapping("/export/excel")
+    public void exportExcel(HttpServletResponse response, @RequestBody VehicleInfo vehicleInfo) throws Exception {
+        List<VehicleInfo> list = vehicleInfoService.selectVehicleInfoList(vehicleInfo);
+        excelUtil.exportExcel(response, list, "vehicle", "Vehicle");
     }
 
     /**

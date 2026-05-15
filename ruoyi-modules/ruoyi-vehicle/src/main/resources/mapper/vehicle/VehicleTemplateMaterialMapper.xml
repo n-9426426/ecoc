@@ -71,7 +71,7 @@
         select vtm.template_id
         from vehicle_template_material vtm
         left join vehicle_template vt on vtm.template_id = vt.template_id
-        where vt.validate_result = 1
+        where vt.validate_result = 1 and vt.status = '0'
         <choose>
             <when test="materialNo != null and materialNo != ''">
                 AND vtm.material_no = #{materialNo}

@@ -84,4 +84,8 @@ public interface VehicleInfoMapper {
     VehicleInfo selectByVinAndDeleted(@Param("vin") String vin, @Param("deleted") int deleted);
 
     List<VehicleInfo> selectVehicleInfoByIds(Long[] vehicleIds);
+
+    List<VehicleInfo> checkOldTemplate();
+
+    int updateVehicleInfoOldTemplate(@Param("vehicleIds") List<Long> vehicleIds, @Param("status") Integer status);
 }

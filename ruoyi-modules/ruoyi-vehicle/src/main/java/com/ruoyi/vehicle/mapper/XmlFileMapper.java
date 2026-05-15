@@ -1,6 +1,7 @@
 package com.ruoyi.vehicle.mapper;
 
 import com.ruoyi.vehicle.domain.XmlFile;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
@@ -61,4 +62,8 @@ public interface XmlFileMapper {
     String selectVersionByFileName(String fileName);
 
     void updateIsLatestToFalse(String fileName);
+
+    List<XmlFile> checkXmlFileTimeoutUpload();
+
+    void updateXmlFileTimeoutUpload(@Param("xmlFileIds") List<Long> xmlFileIds, @Param("status") Integer status);
 }

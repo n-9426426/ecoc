@@ -135,7 +135,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         // 查模板
         Long vehicleTemplateId = vehicleTemplateMaterialMapper
                 .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getTvv(), vehicleInfo.getBrand(),
-                        vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire());
+                        vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getBreakpointTime());
         if (vehicleTemplateId == null) {
             throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎无对应的可用车辆模板");
         }
@@ -153,7 +153,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setUploadStatus(0);
         vehicleInfo.setValidationResult(0);
         vehicleInfo.setDeleted(0);
-        vehicleInfo.setCreateTime(DateUtils.getNowDate());
+        vehicleInfo.setCreateTime(vehicleInfo.getCreateTime() == null ? DateUtils.getNowDate() : vehicleInfo.getCreateTime());
         vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null
                 ? SecurityUtils.getUsername() : "MES To System");
 
@@ -187,7 +187,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         if (StringUtils.isNotBlank(vehicleInfo.getMaterialNo())) {
             Long vehicleTemplateId = vehicleTemplateMaterialMapper
                     .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getTvv(), vehicleInfo.getBrand(),
-                            vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire());
+                            vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getBreakpointTime());
             if (vehicleTemplateId == null) {
                 throw new RuntimeException("该物料号无对应的可用车辆模板");
             }
@@ -356,13 +356,13 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             abnormalClassifyMapper.batchInsert(abnormalClassifies);
         }
         sysNotice.setNoticeContent(msg.toString());
-        remoteNoticeService.add(sysNotice);
+        remoteNoticeService.innerAdd(sysNotice);
         return validationReports;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void getVehicleInfoFromMes(VehicleDto vehicleDto) {
+    public Map<String, Object> getVehicleInfoFromMes(VehicleDto vehicleDto, Date now) {
         // 获取当前登录用户
         LoginUser loginUser = SecurityUtils.getLoginUser();
 
@@ -373,6 +373,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         }
         VehicleInfo vehicleInfo = new VehicleInfo();
         BeanUtils.copyProperties(vehicleDto, vehicleInfo);
+        vehicleInfo.setCreateTime(now);
         List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_model").getData();
         for (SysDictData dictData : sysDictData) {
             if (dictData.getDictLabel().equals(vehicleDto.getVehicleModel())) {
@@ -384,6 +385,12 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new RuntimeException("车型代码不存在");
         }
         insertVehicleInfo(vehicleInfo);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("vin", vehicleInfo.getVin());
+        result.put("recordId", vehicleInfo.getVehicleId());
+        result.put("receiveTime", com.alibaba.fastjson2.util.DateUtils.format(now, "yyyy-MM-dd HH:mm:ss"));
+        result.put("cause", null);
+        return result;
     }
 
     @Override
@@ -428,8 +435,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             String weight        = getCellStringValue(row.getCell(9));
             String saleName      = getCellStringValue(row.getCell(10));
             String tire          = getCellStringValue(row.getCell(11));
-            // 确定导入文档中是否有tvv
-            String tvv           = null;
+            String tvv           = getCellStringValue(row.getCell(12));;
+            Date breakpointTime  = getCellDateValue(row.getCell(13));
 
             // 跳过空行
             if (StringUtils.isBlank(vin)) continue;
@@ -442,7 +449,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 }
 
                 // 通过物料号查模板ID
-                Long templateId = vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(materialNo, tvv, brand, weight, saleName, tire);
+                Long templateId = vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(materialNo, tvv, brand, weight, saleName, tire, breakpointTime);
                 if (templateId == null) {
                     errorMsgs.add("第" + (rowIndex + 1) + "行：物料号[" + materialNo + "]未找到可用关联模板，跳过");
                     continue;
@@ -518,7 +525,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Override
     public Long selectVehicleTemplateIdByMaterialNo(String materialNo) {
-        return vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(materialNo, null, null, null, null, null);
+        return vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(materialNo, null, null, null, null, null, null);
     }
 
     @Override
@@ -530,7 +537,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     public List<Map<String, Object>> selectVehicleTemplateIdByCondition(String materialNo, String brand, String weight, String saleName, String tire) {
         List<VehicleTemplate> templates = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(materialNo, brand, weight, saleName, tire);
         if (templates.isEmpty()) {
-            throw new RuntimeException("该物料号未关联任何可用模板");
+            throw new RuntimeException("无法匹配任何可用模板");
         }
         List<Map<String, Object>> result = new ArrayList<>();
         for (VehicleTemplate template : templates) {

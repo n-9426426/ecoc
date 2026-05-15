@@ -24,7 +24,7 @@ public class RemoteNoticeFallbackFactory implements FallbackFactory<RemoteNotice
         log.error("通知服务调用失败:{}", throwable.getMessage());
         return new RemoteNoticeService() {
             @Override
-            public R<?> add(SysNotice notice) {
+            public R<?> innerAdd(SysNotice notice) {
                 return R.fail(throwable.getMessage());
             }
         };

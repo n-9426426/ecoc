@@ -8,6 +8,7 @@ import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -80,7 +81,7 @@ public interface IVehicleInfoService {
 
     public List<ValidationReport> validateVehicleInfo(List<Long> vehicleInfoId);
 
-    void getVehicleInfoFromMes(VehicleDto vehicleDto);
+    Map<String, Object> getVehicleInfoFromMes(VehicleDto dataDto, Date now);
 
     VehicleInfo selectVehicleInfoByVin(String vin);
 

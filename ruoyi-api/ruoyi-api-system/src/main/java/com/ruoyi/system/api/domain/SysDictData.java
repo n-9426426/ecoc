@@ -66,6 +66,14 @@ public class SysDictData extends BaseEntity
 
     private String uuid;
 
+    private String tableName;
+
+    private String excelColumnNameEnUs;
+
+    private String excelColumnNameZhCn;
+
+    private Long excelColumnSort;
+
     public Long getDictCode()
     {
         return dictCode;
@@ -276,5 +284,37 @@ public class SysDictData extends BaseEntity
 
     public void setUuid(String uuid) {
         this.uuid = uuid;
+    }
+
+    public String getExcelColumnNameEnUs() {
+        return excelColumnNameEnUs;
+    }
+
+    public void setExcelColumnNameEnUs(String excelColumnNameEnUs) {
+        this.excelColumnNameEnUs = excelColumnNameEnUs;
+    }
+
+    public String getExcelColumnNameZhCn() {
+        return excelColumnNameZhCn;
+    }
+
+    public void setExcelColumnNameZhCn(String excelColumnNameZhCn) {
+        this.excelColumnNameZhCn = excelColumnNameZhCn;
+    }
+
+    public String getTableName() {
+        return tableName;
+    }
+
+    public void setTableName(String tableName) {
+        this.tableName = tableName;
+    }
+
+    public Long getExcelColumnSort() {
+        return excelColumnSort;
+    }
+
+    public void setExcelColumnSort(Long excelColumnSort) {
+        this.excelColumnSort = excelColumnSort;
     }
 }
