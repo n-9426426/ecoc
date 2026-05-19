@@ -363,11 +363,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> getVehicleInfoFromMes(VehicleDto.Vehicle vehicle, Date now) {
-        // 获取当前登录用户
-        LoginUser loginUser = SecurityUtils.getLoginUser();
-
-        // 判断是否有某个权限
+    public Map<String, Object> getVehicleInfoFromMes(VehicleDto.Vehicle vehicle, Date now, LoginUser loginUser) {
+        // 直接用传进来的 loginUser，不从 SecurityContext 取
         Set<String> permissions = loginUser.getPermissions();
         if (!permissions.contains("vehicle:info:toSystem")) {
             throw new ServiceException("没有权限执行此操作");

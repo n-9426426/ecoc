@@ -17,6 +17,7 @@ import com.ruoyi.system.api.RemoteLoginService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.LoginBody;
 import com.ruoyi.system.api.domain.SysUser;
+
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
@@ -26,8 +27,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -74,16 +73,21 @@ public class VehicleInfoController extends BaseController {
         sysUser.setUserName(JwtUtils.getUserName(token));
         LoginUser loginUser = new LoginUser();
         loginUser.setSysUser(sysUser);
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(loginUser, null, null)
-        );
 
+// 补充：从 token 里或远程加载权限
+// ruoyi 的 TokenService 可以根据 token 拿到完整的 LoginUser
+        LoginUser fullLoginUser = tokenService.getLoginUser(token);
+        if (fullLoginUser == null) {
+            throw new ServiceException("登录信息获取失败");
+        }
+
+// 用完整的 loginUser 往下传
         List<Map<String, Object>> result = new LinkedList<>();
         Date now = new Date();
         for (VehicleDto.Vehicle vehicle : vehicleDto.getVehicles()) {
             Map<String, Object> resultItem = new LinkedHashMap<>();
             try {
-                resultItem = vehicleInfoService.getVehicleInfoFromMes(vehicle, now);
+                resultItem = vehicleInfoService.getVehicleInfoFromMes(vehicle, now, fullLoginUser);
                 result.add(resultItem);
             } catch (Exception e) {
                 resultItem.put("vin", vehicle.getVin());
@@ -94,7 +98,6 @@ public class VehicleInfoController extends BaseController {
         }
         return AjaxResult.success(result);
     }
-
     /**
      * 查询车辆信息列表
      */

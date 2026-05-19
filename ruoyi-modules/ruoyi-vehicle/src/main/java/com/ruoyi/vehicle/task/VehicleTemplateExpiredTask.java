@@ -7,6 +7,7 @@ import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMapper;
 import com.ruoyi.vehicle.utils.TimeUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -18,8 +19,11 @@ import java.util.stream.Collectors;
 @Component
 @Slf4j
 public class VehicleTemplateExpiredTask {
+
+    @Autowired
     private RemoteNoticeService remoteNoticeService;
 
+    @Autowired
     private VehicleTemplateMapper vehicleTemplateMapper;
 
     @Scheduled(cron = "0 0 * * * ?")

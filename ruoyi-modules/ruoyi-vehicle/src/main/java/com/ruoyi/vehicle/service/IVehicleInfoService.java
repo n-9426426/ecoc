@@ -2,6 +2,7 @@ package com.ruoyi.vehicle.service;
 
 import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.web.domain.AjaxResult;
+import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
@@ -81,7 +82,7 @@ public interface IVehicleInfoService {
 
     public List<ValidationReport> validateVehicleInfo(List<Long> vehicleInfoId);
 
-    Map<String, Object> getVehicleInfoFromMes(VehicleDto.Vehicle vehicle, Date now);
+    Map<String, Object> getVehicleInfoFromMes(VehicleDto.Vehicle vehicle, Date now, LoginUser loginUser);
 
     VehicleInfo selectVehicleInfoByVin(String vin);
 
