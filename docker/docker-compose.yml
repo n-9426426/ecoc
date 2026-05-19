@@ -1,32 +1,5 @@
 version: '3.8'
 services:
-  ruoyi-nacos:
-    container_name: ruoyi-nacos
-    image: nacos/nacos-server:v2.4.2
-    build:
-      context: ./nacos
-    environment:
-      - MODE=standalone
-      - SPRING_DATASOURCE_PLATFORM=mysql
-      - MYSQL_SERVICE_HOST=ruoyi-mysql
-      - MYSQL_SERVICE_PORT=3306
-      - MYSQL_SERVICE_DB_NAME=ry_config
-      - MYSQL_SERVICE_USER=root
-      - MYSQL_SERVICE_PASSWORD=password
-      - MYSQL_SERVICE_DB_PARAM=allowPublicKeyRetrieval=true&useSSL=false&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-    volumes:
-      - ./nacos/logs/:/home/nacos/logs
-      - ./nacos/conf/application.properties:/home/nacos/conf/application.properties
-    ports:
-      - "8848:8848"
-      - "9848:9848"
-      - "9849:9849"
-    depends_on:
-      - ruoyi-mysql
-    restart: unless-stopped
-    networks:
-      - app-net
-
   ruoyi-mysql:
     container_name: ruoyi-mysql
     image: mysql:8.4.8
@@ -58,6 +31,48 @@ services:
     networks:
       - app-net
 
+  ruoyi-nacos:
+    container_name: ruoyi-nacos
+    image: nacos/nacos-server:v2.4.2
+    build:
+      context: ./nacos
+    environment:
+      - MODE=standalone
+      - SPRING_DATASOURCE_PLATFORM=mysql
+      - MYSQL_SERVICE_HOST=ruoyi-mysql
+      - MYSQL_SERVICE_PORT=3306
+      - MYSQL_SERVICE_DB_NAME=ry_config
+      - MYSQL_SERVICE_USER=root
+      - MYSQL_SERVICE_PASSWORD=password
+      - MYSQL_SERVICE_DB_PARAM=allowPublicKeyRetrieval=true&useSSL=false&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    volumes:
+      - ./nacos/logs/:/home/nacos/logs
+      - ./nacos/conf/application.properties:/home/nacos/conf/application.properties
+    ports:
+      - "8848:8848"
+      - "9848:9848"
+      - "9849:9849"
+    depends_on:
+      - ruoyi-mysql
+    restart: unless-stopped
+    networks:
+      - app-net
+
+  ruoyi-redis:
+    container_name: ruoyi-redis
+    image: redis
+    build:
+      context: ./redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis/conf/redis.conf:/home/ruoyi/redis/redis.conf
+      - ./redis/data:/data
+    command: redis-server /home/ruoyi/redis/redis.conf
+    restart: unless-stopped
+    networks:
+      - app-net
+
   ruoyi-canal:
     image: canal/canal-server:v1.1.8
     container_name: ruoyi-canal
@@ -75,17 +90,108 @@ services:
     networks:
       - app-net
 
-  ruoyi-redis:
-    container_name: ruoyi-redis
-    image: redis:latest
+  ruoyi-gateway:
+    container_name: ruoyi-gateway
     build:
-      context: ./redis
+      context: ./ruoyi/gateway
+      dockerfile: dockerfile
+    environment:
+      - SPRING_CLOUD_NACOS_DISCOVERY_SERVER-ADDR=ruoyi-nacos:8848
+      - SPRING_CLOUD_NACOS_CONFIG_SERVER-ADDR=ruoyi-nacos:8848
     ports:
-      - "6379:6379"
+      - "8080:8080"
+    depends_on:
+      - ruoyi-redis
+      - ruoyi-nacos
+    restart: unless-stopped
+    networks:
+      - app-net
+
+  ruoyi-auth:
+    container_name: ruoyi-auth
+    build:
+      context: ./ruoyi/auth
+      dockerfile: dockerfile
+    environment:
+      - SPRING_CLOUD_NACOS_DISCOVERY_SERVER-ADDR=ruoyi-nacos:8848
+      - SPRING_CLOUD_NACOS_CONFIG_SERVER-ADDR=ruoyi-nacos:8848
+    ports:
+      - "9200:9200"
+    depends_on:
+      - ruoyi-redis
+      - ruoyi-nacos
+    restart: unless-stopped
+    networks:
+      - app-net
+
+  ruoyi-modules-system:
+    container_name: ruoyi-modules-system
+    build:
+      context: ./ruoyi/modules/system
+      dockerfile: dockerfile
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_CLOUD_NACOS_DISCOVERY_SERVER-ADDR=ruoyi-nacos:8848
+      - SPRING_CLOUD_NACOS_CONFIG_SERVER-ADDR=ruoyi-nacos:8848
+      - CANAL_HOSTNAME=ruoyi-canal
+      - CANAL_SERVER=ruoyi-canal:11111
+    ports:
+      - "9201:9201"
+    depends_on:
+      - ruoyi-redis
+      - ruoyi-mysql
+      - ruoyi-nacos
+      - ruoyi-canal
+    restart: unless-stopped
+    networks:
+      - app-net
+
+  ruoyi-modules-vehicle:
+    container_name: ruoyi-modules-vehicle
+    build:
+      context: ./ruoyi/modules/vehicle
+      dockerfile: dockerfile
+    environment:
+      - SPRING_CLOUD_NACOS_DISCOVERY_SERVER-ADDR=ruoyi-nacos:8848
+      - SPRING_CLOUD_NACOS_CONFIG_SERVER-ADDR=ruoyi-nacos:8848
+    ports:
+      - "9203:9203"
+    depends_on:
+      - ruoyi-redis
+      - ruoyi-mysql
+      - ruoyi-nacos
+    restart: unless-stopped
+    networks:
+      - app-net
+
+  ruoyi-modules-file:
+    container_name: ruoyi-modules-file
+    build:
+      context: ./ruoyi/modules/file
+      dockerfile: dockerfile
+    environment:
+      - SPRING_CLOUD_NACOS_DISCOVERY_SERVER-ADDR=ruoyi-nacos:8848
+      - SPRING_CLOUD_NACOS_CONFIG_SERVER-ADDR=ruoyi-nacos:8848
+    ports:
+      - "9300:9300"
     volumes:
-      - ./redis/conf/redis.conf:/home/ruoyi/redis/redis.conf
-      - ./redis/data:/data
-    command: redis-server /home/ruoyi/redis/redis.conf
+      - ./ruoyi/uploadPath:/home/ruoyi/uploadPath
+    restart: unless-stopped
+    networks:
+      - app-net
+
+  ruoyi-visual-monitor:
+    container_name: ruoyi-visual-monitor
+    build:
+      context: ./ruoyi/visual/monitor
+      dockerfile: dockerfile
+    environment:
+      - SPRING_CLOUD_NACOS_DISCOVERY_SERVER-ADDR=ruoyi-nacos:8848
+      - SPRING_CLOUD_NACOS_CONFIG_SERVER-ADDR=ruoyi-nacos:8848
+    ports:
+      - "9100:9100"
+    depends_on:
+      - ruoyi-nacos
     restart: unless-stopped
     networks:
       - app-net
@@ -108,90 +214,6 @@ services:
     networks:
       - app-net
 
-  ruoyi-gateway:
-    container_name: ruoyi-gateway
-    build:
-      context: ./ruoyi/gateway
-      dockerfile: dockerfile
-    ports:
-      - "8080:8080"
-    depends_on:
-      - ruoyi-redis
-      - ruoyi-nacos
-    restart: unless-stopped
-    networks:
-      - app-net
-
-  ruoyi-auth:
-    container_name: ruoyi-auth
-    build:
-      context: ./ruoyi/auth
-      dockerfile: dockerfile
-    ports:
-      - "9200:9200"
-    depends_on:
-      - ruoyi-redis
-      - ruoyi-nacos
-    restart: unless-stopped
-    networks:
-      - app-net
-
-  ruoyi-modules-system:
-    container_name: ruoyi-modules-system
-    build:
-      context: ./ruoyi/modules/system
-      dockerfile: dockerfile
-    ports:
-      - "9201:9201"
-    depends_on:
-      - ruoyi-redis
-      - ruoyi-mysql
-      - ruoyi-nacos
-      - ruoyi-canal
-    restart: unless-stopped
-    networks:
-      - app-net
-
-  ruoyi-modules-vehicle:
-    container_name: ruoyi-modules-vehicle
-    build:
-      context: ./ruoyi/modules/vehicle
-      dockerfile: dockerfile
-    ports:
-      - "9203:9203"
-    depends_on:
-      - ruoyi-redis
-      - ruoyi-mysql
-      - ruoyi-nacos
-    restart: unless-stopped
-    networks:
-      - app-net
-
-  ruoyi-modules-file:
-    container_name: ruoyi-modules-file
-    build:
-      context: ./ruoyi/modules/file
-      dockerfile: dockerfile
-    ports:
-      - "9300:9300"
-    volumes:
-      - ./ruoyi/uploadPath:/home/ruoyi/uploadPath
-    restart: unless-stopped
-    networks:
-      - app-net
-
-  ruoyi-visual-monitor:
-    container_name: ruoyi-visual-monitor
-    build:
-      context: ./ruoyi/visual/monitor
-      dockerfile: dockerfile
-    ports:
-      - "9100:9100"
-    depends_on:
-      - ruoyi-nacos
-    restart: unless-stopped
-    networks:
-      - app-net
 networks:
   app-net:
     driver: bridge
