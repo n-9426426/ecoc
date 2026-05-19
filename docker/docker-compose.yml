@@ -77,7 +77,7 @@ services:
 
   ruoyi-redis:
     container_name: ruoyi-redis
-    image: redis:v8.6.2
+    image: redis:latest
     build:
       context: ./redis
     ports:
@@ -87,6 +87,8 @@ services:
       - ./redis/data:/data
     command: redis-server /home/ruoyi/redis/redis.conf
     restart: unless-stopped
+    networks:
+      - app-net
 
   ruoyi-nginx:
     container_name: ruoyi-nginx
@@ -103,6 +105,8 @@ services:
     depends_on:
       - ruoyi-gateway
     restart: unless-stopped
+    networks:
+      - app-net
 
   ruoyi-gateway:
     container_name: ruoyi-gateway
@@ -115,6 +119,8 @@ services:
       - ruoyi-redis
       - ruoyi-nacos
     restart: unless-stopped
+    networks:
+      - app-net
 
   ruoyi-auth:
     container_name: ruoyi-auth
@@ -127,6 +133,8 @@ services:
       - ruoyi-redis
       - ruoyi-nacos
     restart: unless-stopped
+    networks:
+      - app-net
 
   ruoyi-modules-system:
     container_name: ruoyi-modules-system
@@ -140,9 +148,9 @@ services:
       - ruoyi-mysql
       - ruoyi-nacos
       - ruoyi-canal
+    restart: unless-stopped
     networks:
       - app-net
-    restart: unless-stopped
 
   ruoyi-modules-vehicle:
     container_name: ruoyi-modules-vehicle
@@ -156,18 +164,8 @@ services:
       - ruoyi-mysql
       - ruoyi-nacos
     restart: unless-stopped
-
-  ruoyi-modules-job:
-    container_name: ruoyi-modules-job
-    build:
-      context: ./ruoyi/modules/job
-      dockerfile: dockerfile
-    ports:
-      - "9202:9202"
-    depends_on:
-      - ruoyi-mysql
-      - ruoyi-nacos
-    restart: unless-stopped
+    networks:
+      - app-net
 
   ruoyi-modules-file:
     container_name: ruoyi-modules-file
@@ -179,6 +177,8 @@ services:
     volumes:
       - ./ruoyi/uploadPath:/home/ruoyi/uploadPath
     restart: unless-stopped
+    networks:
+      - app-net
 
   ruoyi-visual-monitor:
     container_name: ruoyi-visual-monitor
@@ -190,20 +190,8 @@ services:
     depends_on:
       - ruoyi-nacos
     restart: unless-stopped
-
-  ruoyi-visual-vehicle:
-    container_name: ruoyi-visual-vehicle
-    build:
-      context: ./ruoyi/visual/vehicle
-      dockerfile: dockerfile
-    ports:
-      - "9100:9100"
-    depends_on:
-      - ruoyi-redis
-      - ruoyi-mysql
-      - ruoyi-nacos
-    restart: unless-stopped
-
+    networks:
+      - app-net
 networks:
   app-net:
     driver: bridge
