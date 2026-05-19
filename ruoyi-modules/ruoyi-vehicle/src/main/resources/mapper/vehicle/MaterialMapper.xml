@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.vehicle.mapper.MaterialMapper">
+
+    <resultMap type="Material" id="MaterialResult">
+        <id     property="id"          column="id"           />
+        <result property="name"        column="name"         />
+        <result property="materialNo"  column="material_no"  />
+        <result property="tvv"         column="tvv"          />
+        <result property="country"     column="country"      />
+        <result property="trie"        column="trie"         />
+        <result property="weight"      column="weight"       />
+        <result property="brand"       column="brand"        />
+        <result property="saleName"    column="sale_name"    />
+        <result property="createTime"  column="create_time"  />
+        <result property="createBy"    column="create_by"    />
+        <result property="updateTime"  column="update_time"  />
+        <result property="updateBy"    column="update_by"    />
+        <result property="version"     column="version"      />
+        <result property="isLast"      column="is_last"      />
+        <result property="remark"      column="remark"       />
+        <result property="lastVersion" column="last_version"/>
+    </resultMap>
+
+    <sql id="selectMaterialVo">
+        SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.trie, m.weight, m.brand, m.sale_name,
+               m.create_time, m.create_by, m.update_time, m.update_by, m.remark, vt.version, vt.is_last,
+        FROM material m
+        left join vehicle_info vi on vi.material_no = m.material_no and vi.deleted = 0
+        LEFT JOIN vehicle_template_material vtm ON vtm.material_no = m.material_no
+        LEFT JOIN vehicle_template vt ON vt.template_id = vtm.template_id and vt.template_id = vi.vehicle_template_id
+    </sql>
+
+    <select id="selectMaterialList" parameterType="Material" resultMap="MaterialResult">
+        SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.trie, m.weight, m.brand, m.sale_name,
+        m.create_time, m.create_by, m.update_time, m.update_by, m.remark,
+        vt.version, vt.is_last,
+        (
+            SELECT max_vt.version
+            FROM vehicle_template max_vt
+            WHERE max_vt.uuid = vt.uuid
+            AND max_vt.is_last = 1
+        ) AS last_version
+        FROM material m
+        left join vehicle_info vi on vi.material_no = m.material_no and vi.deleted = 0
+        LEFT JOIN vehicle_template_material vtm ON vtm.material_no = m.material_no
+        LEFT JOIN vehicle_template vt ON vt.template_id = vtm.template_id and vt.template_id = vi.vehicle_template_id
+        <where>
+            <if test="name != null and name != ''">
+                AND m.name LIKE CONCAT('%', #{name}, '%')
+            </if>
+            <if test="materialNo != null and materialNo != ''">
+                AND m.material_no LIKE CONCAT('%', #{materialNo}, '%')
+            </if>
+            <if test="tvv != null and tvv != ''">
+                AND m.tvv LIKE CONCAT('%', #{tvv}, '%')
+            </if>
+            <if test="country != null and country != ''">
+                AND m.country = #{country}
+            </if>
+            <if test="isLast != null and isLast != ''">
+                AND vt.is_last = #{isLast}
+            </if>
+        </where>
+        ORDER BY m.id DESC
+    </select>
+
+    <select id="selectMaterialById" parameterType="Long" resultMap="MaterialResult">
+        <include refid="selectMaterialVo"/>
+        WHERE m.id = #{id}
+    </select>
+
+    <insert id="insertMaterial" parameterType="Material" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO material
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="name != null and name != ''">name,</if>
+            <if test="materialNo != null and materialNo != ''">material_no,</if>
+            <if test="tvv != null and tvv != ''">tvv,</if>
+            <if test="country != null and country != ''">country,</if>
+            <if test="trie != null and trie != ''">trie,</if>
+            <if test="weight != null and weight != ''">weight,</if>
+            <if test="brand != null and brand != ''">brand,</if>
+            <if test="saleName != null and saleName != ''">sale_name,</if>
+            <if test="createTime != null">create_time,</if>
+            <if test="createBy != null and createBy != ''">create_by,</if>
+            <if test="remark != null and remark != ''">remark,</if>
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="name != null and name != ''">#{name},</if>
+            <if test="materialNo != null and materialNo != ''">#{materialNo},</if>
+            <if test="tvv != null and tvv != ''">#{tvv},</if>
+            <if test="country != null and country != ''">#{country},</if>
+            <if test="trie != null and trie != ''">#{trie},</if>
+            <if test="weight != null and weight != ''">#{weight},</if>
+            <if test="brand != null and brand != ''">#{brand},</if>
+            <if test="saleName != null and saleName != ''">#{saleName},</if>
+            <if test="createTime != null">#{createTime},</if>
+            <if test="createBy != null and createBy != ''">#{createBy},</if>
+            <if test="remark != null and remark != ''">#{remark},</if>
+        </trim>
+    </insert>
+
+    <update id="updateMaterial" parameterType="Material">
+        UPDATE material
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="name != null and name != ''">name = #{name},</if>
+            <if test="materialNo != null and materialNo != ''">material_no = #{materialNo},</if>
+            <if test="tvv != null and tvv != ''">tvv = #{tvv},</if>
+            <if test="country != null and country != ''">country = #{country},</if>
+            <if test="trie != null and trie != ''">trie = #{trie},</if>
+            <if test="weight != null and weight != ''">weight = #{weight},</if>
+            <if test="brand != null and brand != ''">brand = #{brand},</if>
+            <if test="saleName != null and saleName != ''">sale_name = #{saleName},</if>
+            <if test="updateTime != null">update_time = #{updateTime},</if>
+            <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
+            <if test="remark != null and remark != ''">remark = #{remark},</if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteMaterialByIds" parameterType="Long">
+        DELETE FROM material WHERE id IN
+        <foreach collection="array" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

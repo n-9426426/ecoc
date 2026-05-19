@@ -290,6 +290,41 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
         return result;
     }
 
+    @Override
+    public Map<String, Object> getAutoChange() {
+        Map<String, Object> result = new HashMap<>();
+        SysDictData query = new SysDictData();
+        query.setStatus("0");
+        query.setDictType("auto_status");
+        query.setDictSort(0L);
+        List<SysDictData> sysDictData = selectDictDataList(query);
+        if (!sysDictData.isEmpty()) {
+            result.put("dictCode", sysDictData.get(0).getDictCode());
+            result.put("autoChange", !sysDictData.get(0).getDictValue().equals("0"));
+            return result;
+        }
+        result.put("dictCode", -1L);
+        result.put("autoChange", false);
+        return result;
+    }
+
+    @Override
+    public int autoChange(Long dictCode) {
+        SysDictData sysDictData = dictDataMapper.selectDictDataById(dictCode);
+        if (sysDictData == null) {
+            throw new ServiceException("字典数据异常");
+        }
+        if (sysDictData.getDictValue().equals("0")) {
+            sysDictData.setDictValue("1");
+            updateDictData(sysDictData);
+            return 1;
+        } else {
+            sysDictData.setDictValue("0");
+            updateDictData(sysDictData);
+            return 0;
+        }
+    }
+
     // ================================================================
     // 私有工具方法
     // ================================================================

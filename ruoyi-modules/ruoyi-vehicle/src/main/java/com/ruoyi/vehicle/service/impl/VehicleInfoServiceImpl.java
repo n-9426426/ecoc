@@ -363,7 +363,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> getVehicleInfoFromMes(VehicleDto vehicleDto, Date now) {
+    public Map<String, Object> getVehicleInfoFromMes(VehicleDto.Vehicle vehicle, Date now) {
         // 获取当前登录用户
         LoginUser loginUser = SecurityUtils.getLoginUser();
 
@@ -373,11 +373,11 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new ServiceException("没有权限执行此操作");
         }
         VehicleInfo vehicleInfo = new VehicleInfo();
-        BeanUtils.copyProperties(vehicleDto, vehicleInfo);
+        BeanUtils.copyProperties(vehicle, vehicleInfo);
         vehicleInfo.setCreateTime(now);
         List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_model").getData();
         for (SysDictData dictData : sysDictData) {
-            if (dictData.getDictLabel().equals(vehicleDto.getVehicleModel())) {
+            if (dictData.getDictLabel().equals(vehicle.getVehicleModel())) {
                 vehicleInfo.setVehicleModel(dictData.getDictValue());
                 break;
             }
@@ -549,6 +549,10 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             result.add(templateMap);
         }
         return result;
+    }
+
+    public int updateVehicleTemplateId(String vin, Long templateId) {
+        return vehicleTemplateMapper.updateVehicleTemplateId(vin, templateId);
     }
 
 // ========== 工具方法 ==========

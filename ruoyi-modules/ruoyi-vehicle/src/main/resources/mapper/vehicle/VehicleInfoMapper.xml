@@ -41,18 +41,20 @@
 		<result property="tire" column="tire"/>
 		<result property="tvv" column="tvv"/>
 		<result property="breakpointTime" column="breakpoint_time"/>
+		<result property="version" column="version"/>
+		<result property="tempVersion" column="temp_version"/>
 	</resultMap>
 
 	<sql id="selectVehicleInfoVo">
 		select vehicle_id, vin, vehicle_model, factory_code, factory_name, material_no,
-			   upload_status, validation_result, status, country, color, secondary_color,
+			   upload_status, validation_result, status, country, color, secondary_color, vi.temp_version,
 			   certificate_version, wvta_no, manufacture_date, issue_date, json, xml_template_id, vehicle_template_id,
-			   deleted, create_by, create_time, update_by, update_time, remark, validation_report_json,
+			   deleted, create_by, create_time, update_by, update_time, remark, validation_report_json, vt.version as version,
 			   engine_number, motor_number, brand, weight, sale_name, tire, battery_number, tvv, breakpoint_time,
 			   sdd.dict_label as vehicle_model_str, vt.filepath as vehicle_template_filepath, vt.coc_template_no as coc_template_no
 		from vehicle_info vi
 		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
-		left join (select template_id, filepath, coc_template_no, is_last from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
+		left join (select template_id, filepath, coc_template_no, is_last, version from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
 	</sql>
 
 	<select id="selectVehicleInfoById" parameterType="Long" resultMap="VehicleInfoResult">
@@ -345,5 +347,49 @@
 			#{id}
 		</foreach>
 		AND deleted = 0
+	</update>
+
+	<select id="selectVehicleInfoByVinManufactureDate" parameterType="String" resultMap="VehicleInfoResult">
+		<include refid="selectVehicleInfoVo"/>
+		where vi.deleted = 0
+		and vi.manufacture_date >= (select manufacture_date from vehicle_info where vin = #{vin} and deleted = 0 limit 1)
+	</select>
+
+	<update id="updateTempVersionByVin">
+		UPDATE vehicle_info
+		SET temp_version = #{tempVersion},
+			update_time = SYSDATE()
+		WHERE vin = #{vin}
+	</update>
+
+	<update id="updateVehicleTemplateIdByTempVersion">
+		UPDATE vehicle_info vi
+		JOIN vehicle_template vt
+		ON vt.uuid = (SELECT uuid FROM vehicle_template WHERE template_id = vi.vehicle_template_id LIMIT 1)
+		AND vt.version = vi.temp_version
+		SET vi.vehicle_template_id = vt.template_id,
+		vi.json = vt.json,
+		vi.temp_version = NULL
+		WHERE vi.temp_version IS NOT NULL
+		AND vi.deleted = 0
+		AND <choose>
+		<when test="list != null and list.size() > 0">
+			vi.vin IN
+			<foreach collection="list" item="vin" open="(" separator="," close=")">
+				#{vin}
+			</foreach>
+		</when>
+		<otherwise>
+			vi.manufacture_date >= (
+			SELECT min_date FROM (
+			SELECT vi2.manufacture_date AS min_date
+			FROM vehicle_info vi2
+			WHERE vi2.vin = (SELECT vin FROM breakpoint WHERE id = #{breakpointId} LIMIT 1)
+			AND vi2.deleted = 0
+			LIMIT 1
+			) tmp
+			)
+		</otherwise>
+	</choose>
 	</update>
 </mapper>

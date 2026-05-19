@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.vehicle.mapper.BreakpointMapper">
+
+    <resultMap type="Breakpoint" id="BreakpointResult">
+        <id     property="id"              column="id"               />
+        <result property="vin"             column="vin"              />
+        <result property="time"            column="time"             />
+        <result property="manufactureDate" column="manufacture_date" />
+        <result property="materialNumber"        column="material_number"         />
+        <result property="principal"       column="principal"        />
+        <result property="createTime"      column="create_time"      />
+        <result property="createBy"        column="create_by"        />
+        <result property="updateTime"      column="update_time"      />
+        <result property="updateBy"        column="update_by"        />
+        <result property="isDispose"       column="is_dispose"       />
+        <result property="disposeUser"     column="dispose_user"     />
+        <result property="disposeTime"     column="dispose_time"     />
+        <result property="remark"          column="remark"           />
+    </resultMap>
+
+    <sql id="selectBreakpointVo">
+        SELECT id, vin, time, manufacture_date, principal,
+               create_time, create_by, update_time, update_by,
+               is_dispose, dispose_user, dispose_time, remark
+        FROM breakpoint
+    </sql>
+
+    <select id="selectBreakpointList" parameterType="Breakpoint" resultMap="BreakpointResult">
+        SELECT b.id, b.vin, b.time, b.manufacture_date, b.principal,
+            b.create_time, b.create_by, b.update_time, b.update_by,
+            b.is_dispose, b.dispose_user, b.dispose_time, b.remark,
+            COUNT(vi.vehicle_id) AS material_number
+        FROM breakpoint b
+        LEFT JOIN vehicle_info vi ON b.vin = vi.vin AND vi.deleted = 0
+        <where>
+            <if test="vin != null and vin != ''">
+                AND b.vin LIKE CONCAT('%', #{vin}, '%')
+            </if>
+            <if test="startTime != null">
+                AND b.time >= #{startTime}
+            </if>
+            <if test="endTime != null">
+                AND b.time &lt; #{endTime}
+            </if>
+            <if test="createStartTime != null">
+                AND b.create_time >= #{createStartTime}
+            </if>
+            <if test="createEndTime != null">
+                AND b.create_time &lt; #{createEndTime}
+            </if>
+            <if test="isDispose != null and isDispose != ''">
+                AND b.is_dispose = #{isDispose}
+            </if>
+            <if test="disposeStartTime != null">
+                AND b.dispose_time >= #{disposeStartTime}
+            </if>
+            <if test="disposeEndTime != null">
+                AND b.dispose_time &lt; #{disposeEndTime}
+            </if>
+        </where>
+        GROUP BY b.id, b.vin, b.time, b.manufacture_date, b.principal, b.create_time, b.create_by, b.update_time, b.update_by,
+            b.is_dispose, b.dispose_user, b.dispose_time, b.remark
+        ORDER BY b.create_time DESC
+    </select>
+
+    <select id="selectBreakpointById" parameterType="Long" resultMap="BreakpointResult">
+        <include refid="selectBreakpointVo"/>
+        WHERE id = #{id}
+    </select>
+
+    <insert id="insertBreakpoint" parameterType="Breakpoint" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO breakpoint
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="vin != null and vin != ''">vin,</if>
+            <if test="time != null">time,</if>
+            <if test="manufactureDate != null">manufacture_date,</if>
+            <if test="principal != null and principal != ''">principal,</if>
+            <if test="createTime != null">create_time,</if>
+            <if test="createBy != null and createBy != ''">create_by,</if>
+            <if test="isDispose != null and isDispose != ''">is_dispose,</if>
+            <if test="disposeUser != null and disposeUser != ''">dispose_user,</if>
+            <if test="disposeTime != null">dispose_time,</if>
+            <if test="remark != null and remark != ''">remark,</if>
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="vin != null and vin != ''">#{vin},</if>
+            <if test="time != null">#{time},</if>
+            <if test="manufactureDate != null">#{manufactureDate},</if>
+            <if test="principal != null and principal != ''">#{principal},</if>
+            <if test="createTime != null">#{createTime},</if>
+            <if test="createBy != null and createBy != ''">#{createBy},</if>
+            <if test="isDispose != null and isDispose != ''">#{isDispose},</if>
+            <if test="disposeUser != null and disposeUser != ''">#{disposeUser},</if>
+            <if test="disposeTime != null">#{disposeTime},</if>
+            <if test="remark != null and remark != ''">#{remark},</if>
+        </trim>
+    </insert>
+
+    <update id="updateBreakpoint" parameterType="Breakpoint">
+        UPDATE breakpoint
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="vin != null and vin != ''">vin = #{vin},</if>
+            <if test="time != null">time = #{time},</if>
+            <if test="manufactureDate != null">manufacture_date = #{manufactureDate},</if>
+            <if test="principal != null and principal != ''">principal = #{principal},</if>
+            <if test="updateTime != null">update_time = #{updateTime},</if>
+            <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
+            <if test="isDispose != null and isDispose != ''">is_dispose = #{isDispose},</if>
+            <if test="disposeUser != null and disposeUser != ''">dispose_user = #{disposeUser},</if>
+            <if test="disposeTime != null">dispose_time = #{disposeTime},</if>
+            <if test="remark != null and remark != ''">remark = #{remark},</if>
+        </trim>
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteBreakpointByIds" parameterType="Long">
+        DELETE FROM breakpoint WHERE id IN
+        <foreach collection="array" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

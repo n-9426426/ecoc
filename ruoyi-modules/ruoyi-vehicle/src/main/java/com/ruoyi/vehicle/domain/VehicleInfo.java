@@ -129,6 +129,10 @@ public class VehicleInfo extends BaseEntity {
     /** 车型代码批量查询列表 */
     private List<String> vehicleModelList;
 
+    private String version;
+
+    private String tempVersion;
+
     public Map<String, Object> getJsonMap() {
         if (jsonMap != null) {
             return jsonMap;

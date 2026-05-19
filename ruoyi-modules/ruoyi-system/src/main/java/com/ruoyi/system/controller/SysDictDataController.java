@@ -14,6 +14,7 @@ import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.system.mapper.SysDictDataMapper;
 import com.ruoyi.system.service.ISysDictDataService;
 import com.ruoyi.system.service.ISysDictTypeService;
+import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -126,5 +127,17 @@ public class SysDictDataController extends BaseController
                 .findFirst()
                 .map(R::ok)
                 .orElse(R.fail("字典值不存在：" + dictValue));
+    }
+
+    @Operation(summary = "生效日期自动切换状态查询")
+    @GetMapping("/auto-change/get")
+    public AjaxResult getAutoChange() {
+        return AjaxResult.success().put("autoChange", dictDataService.getAutoChange());
+    }
+
+    @Operation(summary = "生效日期自动切换状态")
+    @GetMapping("/auto-change/{dictCode}")
+    public AjaxResult autoChange(@PathVariable Long dictCode) {
+        return AjaxResult.success(dictDataService.autoChange(dictCode));
     }
 }

@@ -50,4 +50,6 @@ public interface VehicleTemplateMapper {
     int updateVehicleTemplateNoNextVersion(@Param("vehicleTemplateIds") List<Long> vehicleTemplateIds, @Param("status") Integer status);
 
     int updateVehicleTemplateExpired(@Param("vehicleTemplateIds") List<Long> vehicleTemplateIds, @Param("status") Integer status);
+
+    int updateVehicleTemplateId(@Param("vin") String vin, @Param("templateId") Long templateId);
 }

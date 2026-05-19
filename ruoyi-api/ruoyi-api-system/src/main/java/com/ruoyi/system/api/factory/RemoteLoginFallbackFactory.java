@@ -25,7 +25,7 @@ public class RemoteLoginFallbackFactory implements FallbackFactory<RemoteLoginSe
         return new RemoteLoginService() {
             @Override
             public R<?> login(LoginBody body) {
-                return R.fail();
+                return R.fail("登录服务调用失败");
             }
         };
     }

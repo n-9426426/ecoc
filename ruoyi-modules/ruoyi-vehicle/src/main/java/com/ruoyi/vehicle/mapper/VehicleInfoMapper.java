@@ -88,4 +88,10 @@ public interface VehicleInfoMapper {
     List<VehicleInfo> checkOldTemplate();
 
     int updateVehicleInfoOldTemplate(@Param("vehicleIds") List<Long> vehicleIds, @Param("status") Integer status);
+
+    List<VehicleInfo> selectVehicleInfoByVinManufactureDate(String vin);
+
+    int updateTempVersionByVin(@Param("vin") String vin, @Param("tempVersion") String tempVersion);
+
+    int updateVehicleTemplateIdByTempVersion(@Param("breakpointId") Long breakpointId, @Param("list") List<String> vinList);
 }

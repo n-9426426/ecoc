@@ -57,6 +57,9 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 			<if test="dictValue != null and dictValue != ''">
 				AND sdd.dict_value like concat('%', #{dictValue}, '%')
 			</if>
+			<if test="dictSort != null and dictSort != ''">
+				AND sdd.dict_sort = #{dictSort}
+			</if>
 			<if test="status != null and status != ''">
 				AND sdd.status = #{status}
 			</if>

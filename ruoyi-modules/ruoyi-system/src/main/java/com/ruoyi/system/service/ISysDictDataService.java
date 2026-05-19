@@ -61,4 +61,8 @@ public interface ISysDictDataService
     public int updateDictData(SysDictData dictData);
 
     Map<String, List<Long>> selectNoticeGroupAuth(List<Integer> sortList);
+
+    Map<String, Object> getAutoChange();
+
+    int autoChange(Long dictCode);
 }

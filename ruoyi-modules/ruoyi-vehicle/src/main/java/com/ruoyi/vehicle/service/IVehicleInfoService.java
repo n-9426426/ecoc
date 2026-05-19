@@ -81,7 +81,7 @@ public interface IVehicleInfoService {
 
     public List<ValidationReport> validateVehicleInfo(List<Long> vehicleInfoId);
 
-    Map<String, Object> getVehicleInfoFromMes(VehicleDto dataDto, Date now);
+    Map<String, Object> getVehicleInfoFromMes(VehicleDto.Vehicle vehicle, Date now);
 
     VehicleInfo selectVehicleInfoByVin(String vin);
 
@@ -94,4 +94,6 @@ public interface IVehicleInfoService {
     VehicleTemplate selectVehicleTemplateById(Long templateId);
 
     List<Map<String, Object>> selectVehicleTemplateIdByCondition(String materialNo, String brand, String weight, String saleName, String tire);
+
+    int updateVehicleTemplateId(String vin, Long templateId);
 }
