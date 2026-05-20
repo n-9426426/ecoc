@@ -76,8 +76,9 @@
             <if test="updateBy != null">update_by = #{updateBy},</if>
             <if test="updateTime != null">update_time = #{updateTime},</if>
             <if test="country != null and country != ''">country = #{country},</if>
-            <if test="energy_type != null">energy_type = #{energyType},</if>
-            <if test="version != null and version != ''">version = #{version}</if>
+            <if test="energyType != null">energy_type = #{energyType},</if>
+            <if test="version != null and version != ''">version = #{version},</if>
+            <if test="uuid != null and uuid != ''">uuid = #{uuid}</if>
         </set>
         WHERE template_id = #{templateId} AND deleted = 0
     </update>

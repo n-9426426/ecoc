@@ -222,7 +222,7 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
             if (VEHICLE_ATTRIBUTE.equals(data.getDictType()) && StringUtils.isNotBlank(data.getUuid())) {
                 List<SysDictData> siblings = dictDataMapper.selectSiblingRows(data.getUuid());
                 for (SysDictData sibling : siblings) {
-                    int refCount = dictDataMapper.countVehicleTemplateAttributeByDictCode(sibling.getDictCode());
+                    int refCount = dictDataMapper.countVehicleTemplateAttributeByUuid(sibling.getUuid());
                     if (refCount > 0) {
                         throw new ServiceException(String.format(
                                 "字典数据【%s】已被模板属性引用，无法删除！", sibling.getDictLabel()));
@@ -235,12 +235,6 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
                     dictDataMapper.deleteDictDataById(sibling.getDictCode());
                 }
             } else {
-                // 非 vehicle_attribute 类型：单行校验删除
-                int refCount = dictDataMapper.countVehicleTemplateAttributeByDictCode(dictCode);
-                if (refCount > 0) {
-                    throw new ServiceException(String.format(
-                            "字典数据【%s】已被模板属性引用，无法删除！", data.getDictLabel()));
-                }
                 dictDataMapper.deleteDictDataById(dictCode);
             }
 
