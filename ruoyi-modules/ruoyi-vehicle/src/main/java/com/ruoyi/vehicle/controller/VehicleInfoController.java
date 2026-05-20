@@ -34,7 +34,6 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.servlet.http.HttpServletResponse;
 import java.util.*;
 import java.util.stream.Collectors;
-
 @RestController
 @RequestMapping("/vehicle")
 public class VehicleInfoController extends BaseController {
