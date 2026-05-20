@@ -27,11 +27,13 @@ public interface VehicleTemplateMapper {
 
     List<VehicleTemplate> selectVehicleTemplateOption();
 
-    VehicleTemplate selectVehicleByCoc(@Param("cocTemplateNo") String cocTemplateNo);
+    VehicleTemplate selectVehicleByUuid(@Param("uuid") String uuid);
 
     int updateAllTemplateNotIsLast(@Param("cocTemplateNo") String cocTemplateNo);
 
-    List<VehicleTemplate> selectExpiringTemplates();
+    List<VehicleTemplate> selectExpiringTemplates(@Param("needExpiredNotice") Integer needExpiredNotice);
+
+    List<VehicleTemplate> selectEffectingTemplates();
 
     List<VehicleTemplate> selectVehicleTemplateIdByCondition(
             @Param("materialNo") String materialNo,

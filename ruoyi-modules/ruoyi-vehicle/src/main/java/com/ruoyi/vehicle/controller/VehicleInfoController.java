@@ -14,10 +14,11 @@ import com.ruoyi.common.log.enums.BusinessType;
 import com.ruoyi.common.security.annotation.RequiresPermissions;
 import com.ruoyi.common.security.service.TokenService;
 import com.ruoyi.system.api.RemoteLoginService;
+import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.LoginBody;
+import com.ruoyi.system.api.domain.SysNotice;
 import com.ruoyi.system.api.domain.SysUser;
-
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
@@ -44,6 +45,9 @@ public class VehicleInfoController extends BaseController {
 
     @Autowired
     private RemoteTranslateService remoteTranslateService;
+
+    @Autowired
+    private RemoteNoticeService remoteNoticeService;
 
     @Autowired
     private RemoteLoginService remoteLoginService;
@@ -73,18 +77,22 @@ public class VehicleInfoController extends BaseController {
         LoginUser loginUser = new LoginUser();
         loginUser.setSysUser(sysUser);
 
-// 补充：从 token 里或远程加载权限
-// ruoyi 的 TokenService 可以根据 token 拿到完整的 LoginUser
+        // 从 token 里或远程加载权限
+        // ruoyi 的 TokenService 可以根据 token 拿到完整的 LoginUser
         LoginUser fullLoginUser = tokenService.getLoginUser(token);
         if (fullLoginUser == null) {
             throw new ServiceException("登录信息获取失败");
         }
 
-// 用完整的 loginUser 往下传
+        // 用完整的 loginUser 往下传
         List<Map<String, Object>> result = new LinkedList<>();
         Date now = new Date();
+        Map<String, Date> hasBreakpointVin = new LinkedHashMap<>();
         for (VehicleDto.Vehicle vehicle : vehicleDto.getVehicles()) {
             Map<String, Object> resultItem = new LinkedHashMap<>();
+            if (vehicle.getBreakpoint() != null) {
+                hasBreakpointVin.put(vehicle.getVin(), vehicle.getBreakpoint());
+            }
             try {
                 resultItem = vehicleInfoService.getVehicleInfoFromMes(vehicle, now, fullLoginUser);
                 result.add(resultItem);
@@ -94,6 +102,26 @@ public class VehicleInfoController extends BaseController {
                 resultItem.put("receiveTime", DateUtils.format(now, "yyyy-MM-dd HH:mm:ss"));
                 resultItem.put("cause", e.getMessage());
             }
+        }
+        if (!hasBreakpointVin.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            for (String key : hasBreakpointVin.keySet()) {
+                sb.append("车辆VIN ")
+                        .append(key)
+                        .append(" 存在断点: ")
+                        .append(DateUtils.format(now, "yyyy-MM-dd HH:mm:ss"))
+                        .append(System.lineSeparator());
+            }
+            SysNotice sysNotice = new SysNotice();
+            sysNotice.setIsRead(false);
+            sysNotice.setStatus("0");
+            sysNotice.setNoticeType("1");
+            sysNotice.setNoticeTitle("MES系统推送断点提醒");
+            sysNotice.setNoticeContent(sb.toString());
+            sysNotice.setCreateBy("自动提醒");
+            sysNotice.setCreateTime(new Date());
+            sysNotice.setSorts(Arrays.asList(16, 17));
+            remoteNoticeService.innerAdd(sysNotice);
         }
         return AjaxResult.success(result);
     }
@@ -167,7 +195,7 @@ public class VehicleInfoController extends BaseController {
         // 用户手动编辑时才重置校验状态和上传状态
         vehicleInfo.setValidationResult(0);
         vehicleInfo.setUploadStatus(0);
-        return AjaxResult.success(vehicleInfoService.updateVehicleInfo(vehicleInfo));
+        return AjaxResult.success(vehicleInfoService.updateVehicleInfo(vehicleInfo, true));
     }
     /**
      * 删除车辆信息

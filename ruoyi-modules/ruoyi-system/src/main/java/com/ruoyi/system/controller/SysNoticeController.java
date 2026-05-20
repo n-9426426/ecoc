@@ -167,6 +167,9 @@ public class SysNoticeController extends BaseController
     @GetMapping(value = "/subscribe", produces =  MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<Object>> subscribe() {
         LoginUser loginUser = SecurityUtils.getLoginUser();
+        if (loginUser == null) {
+            return Flux.empty();
+        }
         String userId = loginUser.getUserid().toString();
         if (sinks.containsKey(userId)) {
             sinks.get(userId).tryEmitComplete();

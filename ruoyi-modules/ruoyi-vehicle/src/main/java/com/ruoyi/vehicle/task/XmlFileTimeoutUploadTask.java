@@ -28,9 +28,9 @@ public class XmlFileTimeoutUploadTask {
     @Autowired
     private RemoteNoticeService remoteNoticeService;
 
-    @Scheduled(cron = "0 0 * * * ?")
+    @Scheduled(cron = "0 * * * * ?")
     public void xmlFileTimeoutUploadJobHandler(){
-        log.info("Scheduled:xmlFileTimeoutUploadJobHandler():小时");
+        log.info("Scheduled:xmlFileTimeoutUploadJobHandler():分钟");
         List<XmlFile> xmlFileList = xmlFileMapper.checkXmlFileTimeoutUpload();
         if (xmlFileList.isEmpty()) {
             return;

@@ -76,6 +76,8 @@ public class VehicleDto implements Serializable {
         // 轮胎
         @NotBlank
         private String tire;
+
+        private Date breakpoint;
     }
 
     @NotBlank

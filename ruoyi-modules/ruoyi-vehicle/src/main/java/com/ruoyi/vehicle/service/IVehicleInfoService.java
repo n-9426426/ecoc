@@ -44,7 +44,7 @@ public interface IVehicleInfoService {
      * @param vehicleInfo 车辆信息
      * @return 结果
      */
-    public int updateVehicleInfo(VehicleInfo vehicleInfo);
+    public int updateVehicleInfo(VehicleInfo vehicleInfo, boolean needValid);
 
     /**
      * 批量删除车辆信息

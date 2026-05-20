@@ -47,4 +47,6 @@ public interface IVehicleTemplateService {
     Flux<ServerSentEvent<String>> importExcel(MultipartFile file);
 
     List<VehicleTemplate> selectVehicleTemplateExpiringList();
+
+    List<VehicleTemplate> selectVehicleTemplateEffectingList();
 }

@@ -183,7 +183,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public int updateVehicleInfo(VehicleInfo vehicleInfo) {
+    public int updateVehicleInfo(VehicleInfo vehicleInfo, boolean needValid) {
         if (StringUtils.isNotBlank(vehicleInfo.getMaterialNo())) {
             Long vehicleTemplateId = vehicleTemplateMaterialMapper
                     .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getTvv(), vehicleInfo.getBrand(),
@@ -205,7 +205,11 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setVin(null);
         vehicleInfo.setUpdateTime(DateUtils.getNowDate());
         vehicleInfo.setUpdateBy(SecurityUtils.getUsername());
-        return vehicleInfoMapper.updateVehicleInfo(vehicleInfo);
+        int row = vehicleInfoMapper.updateVehicleInfo(vehicleInfo);
+        if (needValid) {
+            validateVehicleInfo(Collections.singletonList(vehicleInfo.getVehicleId()));
+        }
+        return row;
     }
     /**
      * 批量删除车辆信息
