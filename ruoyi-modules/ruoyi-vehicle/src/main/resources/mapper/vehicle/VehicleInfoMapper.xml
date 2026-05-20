@@ -254,7 +254,7 @@
 			<if test="remark != null">remark = #{remark}, </if>
 			<if test="validationReportJson != null and validationReportJson != ''">validation_report_json = #{validationReportJson},</if>
 			<if test="engineNumber != null and engineNumber != ''">engine_number = #{engineNumber},</if>
-		    <if test="batteryNumber != null and batteryNumber != ''">battery_umber = #{batteryNumber},</if>
+		    <if test="batteryNumber != null and batteryNumber != ''">battery_number = #{batteryNumber},</if>
 			<if test="motorNumber != null and motorNumber != ''">motor_number = #{motorNumber},</if>
 			<if test="updateBy != null and updateBy != ''">update_by = #{updateBy}, </if>
 			<if test="deleted != null">deleted = #{deleted}, </if>
