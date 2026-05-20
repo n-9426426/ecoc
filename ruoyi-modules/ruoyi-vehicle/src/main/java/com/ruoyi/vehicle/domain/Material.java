@@ -4,6 +4,7 @@ import com.ruoyi.common.core.web.domain.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -53,4 +54,8 @@ public class Material extends BaseEntity {
     private Long vehicleTemplateId;
 
     private String lastVersion;
+
+    private Date effectiveDate;
+
+
 }

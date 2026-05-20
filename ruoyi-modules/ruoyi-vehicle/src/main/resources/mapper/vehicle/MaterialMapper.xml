@@ -20,11 +20,12 @@
         <result property="isLast"      column="is_last"      />
         <result property="remark"      column="remark"       />
         <result property="lastVersion" column="last_version"/>
+        <result property="effectiveDate" column="effective_date"/>
     </resultMap>
 
     <sql id="selectMaterialVo">
         SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.trie, m.weight, m.brand, m.sale_name,
-               m.create_time, m.create_by, m.update_time, m.update_by, m.remark, vt.version, vt.is_last,
+               m.create_time, m.create_by, m.update_time, m.update_by, m.remark, vt.version, vt.is_last
         FROM material m
         left join vehicle_info vi on vi.material_no = m.material_no and vi.deleted = 0
         LEFT JOIN vehicle_template_material vtm ON vtm.material_no = m.material_no
@@ -34,12 +35,14 @@
     <select id="selectMaterialList" parameterType="Material" resultMap="MaterialResult">
         SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.trie, m.weight, m.brand, m.sale_name,
         m.create_time, m.create_by, m.update_time, m.update_by, m.remark,
-        vt.version, vt.is_last,
+        ANY_VALUE(vt.version) AS version, <!-- 👈 【核心修复】用 ANY_VALUE 包裹非聚合字段 -->
+        ANY_VALUE(vt.is_last) AS is_last, <!-- 👈 【核心修复】用 ANY_VALUE 包裹非聚合字段 -->
+        ANY_VALUE(vt.effective_date) AS effective_date, <!-- 前面新增的生效日期，这里也必须包裹 -->
         (
-            SELECT max_vt.version
-            FROM vehicle_template max_vt
-            WHERE max_vt.uuid = vt.uuid
-            AND max_vt.is_last = 1
+        SELECT max_vt.version
+        FROM vehicle_template max_vt
+        WHERE max_vt.uuid = ANY_VALUE(vt.uuid) <!-- 👈 子查询里用到的 vt 字段也包裹一下 -->
+        AND max_vt.is_last = 1
         ) AS last_version
         FROM material m
         left join vehicle_info vi on vi.material_no = m.material_no and vi.deleted = 0
@@ -62,13 +65,15 @@
                 AND vt.is_last = #{isLast}
             </if>
         </where>
+        GROUP BY m.id
         ORDER BY m.id DESC
     </select>
 
     <select id="selectMaterialById" parameterType="Long" resultMap="MaterialResult">
         <include refid="selectMaterialVo"/>
         WHERE m.id = #{id}
-    </select>
+        ORDER BY vt.is_last DESC, vt.create_time DESC
+        LIMIT 1
 
     <insert id="insertMaterial" parameterType="Material" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO material
