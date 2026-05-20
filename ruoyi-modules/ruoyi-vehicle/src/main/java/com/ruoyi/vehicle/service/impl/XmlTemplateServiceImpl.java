@@ -17,7 +17,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -107,14 +106,19 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
             throw new ServiceException("模板不存在");
         }
 
-        template.setUuid(dbTemplate.getUuid());
-        template.setVersion(String.valueOf(new BigDecimal(StringUtils.isBlank(dbTemplate.getVersion()) ? "0.0" : dbTemplate.getVersion()).add(new BigDecimal(1))));
-        template.setCreateBy(SecurityUtils.getUsername());
-        template.setCreateTime(new Date());
-        template.setTemplateCode(UUID.randomUUID().toString());
-        template.setDeleted(0);
-        templateMapper.updateAllIsLast(dbTemplate.getUuid());
-        templateMapper.insert(template);
+//        template.setUuid(dbTemplate.getUuid());
+//        template.setVersion(String.valueOf(new BigDecimal(StringUtils.isBlank(dbTemplate.getVersion()) ? "0.0" : dbTemplate.getVersion()).add(new BigDecimal(1))));
+//        template.setCreateBy(SecurityUtils.getUsername());
+//        template.setCreateTime(new Date());
+//        template.setTemplateCode(UUID.randomUUID().toString());
+//        template.setDeleted(0);
+//        templateMapper.updateAllIsLast(dbTemplate.getUuid());
+//        templateMapper.insert(template);
+
+        template.setVersion(dbTemplate.getVersion());
+        template.setUpdateBy(SecurityUtils.getUsername());
+        template.setUpdateTime(new Date());
+        templateMapper.updateById(template);
 
         // 4. 保存新属性树（全量替换）
         if (template.getAttributeTree() != null && !template.getAttributeTree().isEmpty()) {

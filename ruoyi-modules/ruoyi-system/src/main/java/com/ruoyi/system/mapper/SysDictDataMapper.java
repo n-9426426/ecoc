@@ -94,13 +94,7 @@ public interface SysDictDataMapper
      */
     public int updateDictDataType(@Param("oldDictType") String oldDictType, @Param("newDictType") String newDictType);
 
-    /**
-     * 检查 dictCode 是否被 xml_template_attribute.attr_path 引用
-     *
-     * @param dictCode 字典编码
-     * @return 引用数量
-     */
-    int countVehicleTemplateAttributeByDictCode(@Param("dictCode") Long dictCode);
+    int countVehicleTemplateAttributeByUuid(@Param("uuid") String uuid);
 
     /**
      * 查询同组（相同 dict_label + dict_type + dict_type_affiliation）的所有行
