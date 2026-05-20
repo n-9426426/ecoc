@@ -61,6 +61,13 @@ public class VehicleTemplateController extends BaseController {
     }
 
     @RequiresPermissions("vehicle:template:query")
+    @GetMapping("/effecting")
+    public TableDataInfo effectingList() {
+        List<VehicleTemplate> list = vehicleTemplateService.selectVehicleTemplateEffectingList();
+        return getDataTable(list);
+    }
+
+    @RequiresPermissions("vehicle:template:query")
     @GetMapping("/options")
     public AjaxResult optionSelect() {
         List<VehicleTemplate> list = vehicleTemplateService.selectVehicleTemplateOption();

@@ -3,6 +3,8 @@ package com.ruoyi.common.core.parser;
 import com.ruoyi.common.core.model.ValueRangeConstraint;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.*;
+
 /**
  * rangeRule 字段解析器
  * 支持格式：
@@ -14,6 +16,10 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class ValueRangeParser {
+
+    private static final Set<String> KNOWN_KEYS = new HashSet<>(Arrays.asList(
+            "min", "max", "minLength", "maxLength", "totalDigits", "fractionDigits"
+    ));
 
     public static ValueRangeConstraint parse(String rangeStr) {
         if (rangeStr == null || rangeStr.trim().isEmpty()) return null;
@@ -43,5 +49,44 @@ public class ValueRangeParser {
         }
 
         return builder.build();
+    }
+
+    /**
+     * 解析 rangeRule，返回无法解析的键名列表（格式如 ["min=abc", "totalDigits=xyz"]）
+     * 列表为空表示全部解析成功
+     */
+    public static List<String> parseErrors(String rangeStr) {
+        List<String> errors = new ArrayList<>();
+        if (rangeStr == null || rangeStr.trim().isEmpty()) return errors;
+
+        for (String part : rangeStr.split(";")) {
+            String[] kv = part.trim().split("=");
+            if (kv.length != 2) {
+                errors.add(part.trim() + "(格式错误)");
+                continue;
+            }
+            String key = kv[0].trim();
+            String val = kv[1].trim();
+
+            if (!KNOWN_KEYS.contains(key)) {
+                errors.add(key + "='" + val + "'(未知键)");
+                continue;
+            }
+
+            try {
+                switch (key) {
+                    case "min":
+                    case "max":
+                        Double.parseDouble(val);
+                        break;
+                    default:
+                        Integer.parseInt(val);
+                }
+            } catch (NumberFormatException e) {
+                errors.add(key + "='" + val + "'(值非法)");
+            }
+        }
+
+        return errors;
     }
 }

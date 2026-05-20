@@ -4,7 +4,11 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
+import com.ruoyi.common.core.enums.RuleItemType;
 import com.ruoyi.common.core.exception.ServiceException;
+import com.ruoyi.common.core.model.RuleItem;
+import com.ruoyi.common.core.parser.FinalRuleParser;
+import com.ruoyi.common.core.parser.ValueRangeParser;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.security.utils.DictUtils;
 import com.ruoyi.system.api.domain.ExcelColumnConfig;
@@ -131,6 +135,7 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
     @Transactional(rollbackFor = Exception.class)
     public int insertDictData(SysDictData data) {
         if (VEHICLE_ATTRIBUTE.equals(data.getDictType())) {
+            validRule(data.getRule(), data.getRangeRule());
             List<SysDictData> rows = splitToRows(data);
             insertExcelColumnConfig(
                     "vehicle_info",
@@ -161,6 +166,7 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
     @Transactional(rollbackFor = Exception.class)
     public int updateDictData(SysDictData data) {
         if (VEHICLE_ATTRIBUTE.equals(data.getDictType())) {
+            validRule(data.getRule(), data.getRangeRule());
             SysDictData current = dictDataMapper.selectDictDataById(data.getDictCode());
             if (current == null) {
                 throw new ServiceException("字典数据不存在，dictCode=" + data.getDictCode());
@@ -527,6 +533,9 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
 
     private int insertExcelColumnConfig(String tableName, String fieldName, String excelColumnNameEnUs, String excelColumnNameZhCn, Long sort, String entity) {
         dictDataExcelColumnConfigMapper.deleteByEntityAndTableNameAndFieldName(tableName, fieldName, Collections.singletonList(entity));
+        if (StringUtils.isBlank(excelColumnNameEnUs) || StringUtils.isBlank(excelColumnNameZhCn) || sort == null) {
+            return 0;
+        }
         ExcelColumnConfig excelColumnConfig = new ExcelColumnConfig();
         excelColumnConfig.setTableName(tableName);
         excelColumnConfig.setFieldName(fieldName);
@@ -544,5 +553,37 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
 
     private List<ExcelColumnConfig> selectExcelColumnConfig(String tableName, String fieldName, List<String> entityList) {
         return dictDataExcelColumnConfigMapper.selectOneByEntityAndTableNameAndFieldName(tableName, fieldName, entityList);
+    }
+
+    private void validRule(String rule, String rangeRule) {
+        List<String> ruleErrors = new ArrayList<>();
+        List<String> rangeErrors = new ArrayList<>();
+
+        // 检查 rule 是否存在解析失败的条目
+        if (rule != null && !rule.trim().isEmpty()) {
+            List<RuleItem> items = FinalRuleParser.parseRules(rule);
+            items.stream()
+                    .filter(item -> item.getType() == RuleItemType.PARSE_ERROR)
+                    .forEach(item -> {
+                        String ruleId = item.getRuleId();
+                        String desc = ruleId != null ? "R" + ruleId : item.getRawRule();
+                        ruleErrors.add(desc + " 解析失败");
+                    });
+        }
+
+        // 检查 rangeRule 是否解析失败
+        if (rangeRule != null && !rangeRule.trim().isEmpty()) {
+            rangeErrors.addAll(ValueRangeParser.parseErrors(rangeRule));
+        }
+
+        if (!ruleErrors.isEmpty() && !rangeErrors.isEmpty()) {
+            throw new RuntimeException(
+                    "校验规则无法解析: " + String.join("、", ruleErrors)
+                            + "；值范围校验无法解析: " + String.join("、", rangeErrors));
+        } else if (!ruleErrors.isEmpty()) {
+            throw new RuntimeException("校验规则无法解析: " + String.join("、", ruleErrors));
+        } else if (!rangeErrors.isEmpty()) {
+            throw new RuntimeException("值范围校验无法解析: " + String.join("、", rangeErrors));
+        }
     }
 }

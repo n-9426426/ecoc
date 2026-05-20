@@ -102,7 +102,12 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
     @Override
     public List<VehicleTemplate> selectVehicleTemplateExpiringList() {
-        return templateMapper.selectExpiringTemplates();
+        return templateMapper.selectExpiringTemplates(null);
+    }
+
+    @Override
+    public List<VehicleTemplate> selectVehicleTemplateEffectingList() {
+        return templateMapper.selectEffectingTemplates();
     }
 
     @Override
@@ -159,8 +164,8 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int updateVehicleTemplate(VehicleTemplate template) {
-        VehicleTemplate existTemplate = templateMapper.selectVehicleByCoc(template.getCocTemplateNo());
-        String templateVersion = existTemplate.getTemplateVersion();
+        VehicleTemplate existTemplate = templateMapper.selectVehicleByUuid(template.getUuid());
+        String templateVersion = existTemplate.getVersion();
         if (templateVersion == null) {
             templateVersion = "1.0";
         } else {

@@ -26,10 +26,10 @@ public class VehicleTemplateExpiredTask {
     @Autowired
     private VehicleTemplateMapper vehicleTemplateMapper;
 
-    @Scheduled(cron = "0 0 * * * ?")
+    @Scheduled(cron = "0 * * * * ?")
     public void vehicleTemplateExpiredJobHandler(){
         log.info("Scheduled:vehicleTemplateExpiredJobHandler():分钟");
-        List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectExpiringTemplates();
+        List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectExpiringTemplates(0);
         if (vehicleTemplateList.isEmpty()) {
             return;
         }
@@ -43,7 +43,8 @@ public class VehicleTemplateExpiredTask {
                     .append(vehicleTemplate.getVersion())
                     .append("的车辆模版还有")
                     .append(TimeUtils.getDateDiffDesc(new Date(), vehicleTemplate.getOverdueDate()))
-                    .append("到期");
+                    .append("到期")
+                    .append(System.lineSeparator());
         }
         if(sentNotice(msg).getCode() == 200) {
             List<Long> vehicleTemplateIds = vehicleTemplateList.stream()
@@ -61,7 +62,7 @@ public class VehicleTemplateExpiredTask {
         sysNotice.setIsRead(false);
         sysNotice.setStatus("0");
         sysNotice.setNoticeType("1");
-        sysNotice.setNoticeTitle("车辆模版过期提醒");
+        sysNotice.setNoticeTitle("车辆模版临期提醒");
         sysNotice.setNoticeContent(msg.toString());
         sysNotice.setCreateBy("自动提醒");
         sysNotice.setCreateTime(new Date());

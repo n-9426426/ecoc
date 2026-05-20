@@ -1522,7 +1522,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
             // 19. 更新状态
             vehicle.setUploadStatus(1);
             vehicle.setJson(null);
-            vehicleInfoService.updateVehicleInfo(vehicle);
 
             // 20. 记录生命周期
             vehicleLifecycle.setEntryId(vehicle.getVehicleId());
@@ -1530,6 +1529,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             vehicleLifecycle.setVin(vehicle.getVin());
             vehicleLifecycle.setOperate("2");
             vehicleLifecycle.setResult(0);
+            vehicleInfoService.updateVehicleInfo(vehicle, false);
             vehicleLifecycleMapper.insert(vehicleLifecycle);
 
             msg.append("成功");

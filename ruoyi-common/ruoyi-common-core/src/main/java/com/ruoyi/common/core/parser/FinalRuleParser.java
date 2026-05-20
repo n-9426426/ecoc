@@ -155,9 +155,8 @@ public class FinalRuleParser {
 
         RuleItem item = parseRuleBody(body, line);
         if (item != null) {
-            // PARSE_ERROR 条目已在 parseRuleBody 内设置好 ruleId/rawRule，无需覆盖
+            item.setRuleId(ruleId);
             if (item.getType() != RuleItemType.PARSE_ERROR) {
-                item.setRuleId(ruleId);
                 item.setRawRule(line);
             }
         }

@@ -3,8 +3,8 @@ services:
   ruoyi-mysql:
     container_name: ruoyi-mysql
     image: mysql:8.4.8
-    build:
-      context: ./mysql
+#    build:
+#      context: ./mysql
     ports:
       - "3306:3306"
     volumes:
@@ -34,8 +34,8 @@ services:
   ruoyi-nacos:
     container_name: ruoyi-nacos
     image: nacos/nacos-server:v2.4.2
-    build:
-      context: ./nacos
+#    build:
+#      context: ./nacos
     environment:
       - MODE=standalone
       - SPRING_DATASOURCE_PLATFORM=mysql
@@ -61,8 +61,8 @@ services:
   ruoyi-redis:
     container_name: ruoyi-redis
     image: redis
-    build:
-      context: ./redis
+#    build:
+#      context: ./redis
     ports:
       - "6379:6379"
     volumes:
@@ -92,9 +92,9 @@ services:
 
   ruoyi-gateway:
     container_name: ruoyi-gateway
-    build:
-      context: ./ruoyi/gateway
-      dockerfile: dockerfile
+#    build:
+#      context: ./ruoyi/gateway
+#      dockerfile: dockerfile
     environment:
       - SPRING_CLOUD_NACOS_DISCOVERY_SERVER-ADDR=ruoyi-nacos:8848
       - SPRING_CLOUD_NACOS_CONFIG_SERVER-ADDR=ruoyi-nacos:8848
@@ -109,9 +109,9 @@ services:
 
   ruoyi-auth:
     container_name: ruoyi-auth
-    build:
-      context: ./ruoyi/auth
-      dockerfile: dockerfile
+#    build:
+#      context: ./ruoyi/auth
+#      dockerfile: dockerfile
     environment:
       - SPRING_CLOUD_NACOS_DISCOVERY_SERVER-ADDR=ruoyi-nacos:8848
       - SPRING_CLOUD_NACOS_CONFIG_SERVER-ADDR=ruoyi-nacos:8848
@@ -126,9 +126,9 @@ services:
 
   ruoyi-modules-system:
     container_name: ruoyi-modules-system
-    build:
-      context: ./ruoyi/modules/system
-      dockerfile: dockerfile
+#    build:
+#      context: ./ruoyi/modules/system
+#      dockerfile: dockerfile
     environment:
       - SPRING_PROFILES_ACTIVE=dev
       - SPRING_CLOUD_NACOS_DISCOVERY_SERVER-ADDR=ruoyi-nacos:8848
@@ -148,9 +148,9 @@ services:
 
   ruoyi-modules-vehicle:
     container_name: ruoyi-modules-vehicle
-    build:
-      context: ./ruoyi/modules/vehicle
-      dockerfile: dockerfile
+#    build:
+#      context: ./ruoyi/modules/vehicle
+#      dockerfile: dockerfile
     environment:
       - SPRING_CLOUD_NACOS_DISCOVERY_SERVER-ADDR=ruoyi-nacos:8848
       - SPRING_CLOUD_NACOS_CONFIG_SERVER-ADDR=ruoyi-nacos:8848
@@ -166,9 +166,9 @@ services:
 
   ruoyi-modules-file:
     container_name: ruoyi-modules-file
-    build:
-      context: ./ruoyi/modules/file
-      dockerfile: dockerfile
+#    build:
+#      context: ./ruoyi/modules/file
+#      dockerfile: dockerfile
     environment:
       - SPRING_CLOUD_NACOS_DISCOVERY_SERVER-ADDR=ruoyi-nacos:8848
       - SPRING_CLOUD_NACOS_CONFIG_SERVER-ADDR=ruoyi-nacos:8848
@@ -182,9 +182,9 @@ services:
 
   ruoyi-visual-monitor:
     container_name: ruoyi-visual-monitor
-    build:
-      context: ./ruoyi/visual/monitor
-      dockerfile: dockerfile
+#    build:
+#      context: ./ruoyi/visual/monitor
+#      dockerfile: dockerfile
     environment:
       - SPRING_CLOUD_NACOS_DISCOVERY_SERVER-ADDR=ruoyi-nacos:8848
       - SPRING_CLOUD_NACOS_CONFIG_SERVER-ADDR=ruoyi-nacos:8848
@@ -199,8 +199,8 @@ services:
   ruoyi-nginx:
     container_name: ruoyi-nginx
     image: nginx
-    build:
-      context: ./nginx
+#    build:
+#      context: ./nginx
     ports:
       - "80:80"
     volumes:
