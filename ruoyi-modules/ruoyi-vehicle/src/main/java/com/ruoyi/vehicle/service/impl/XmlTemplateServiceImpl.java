@@ -120,6 +120,9 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
         template.setUpdateTime(new Date());
         templateMapper.updateById(template);
 
+        // 全量删除
+        attributeMapper.deleteByTemplateIds(Collections.singletonList(template.getTemplateId()));
+
         // 4. 保存新属性树（全量替换）
         if (template.getAttributeTree() != null && !template.getAttributeTree().isEmpty()) {
             saveAttributeTree(template.getTemplateId(), template.getAttributeTree());

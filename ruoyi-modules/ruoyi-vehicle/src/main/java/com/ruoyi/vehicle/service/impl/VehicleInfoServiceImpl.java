@@ -536,8 +536,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     }
 
     @Override
-    public List<Map<String, Object>> selectVehicleTemplateIdByCondition(String materialNo, String brand, String weight, String saleName, String tire) {
-        List<VehicleTemplate> templates = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(materialNo, brand, weight, saleName, tire);
+    public List<Map<String, Object>> selectVehicleTemplateIdByCondition(String materialNo, String brand, String weight, String saleName, String tire, String tvv) {
+        List<VehicleTemplate> templates = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(materialNo, brand, weight, saleName, tire, tvv);
         if (templates.isEmpty()) {
             throw new RuntimeException("无法匹配任何可用模板");
         }

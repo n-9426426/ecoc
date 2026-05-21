@@ -1,9 +1,11 @@
 package com.ruoyi.vehicle.domain;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.ruoyi.common.core.web.domain.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -44,13 +46,43 @@ public class Material extends BaseEntity {
     /** 销售名称 */
     private String saleName;
 
-    private String version;
+    /** 创建时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date createTime;
 
-    private Integer isLast;
+    /** 创建人 */
+    private String createBy;
 
-    private List<VehicleTemplate> vehicleTemplates;
+    /** 更新时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date updateTime;
 
+    /** 更新人 */
+    private String updateBy;
+
+    /** 备注 */
+    private String remark;
+
+    /** 车辆信息模版ID */
     private Long vehicleTemplateId;
 
+    // -------------------- 关联/查询扩展字段 --------------------
+
+    /** 模版版本号 */
+    private String version;
+
+    /** 新版本号（用于版本升级） */
+    private String newVersion;
+
+    /** 是否最新版本（1=是，0=否） */
+    private Integer isLast;
+
+    /** 最新版本号（子查询） */
     private String lastVersion;
+
+    /** 关联车辆模版列表 */
+    private List<VehicleTemplate> vehicleTemplates;
+
+    /** 物料变更历史列表 */
+    private List<MaterialHistory> materialHistories;
 }

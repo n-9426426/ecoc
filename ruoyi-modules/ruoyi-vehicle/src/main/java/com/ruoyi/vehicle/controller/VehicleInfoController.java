@@ -262,6 +262,6 @@ public class VehicleInfoController extends BaseController {
     @PostMapping("/template/condition")
     public AjaxResult selectVehicleTemplateIdByCondition(@RequestBody VehicleInfo vehicleInfo) {
         return AjaxResult.success(vehicleInfoService.selectVehicleTemplateIdByCondition(
-                vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(), vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire()));
+                vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(), vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getTvv()));
     }
 }

@@ -55,6 +55,13 @@ public enum RuleItemType {
     FRACTION_DIGITS,         // fractionDigits=n
     NULL,
     STRUCTURE,
+    COUNT_AS_VALUE,
+    LIST_COUNT,
+    CONDITIONAL_VALUE_COMPARE,
+    CONDITIONAL_REGEX,
+    CONDITIONAL_FIELD_COMPARE,
+    VALUE_IN_LIST_FIELD,
+    LIST_UNIQUE,
     PARSE_ERROR;
 
     public static String getRuleType(RuleItemType ruleItemType) {
@@ -64,8 +71,10 @@ public enum RuleItemType {
         map.put(RuleItemType.VALUE_IS_ABSENT,   "VALUE IS ABSENT");
         // ===== 枚举 =====
         map.put(RuleItemType.VALUE_IN,          "VALUE IN");
+        map.put(RuleItemType.VALUE_IN_LIST_FIELD,          "VALUE IN");
         // ===== 正则 =====
         map.put(RuleItemType.VALUE_REGEX,       "VALUE REGEX");
+        map.put(RuleItemType.CONDITIONAL_REGEX,       "VALUE REGEX");
         // ===== 数值比较 =====
         map.put(RuleItemType.VALUE_COMPARE,     "VALUE COMPARE");
         // ===== 条件触发 - 单字段引用=====
@@ -78,6 +87,8 @@ public enum RuleItemType {
         map.put(RuleItemType.FORBIDDEN_IF_ALL,  "VALUE IS ABSENT IF");
         // ===== 聚合 =====
         map.put(RuleItemType.COUNT_AGGREGATE,   "AGGREGATE");
+        map.put(RuleItemType.COUNT_AS_VALUE,    "AGGREGATE");
+        map.put(RuleItemType.LIST_COUNT,        "AGGREGATE");
         map.put(RuleItemType.SUM_AGGREGATE,     "AGGREGATE");
         // ===== 嵌套条件 =====
         map.put(RuleItemType.NESTED_CONDITION,  "NESTED CONDITION");
@@ -85,6 +96,8 @@ public enum RuleItemType {
         map.put(RuleItemType.VALUE_IS_NUMBERED,   "VALUE IS NUMBERED");
         // ===== 跨字段值比较 =====
         map.put(RuleItemType.VALUE_FIELD_COMPARE, "VALUE COMPARE");
+        map.put(RuleItemType.CONDITIONAL_VALUE_COMPARE, "VALUE COMPARE");
+        map.put(RuleItemType.CONDITIONAL_FIELD_COMPARE, "VALUE COMPARE");
         // ===== 范围约束 =====
         map.put(RuleItemType.NUMERIC_RANGE,     "VALUE RANGE");
         map.put(RuleItemType.LENGTH_RANGE,      "VALUE RANGE");
@@ -98,6 +111,9 @@ public enum RuleItemType {
         map.put(RuleItemType.NULL,               null);
         // 解析错误
         map.put(RuleItemType.PARSE_ERROR,        "PARSE_ERROR");
+        // 唯一
+        map.put(RuleItemType.LIST_UNIQUE,        "LIST_UNIQUE");
+
 
         return map.get(ruleItemType);
     }

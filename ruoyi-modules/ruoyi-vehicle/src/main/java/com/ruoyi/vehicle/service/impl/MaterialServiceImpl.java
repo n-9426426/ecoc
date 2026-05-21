@@ -3,14 +3,18 @@ package com.ruoyi.vehicle.service.impl;
 import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.Material;
+import com.ruoyi.vehicle.domain.MaterialHistory;
+import com.ruoyi.vehicle.mapper.MaterialHistoryMapper;
 import com.ruoyi.vehicle.mapper.MaterialMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMapper;
 import com.ruoyi.vehicle.service.IMaterialService;
+import com.ruoyi.vehicle.service.IVehicleInfoService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 整车物料 Service 业务层实现
@@ -24,7 +28,13 @@ public class MaterialServiceImpl implements IMaterialService {
     private MaterialMapper materialMapper;
 
     @Autowired
+    private MaterialHistoryMapper materialHistoryMapper;
+
+    @Autowired
     private VehicleTemplateMapper vehicleTemplateMapper;
+
+    @Autowired
+    private IVehicleInfoService vehicleInfoService;
 
     /**
      * 查询整车物料
@@ -32,7 +42,8 @@ public class MaterialServiceImpl implements IMaterialService {
     @Override
     public Material selectMaterialById(Long id) {
         Material material = materialMapper.selectMaterialById(id);
-        material.setVehicleTemplates(vehicleTemplateMapper.selectVehicleTemplateIdByCondition(material.getMaterialNo(), null, null, null, null));
+        material.setVehicleTemplates(vehicleTemplateMapper.selectVehicleTemplateIdByCondition(material.getMaterialNo(), null, null, null, null, null));
+        material.setMaterialHistories(materialHistoryMapper.selectByMaterialId(id, material.getVersion()));
         return material;
     }
 
@@ -52,6 +63,13 @@ public class MaterialServiceImpl implements IMaterialService {
         LoginUser loginUser = SecurityUtils.getLoginUser();
         material.setCreateBy(loginUser.getUsername());
         material.setCreateTime(new Date());
+        List<Map<String, Object>> template = vehicleInfoService.selectVehicleTemplateIdByCondition(
+                null, material.getBrand(), material.getWeight(), material.getSaleName(), material.getTrie(), material.getTvv()
+        );
+        if (template.isEmpty()) {
+            throw new RuntimeException("没有匹配的模版");
+        }
+        material.setVersion(template.get(0) == null ? null : template.get(0).get("version").toString());
         return materialMapper.insertMaterial(material);
     }
 
@@ -64,7 +82,14 @@ public class MaterialServiceImpl implements IMaterialService {
         material.setUpdateBy(loginUser.getUsername());
         material.setUpdateTime(new Date());
         int row = materialMapper.updateMaterial(material);
-
+        if (!material.getVersion().equals(material.getNewVersion())) {
+            MaterialHistory history = new MaterialHistory();
+            history.setMaterialId(material.getId());
+            history.setOldVersion(material.getVersion());
+            history.setNewVersion(material.getNewVersion());
+            history.setChangeTime(new Date());
+            materialHistoryMapper.insert(history);
+        }
         return row;
     }
 

@@ -94,7 +94,7 @@ public interface IVehicleInfoService {
 
     VehicleTemplate selectVehicleTemplateById(Long templateId);
 
-    List<Map<String, Object>> selectVehicleTemplateIdByCondition(String materialNo, String brand, String weight, String saleName, String tire);
+    List<Map<String, Object>> selectVehicleTemplateIdByCondition(String materialNo, String brand, String weight, String saleName, String tire, String tvv);
 
     int updateVehicleTemplateId(String vin, Long templateId);
 }

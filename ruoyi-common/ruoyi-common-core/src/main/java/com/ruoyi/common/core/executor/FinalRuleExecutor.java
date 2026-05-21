@@ -158,6 +158,27 @@ public class FinalRuleExecutor {
                 case VALUE_FIELD_COMPARE:
                     return checkValueFieldCompare(fieldName, actualValue, rule, context);
 
+                case COUNT_AS_VALUE:
+                    return checkCountAsValue(fieldName, actualValue, rule, context);
+
+                case LIST_COUNT:
+                    return checkListCount(fieldName, actualValue, rule, context);
+
+                case CONDITIONAL_REGEX:
+                    return checkConditionalRegex(fieldName, actualValue, rule, context);
+
+                case CONDITIONAL_VALUE_COMPARE:
+                    return checkConditionalValueCompare(fieldName, actualValue, rule, context);
+
+                case CONDITIONAL_FIELD_COMPARE:
+                    return checkConditionalFieldCompare(fieldName, actualValue, rule, context);
+
+                case VALUE_IN_LIST_FIELD:
+                    return checkValueInListField(fieldName, actualValue, rule, context);
+
+                case LIST_UNIQUE:
+                    return checkListUnique(fieldName, actualValue, rule, context);
+
                 case NUMERIC_RANGE:
                     return checkNumericRange(fieldName, actualValue, rule);
 
@@ -484,6 +505,343 @@ public class FinalRuleExecutor {
             }
             return null;
         }
+    }
+
+    // ==========================================
+    // COUNT_AS_VALUE / LIST_COUNT 聚合校验
+    // ==========================================
+
+    /**
+     * COUNT_AS_VALUE：列表中满足 (field IN [enumValues]) 条件的行数必须等于当前字段值。
+     *
+     * <p>规则格式：{@code COUNT(@listField, @condField IN [vals]) = VALUE}
+     * <p>用途：[103]-[106] NumberOfAxles* 类字段
+     *
+     * <p>上下文约定：context 以 listField 为 key 存放 {@code List<Map<String,Object>>}，
+     * 每行 Map 包含 condField 字段。
+     */
+    private static RuleViolation checkCountAsValue(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        AggregateFunction af = rule.getAggregateFunction();
+        if (af == null) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "COUNT_AS_VALUE: aggregateFunction is null",
+                    "COUNT_AS_VALUE 规则缺少聚合函数描述");
+        }
+
+        Object listObj = context.get(af.getListField());
+        if (!(listObj instanceof List)) {
+            // 列表不存在时跳过（存在性由其他规则保证）
+            return null;
+        }
+
+        List<?> list = (List<?>) listObj;
+        String condField = af.getField();
+        List<String> allowed = af.getEnumValues();
+
+        long count = list.stream()
+                .filter(item -> item instanceof Map)
+                .filter(item -> {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> row = (Map<String, Object>) item;
+                    Object val = row.get(condField);
+                    if (val == null) return false;
+                    String strVal = val.toString();
+                    // 支持枚举白名单匹配（allowed 为 null 时统计所有行）
+                    return allowed == null || allowed.contains(strVal);
+                })
+                .count();
+
+        double actualDouble = toDouble(actualValue);
+        if ((double) count != actualDouble) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "COUNT(" + af.getListField() + ", " + condField
+                            + " IN " + allowed + ") = " + count
+                            + " but field value is " + actualValue,
+                    "列表中满足条件的行数为 " + count + "，与字段值 " + actualValue + " 不符");
+        }
+        return null;
+    }
+
+    /**
+     * LIST_COUNT：在列表上下文中，当前字段值在白名单内的行数必须满足阈值条件。
+     *
+     * <p>规则格式：{@code @TableName=>COUNT(VALUE IN [vals]) op N}
+     * <p>用途：[233] TyreFittedProductionIndicator
+     *
+     * <p>上下文约定：context 以 listField 为 key 存放 {@code List<Map<String,Object>>}，
+     * 每行 Map 包含以 fieldName 为 key 的本字段值。
+     */
+    private static RuleViolation checkListCount(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        AggregateFunction af = rule.getAggregateFunction();
+        if (af == null) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "LIST_COUNT: aggregateFunction is null",
+                    "LIST_COUNT 规则缺少聚合函数描述");
+        }
+
+        Object listObj = context.get(af.getListField());
+        if (!(listObj instanceof List)) {
+            return null;
+        }
+
+        List<?> list = (List<?>) listObj;
+        List<String> allowed = af.getEnumValues();
+
+        long count = list.stream()
+                .filter(item -> item instanceof Map)
+                .filter(item -> {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> row = (Map<String, Object>) item;
+                    Object val = row.get(fieldName);
+                    if (val == null) return false;
+                    String strVal = val.toString();
+                    return allowed == null || allowed.contains(strVal);
+                })
+                .count();
+
+        if (!af.getOperator().apply((double) count, af.getThreshold())) {
+            return buildViolation(rule, fieldName, actualValue,
+                    af.getListField() + "=>COUNT(VALUE IN " + allowed + ") "
+                            + af.getOperator().getSymbol() + " " + af.getThreshold().intValue()
+                            + " failed (actual count=" + count + ")",
+                    "列表 " + af.getListField() + " 中满足条件的行数为 " + count
+                            + "，不满足要求 " + af.getOperator().getSymbol()
+                            + " " + af.getThreshold().intValue());
+        }
+        return null;
+    }
+
+    // ==========================================
+    // 条件型规则（A/B/C）
+    // ==========================================
+
+    /**
+     * CONDITIONAL_REGEX：条件满足时对 VALUE 做正则校验。
+     *
+     * <p>规则格式：{@code VALUE = /regex/ IF ALL <conditions>}
+     * <p>用途：[463] TestFamilyIdentifierValue
+     */
+    private static RuleViolation checkConditionalRegex(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        ConditionChain chain = rule.getConditionChain();
+        if (chain == null || !chain.evaluate(context)) {
+            return null;
+        }
+        if (isAbsent(actualValue)) {
+            return null; // 存在性由其他规则保证
+        }
+        String strVal = String.valueOf(actualValue);
+        String pattern = rule.getRegexPattern();
+        if (pattern == null || !java.util.regex.Pattern.matches(pattern, strVal)) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "Value does not match pattern: " + pattern + " (condition met)",
+                    "条件满足时值不符合正则格式: " + pattern);
+        }
+        return null;
+    }
+
+    /**
+     * CONDITIONAL_VALUE_COMPARE：条件满足时对 VALUE 做数值比较。
+     *
+     * <p>规则格式：{@code VALUE op N IF ALL <conditions>}
+     * <p>用途：[127][130][129][132][133] Length/Width/Height 系列
+     */
+    private static RuleViolation checkConditionalValueCompare(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        ConditionChain chain = rule.getConditionChain();
+        if (chain == null || !chain.evaluate(context)) {
+            return null;
+        }
+        if (isAbsent(actualValue)) {
+            return null;
+        }
+        if (!compareValue(actualValue, rule.getCompareValue(), rule.getOperator())) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "Value compare failed (condition met): VALUE "
+                            + rule.getOperator() + " " + rule.getCompareValue(),
+                    "条件满足时数值比较不通过: VALUE "
+                            + rule.getOperator() + " " + rule.getCompareValue());
+        }
+        return null;
+    }
+
+    /**
+     * CONDITIONAL_FIELD_COMPARE：条件满足时将 VALUE 与另一字段做比较。
+     *
+     * <p>规则格式：{@code VALUE op @fieldName IF ALL <conditions>}
+     * <p>用途：[90] PreviousStageVersion
+     */
+    private static RuleViolation checkConditionalFieldCompare(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        ConditionChain chain = rule.getConditionChain();
+        if (chain == null || !chain.evaluate(context)) {
+            return null;
+        }
+
+        String targetField = rule.getRefFieldName();
+        if (targetField == null || targetField.isEmpty()) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "CONDITIONAL_FIELD_COMPARE: refFieldName is null",
+                    "CONDITIONAL_FIELD_COMPARE 规则缺少目标字段名");
+        }
+
+        Object targetValue = context.get(targetField);
+        if (isAbsent(targetValue)) {
+            return null; // 目标字段为空时跳过
+        }
+
+        CompareOperator op;
+        try {
+            op = CompareOperator.fromSymbol(rule.getOperator());
+        } catch (IllegalArgumentException e) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "CONDITIONAL_FIELD_COMPARE: unknown operator '" + rule.getOperator() + "'",
+                    "CONDITIONAL_FIELD_COMPARE 未知运算符: " + rule.getOperator());
+        }
+
+        try {
+            double actual = toDouble(actualValue);
+            double target = toDouble(targetValue);
+            if (!op.apply(actual, target)) {
+                return buildViolation(rule, fieldName, actualValue,
+                        "Value " + actualValue + " " + op.getSymbol()
+                                + " @" + targetField + "(" + targetValue + ") failed (condition met)",
+                        "条件满足时字段值 " + actualValue + " 与 @" + targetField
+                                + "(" + targetValue + ") 比较不通过（" + op.getSymbol() + "）");
+            }
+            return null;
+        } catch (Exception e) {
+            String actualStr = actualValue == null ? null : actualValue.toString();
+            String targetStr = targetValue.toString();
+            boolean result;
+            try {
+                result = op.applyString(actualStr, targetStr);
+            } catch (IllegalArgumentException ex) {
+                return buildViolation(rule, fieldName, actualValue,
+                        "CONDITIONAL_FIELD_COMPARE: cannot compare non-numeric values with operator "
+                                + op.getSymbol(),
+                        "CONDITIONAL_FIELD_COMPARE：非数值字段不支持运算符 " + op.getSymbol());
+            }
+            if (!result) {
+                return buildViolation(rule, fieldName, actualValue,
+                        "Value " + actualValue + " " + op.getSymbol()
+                                + " @" + targetField + "(" + targetValue + ") failed (condition met)",
+                        "条件满足时字段值 " + actualValue + " 与 @" + targetField
+                                + "(" + targetValue + ") 比较不通过（" + op.getSymbol() + "）");
+            }
+            return null;
+        }
+    }
+
+    // ==========================================
+    // 列表成员检查 / 唯一性校验（D/E）
+    // ==========================================
+
+    /**
+     * VALUE_IN_LIST_FIELD：当前字段值必须等于某列表中任意一行的指定字段值。
+     *
+     * <p>规则格式：{@code VALUE = ANY @listField.fieldName}
+     * <p>用途：[169] MechanicalCouplingNumberVerticalMass, [242] AxleNumberCombination
+     *
+     * <p>上下文约定：context 以 listField 为 key 存放 {@code List<Map<String,Object>>}，
+     * 每行 Map 以 compareValue（fieldName）为 key 存放目标值。
+     */
+    private static RuleViolation checkValueInListField(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        if (isAbsent(actualValue)) {
+            return null; // 存在性由其他规则保证
+        }
+
+        String listField = rule.getRefFieldName();
+        String targetFieldInRow = rule.getCompareValue();
+
+        if (listField == null || targetFieldInRow == null) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "VALUE_IN_LIST_FIELD: refFieldName or compareValue is null",
+                    "VALUE_IN_LIST_FIELD 规则缺少列表字段名或行字段名");
+        }
+
+        Object listObj = context.get(listField);
+        if (!(listObj instanceof List)) {
+            return null; // 列表不存在时跳过
+        }
+
+        String actualStr = String.valueOf(actualValue);
+        boolean found = ((List<?>) listObj).stream()
+                .filter(item -> item instanceof Map)
+                .anyMatch(item -> {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> row = (Map<String, Object>) item;
+                    Object rowVal = row.get(targetFieldInRow);
+                    return rowVal != null && actualStr.equals(rowVal.toString());
+                });
+
+        if (!found) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "Value " + actualValue + " not found in any row of "
+                            + listField + "." + targetFieldInRow,
+                    "值 " + actualValue + " 不在列表 " + listField
+                            + " 的 " + targetFieldInRow + " 字段中");
+        }
+        return null;
+    }
+
+    /**
+     * LIST_UNIQUE：列表中当前字段的值必须全部唯一，不允许重复。
+     *
+     * <p>规则格式：{@code @TableName=>VALUE IS UNIQUE}
+     * <p>用途：[252] Colour
+     *
+     * <p>上下文约定：context 以 listField 为 key 存放 {@code List<Map<String,Object>>}，
+     * 每行 Map 以 fieldName 为 key 存放本字段值。
+     */
+    private static RuleViolation checkListUnique(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        String listField = rule.getRefFieldName();
+        if (listField == null || listField.isEmpty()) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "LIST_UNIQUE: listFieldName is null",
+                    "LIST_UNIQUE 规则缺少列表字段名");
+        }
+
+        Object listObj = context.get(listField);
+        if (!(listObj instanceof List)) {
+            return null;
+        }
+
+        List<?> list = (List<?>) listObj;
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        java.util.List<String> duplicates = new java.util.ArrayList<>();
+
+        for (Object item : list) {
+            if (!(item instanceof Map)) continue;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> row = (Map<String, Object>) item;
+            Object val = row.get(fieldName);
+            if (val == null) continue;
+            String strVal = val.toString();
+            if (!seen.add(strVal)) {
+                if (!duplicates.contains(strVal)) duplicates.add(strVal);
+            }
+        }
+
+        if (!duplicates.isEmpty()) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "LIST_UNIQUE failed: duplicate values found in "
+                            + listField + "." + fieldName + ": " + duplicates,
+                    "列表 " + listField + " 中字段 " + fieldName
+                            + " 存在重复值: " + duplicates);
+        }
+        return null;
     }
 
     // ==========================================

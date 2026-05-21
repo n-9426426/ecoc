@@ -3,49 +3,50 @@
 <mapper namespace="com.ruoyi.vehicle.mapper.MaterialMapper">
 
     <resultMap type="Material" id="MaterialResult">
-        <id     property="id"          column="id"           />
-        <result property="name"        column="name"         />
-        <result property="materialNo"  column="material_no"  />
-        <result property="tvv"         column="tvv"          />
-        <result property="country"     column="country"      />
-        <result property="trie"        column="trie"         />
-        <result property="weight"      column="weight"       />
-        <result property="brand"       column="brand"        />
-        <result property="saleName"    column="sale_name"    />
-        <result property="createTime"  column="create_time"  />
-        <result property="createBy"    column="create_by"    />
-        <result property="updateTime"  column="update_time"  />
-        <result property="updateBy"    column="update_by"    />
-        <result property="version"     column="version"      />
-        <result property="isLast"      column="is_last"      />
-        <result property="remark"      column="remark"       />
-        <result property="lastVersion" column="last_version"/>
+        <id     property="id"               column="id"                />
+        <result property="name"             column="name"              />
+        <result property="materialNo"       column="material_no"       />
+        <result property="tvv"              column="tvv"               />
+        <result property="country"          column="country"           />
+        <result property="trie"             column="trie"              />
+        <result property="weight"           column="weight"            />
+        <result property="brand"            column="brand"             />
+        <result property="saleName"         column="sale_name"         />
+        <result property="createTime"       column="create_time"       />
+        <result property="createBy"         column="create_by"         />
+        <result property="updateTime"       column="update_time"       />
+        <result property="updateBy"         column="update_by"         />
+        <result property="version"          column="version"           />
+        <result property="isLast"           column="is_last"           />
+        <result property="remark"           column="remark"            />
+        <result property="lastVersion"      column="last_version"      />
+        <result property="vehicleTemplateId" column="vehicle_template_id"/>
     </resultMap>
 
     <sql id="selectMaterialVo">
         SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.trie, m.weight, m.brand, m.sale_name,
-               m.create_time, m.create_by, m.update_time, m.update_by, m.remark, vt.version, vt.is_last,
+               m.create_time, m.create_by, m.update_time, m.update_by, m.remark,
+               m.vehicle_template_id,
+               vt.version, vt.is_last
         FROM material m
-        left join vehicle_info vi on vi.material_no = m.material_no and vi.deleted = 0
-        LEFT JOIN vehicle_template_material vtm ON vtm.material_no = m.material_no
-        LEFT JOIN vehicle_template vt ON vt.template_id = vtm.template_id and vt.template_id = vi.vehicle_template_id
+                 LEFT JOIN vehicle_template vt ON vt.template_id = m.vehicle_template_id
     </sql>
 
     <select id="selectMaterialList" parameterType="Material" resultMap="MaterialResult">
         SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.trie, m.weight, m.brand, m.sale_name,
         m.create_time, m.create_by, m.update_time, m.update_by, m.remark,
+        m.vehicle_template_id,
         vt.version, vt.is_last,
         (
-            SELECT max_vt.version
-            FROM vehicle_template max_vt
-            WHERE max_vt.uuid = vt.uuid
-            AND max_vt.is_last = 1
+        SELECT max_vt.version
+        FROM vehicle_template max_vt
+        WHERE max_vt.uuid = vt.uuid
+        AND max_vt.is_last = 1
         ) AS last_version
         FROM material m
-        left join vehicle_info vi on vi.material_no = m.material_no and vi.deleted = 0
-        LEFT JOIN vehicle_template_material vtm ON vtm.material_no = m.material_no
-        LEFT JOIN vehicle_template vt ON vt.template_id = vtm.template_id and vt.template_id = vi.vehicle_template_id
+        LEFT JOIN vehicle_template vt ON vt.template_id = m.vehicle_template_id
         <where>
+            vt.version IS NOT NULL
             <if test="name != null and name != ''">
                 AND m.name LIKE CONCAT('%', #{name}, '%')
             </if>
@@ -67,7 +68,7 @@
 
     <select id="selectMaterialById" parameterType="Long" resultMap="MaterialResult">
         <include refid="selectMaterialVo"/>
-        WHERE m.id = #{id}
+        WHERE m.id = #{id} AND vt.version IS NOT NULL
     </select>
 
     <insert id="insertMaterial" parameterType="Material" useGeneratedKeys="true" keyProperty="id">
@@ -84,8 +85,9 @@
             <if test="createTime != null">create_time,</if>
             <if test="createBy != null and createBy != ''">create_by,</if>
             <if test="remark != null and remark != ''">remark,</if>
+            <if test="vehicleTemplateId != null">vehicle_template_id,</if>
         </trim>
-        <trim prefix="values (" suffix=")" suffixOverrides=",">
+        <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
             <if test="name != null and name != ''">#{name},</if>
             <if test="materialNo != null and materialNo != ''">#{materialNo},</if>
             <if test="tvv != null and tvv != ''">#{tvv},</if>
@@ -97,6 +99,7 @@
             <if test="createTime != null">#{createTime},</if>
             <if test="createBy != null and createBy != ''">#{createBy},</if>
             <if test="remark != null and remark != ''">#{remark},</if>
+            <if test="vehicleTemplateId != null">#{vehicleTemplateId},</if>
         </trim>
     </insert>
 
@@ -114,6 +117,7 @@
             <if test="updateTime != null">update_time = #{updateTime},</if>
             <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
             <if test="remark != null and remark != ''">remark = #{remark},</if>
+            <if test="vehicleTemplateId != null">vehicle_template_id = #{vehicleTemplateId},</if>
         </trim>
         WHERE id = #{id}
     </update>
@@ -124,4 +128,5 @@
             #{id}
         </foreach>
     </delete>
+
 </mapper>

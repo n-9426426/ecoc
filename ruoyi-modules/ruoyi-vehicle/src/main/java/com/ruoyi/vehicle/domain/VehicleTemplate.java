@@ -78,4 +78,12 @@ public class VehicleTemplate extends BaseEntity {
     private String variant;
 
     private String versionNo;
+
+    private String tire;
+
+    private String brand;
+
+    private String weight;
+
+    private String saleName;
 }

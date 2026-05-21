@@ -15,6 +15,33 @@ import java.util.regex.Pattern;
  * <p>解析失败时不抛出异常、不打印日志，
  * 而是将错误信息封装为 {@link RuleItemType#PARSE_ERROR} 类型的 {@link RuleItem}，
  * 由执行器统一转化为校验违规报告。
+ *
+ * <h3>支持的规则语法一览</h3>
+ * <pre>
+ *  1.  VALUE IS PRESENT IF ANY &lt;anyConditions&gt; IF ALL &lt;allConditions&gt;   → NESTED_CONDITION
+ *  2.  VALUE IS PRESENT IF @field IS PRESENT|ABSENT                       → MANDATORY_IF
+ *  3.  VALUE IS ABSENT  IF @field IS PRESENT|ABSENT                       → FORBIDDEN_IF
+ *  4.  VALUE IS PRESENT IF ANY &lt;conditions&gt;                              → MANDATORY_IF_ANY
+ *  5.  VALUE IS ABSENT  IF ALL &lt;conditions&gt;                              → FORBIDDEN_IF_ALL
+ *  6.  VALUE IS PRESENT IF ALL &lt;conditions&gt;                              → MANDATORY_IF_ALL
+ *  7.  VALUE IS ABSENT  IF ANY &lt;conditions&gt;                              → FORBIDDEN_IF_ANY
+ *  8.  COUNT(@listField, @targetField) op N                               → COUNT_AGGREGATE
+ *  9.  SUM(@listField, @field) op N|VALUE                                 → SUM_AGGREGATE
+ * 10.  VALUE IN [v1, v2, ...]                                             → VALUE_IN
+ * 11.  VALUE = /regex/                                                    → VALUE_REGEX
+ * 12.  VALUE op literal                                                   → VALUE_COMPARE
+ * 13.  VALUE IS PRESENT                                                   → VALUE_IS_PRESENT
+ * 14.  VALUE IS ABSENT                                                    → VALUE_IS_ABSENT
+ * 15.  @TableName=&gt;VALUE IS NUMBERED                                      → VALUE_IS_NUMBERED
+ * 16.  VALUE op @fieldName                                                → VALUE_FIELD_COMPARE
+ * 17.  COUNT(@listField, @condField IN [vals]) = VALUE                    → COUNT_AS_VALUE
+ * 18.  @TableName=&gt;COUNT(VALUE IN [vals]) op N                           → LIST_COUNT
+ * 19.  VALUE = /regex/ IF ALL &lt;conditions&gt;                               → CONDITIONAL_REGEX
+ * 20.  VALUE op @fieldName IF ALL &lt;conditions&gt;                           → CONDITIONAL_FIELD_COMPARE
+ * 21.  VALUE op N IF ALL &lt;conditions&gt;                                    → CONDITIONAL_VALUE_COMPARE
+ * 22.  VALUE = ANY @listField.fieldName                                   → VALUE_IN_LIST_FIELD
+ * 23.  @TableName=&gt;VALUE IS UNIQUE                                        → LIST_UNIQUE
+ * </pre>
  */
 public class FinalRuleParser {
 
@@ -100,6 +127,63 @@ public class FinalRuleParser {
     // 格式: VALUE >= @fieldName  /  VALUE != @fieldName  等
     private static final Pattern VALUE_FIELD_COMPARE_PATTERN =
             Pattern.compile("VALUE\\s+(>=|<=|>|<|=|!=)\\s+@([\\w.]+)",
+                    Pattern.CASE_INSENSITIVE);
+
+    // ===== COUNT = VALUE（列表字段计数赋值给当前字段）=====
+    // 格式: COUNT(@listField, @conditionField IN [vals]) = VALUE
+    // 用途: [103]-[106] NumberOfAxles* 类字段
+    private static final Pattern COUNT_AS_VALUE_PATTERN =
+            Pattern.compile(
+                    "COUNT\\s*\\(@?([\\w.]+),\\s*@?([\\w.]+)\\s+IN\\s+\\[([^\\]]+)\\]\\)\\s*=\\s*VALUE",
+                    Pattern.CASE_INSENSITIVE);
+
+    // ===== LIST_COUNT（列表上下文内对 VALUE 做计数校验）=====
+    // 格式: @TableName=>COUNT(VALUE IN [vals]) op threshold
+    // 用途: [233] TyreFittedProductionIndicator
+    private static final Pattern LIST_COUNT_PATTERN =
+            Pattern.compile(
+                    "^@([\\w.]+)\\s*=>\\s*COUNT\\s*\\(VALUE\\s+IN\\s+\\[([^\\]]+)\\]\\)\\s*(>=|<=|>|<|=|!=)\\s*(\\d+)$",
+                    Pattern.CASE_INSENSITIVE);
+
+    // ===== A. 条件数值比较（CONDITIONAL_VALUE_COMPARE）=====
+    // 格式: VALUE op N IF ALL <conditions>
+    // 用途: [127][130][129][132][133] Length/Width/Height 系列
+    private static final Pattern CONDITIONAL_VALUE_COMPARE_PATTERN =
+            Pattern.compile(
+                    "VALUE\\s+(>=|<=|>|<|=|!=)\\s+([^\\s]+)\\s+IF\\s+ALL\\s+(.+)",
+                    Pattern.CASE_INSENSITIVE);
+
+    // ===== B. 条件正则（CONDITIONAL_REGEX）=====
+    // 格式: VALUE = /regex/ IF ALL <conditions>
+    // 用途: [463] TestFamilyIdentifierValue
+    // 注意：必须在 CONDITIONAL_VALUE_COMPARE 之前匹配，因正则值含 /
+    private static final Pattern CONDITIONAL_REGEX_PATTERN =
+            Pattern.compile(
+                    "VALUE\\s*=\\s*/([^/]+)/\\s+IF\\s+ALL\\s+(.+)",
+                    Pattern.CASE_INSENSITIVE);
+
+    // ===== C. 条件跨字段比较（CONDITIONAL_FIELD_COMPARE）=====
+    // 格式: VALUE op @fieldName IF ALL <conditions>
+    // 用途: [90] PreviousStageVersion
+    private static final Pattern CONDITIONAL_FIELD_COMPARE_PATTERN =
+            Pattern.compile(
+                    "VALUE\\s+(>=|<=|>|<|=|!=)\\s+@([\\w.]+)\\s+IF\\s+ALL\\s+(.+)",
+                    Pattern.CASE_INSENSITIVE);
+
+    // ===== D. 列表字段成员检查（VALUE_IN_LIST_FIELD）=====
+    // 格式: VALUE = ANY @listField.fieldName
+    // 用途: [169] MechanicalCouplingNumberVerticalMass, [242] AxleNumberCombination
+    private static final Pattern VALUE_IN_LIST_FIELD_PATTERN =
+            Pattern.compile(
+                    "VALUE\\s*=\\s*ANY\\s+@([\\w.]+)\\.([\\w.]+)",
+                    Pattern.CASE_INSENSITIVE);
+
+    // ===== E. 列表唯一性（LIST_UNIQUE）=====
+    // 格式: @TableName=>VALUE IS UNIQUE
+    // 用途: [252] Colour
+    private static final Pattern LIST_UNIQUE_PATTERN =
+            Pattern.compile(
+                    "^@([\\w.]+)\\s*=>\\s*VALUE\\s+IS\\s+UNIQUE$",
                     Pattern.CASE_INSENSITIVE);
 
     // ==========================================
@@ -286,6 +370,17 @@ public class FinalRuleParser {
                         .build();
             }
 
+            // 9-a. VALUE = /regex/ IF ALL <conditions>（条件正则，必须在裸正则之前）
+            //      用途: [463] TestFamilyIdentifierValue
+            m = CONDITIONAL_REGEX_PATTERN.matcher(body);
+            if (m.matches()) {
+                return RuleItem.builder()
+                        .type(RuleItemType.CONDITIONAL_REGEX)
+                        .regexPattern(m.group(1).trim())
+                        .conditionChain(ConditionChain.parseAll(m.group(2).trim()))
+                        .build();
+            }
+
             // 9. VALUE = /regex/
             m = VALUE_REGEX_PATTERN.matcher(body);
             if (m.matches()) {
@@ -330,6 +425,32 @@ public class FinalRuleParser {
                         .build();
             }
 
+            // 14-a. VALUE op @fieldName IF ALL <conditions>（条件跨字段比较）
+            //       用途: [90] PreviousStageVersion
+            //       必须在裸 VALUE_FIELD_COMPARE 之前匹配
+            m = CONDITIONAL_FIELD_COMPARE_PATTERN.matcher(body);
+            if (m.matches()) {
+                return RuleItem.builder()
+                        .type(RuleItemType.CONDITIONAL_FIELD_COMPARE)
+                        .operator(m.group(1).trim())
+                        .refFieldName(m.group(2).trim())
+                        .conditionChain(ConditionChain.parseAll(m.group(3).trim()))
+                        .build();
+            }
+
+            // 14-b. VALUE op N IF ALL <conditions>（条件数值比较）
+            //       用途: [127][130][129][132][133] Length/Width/Height 系列
+            //       必须在裸 VALUE_COMPARE 之前匹配
+            m = CONDITIONAL_VALUE_COMPARE_PATTERN.matcher(body);
+            if (m.matches()) {
+                return RuleItem.builder()
+                        .type(RuleItemType.CONDITIONAL_VALUE_COMPARE)
+                        .operator(m.group(1).trim())
+                        .compareValue(m.group(2).trim())
+                        .conditionChain(ConditionChain.parseAll(m.group(3).trim()))
+                        .build();
+            }
+
             // 14. VALUE op @fieldName（跨字段值比较）
             m = VALUE_FIELD_COMPARE_PATTERN.matcher(body);
             if (m.matches()) {
@@ -337,6 +458,64 @@ public class FinalRuleParser {
                         .type(RuleItemType.VALUE_FIELD_COMPARE)
                         .operator(m.group(1).trim())
                         .refFieldName(m.group(2).trim())
+                        .build();
+            }
+
+            // 15. COUNT(@listField, @conditionField IN [vals]) = VALUE
+            //     列表字段中满足枚举条件的行数，赋值校验当前字段
+            //     用途: [103]-[106] NumberOfAxles* 类字段
+            m = COUNT_AS_VALUE_PATTERN.matcher(body);
+            if (m.matches()) {
+                AggregateFunction af = AggregateFunction.builder()
+                        .functionType(AggregateFunction.Type.COUNT)
+                        .listField(m.group(1).trim())
+                        .field(m.group(2).trim())
+                        .enumValues(parseList(m.group(3)))
+                        .operator(com.ruoyi.common.core.enums.CompareOperator.EQ)
+                        .threshold(null) // null 表示与当前字段 VALUE 比较，而非固定阈值
+                        .build();
+                return RuleItem.builder()
+                        .type(RuleItemType.COUNT_AS_VALUE)
+                        .aggregateFunction(af)
+                        .build();
+            }
+
+            // 16. @TableName=>COUNT(VALUE IN [vals]) op threshold
+            //     列表上下文内对本字段 VALUE 做枚举计数校验
+            //     用途: [233] TyreFittedProductionIndicator
+            m = LIST_COUNT_PATTERN.matcher(body);
+            if (m.matches()) {
+                AggregateFunction af = AggregateFunction.builder()
+                        .functionType(AggregateFunction.Type.COUNT)
+                        .listField(m.group(1).trim())
+                        .enumValues(parseList(m.group(2)))
+                        .operator(com.ruoyi.common.core.enums.CompareOperator.fromSymbol(m.group(3).trim()))
+                        .threshold(Double.parseDouble(m.group(4).trim()))
+                        .build();
+                return RuleItem.builder()
+                        .type(RuleItemType.LIST_COUNT)
+                        .aggregateFunction(af)
+                        .build();
+            }
+
+            // 17. VALUE = ANY @listField.fieldName（列表成员检查）
+            //     用途: [169] MechanicalCouplingNumberVerticalMass, [242] AxleNumberCombination
+            m = VALUE_IN_LIST_FIELD_PATTERN.matcher(body);
+            if (m.matches()) {
+                return RuleItem.builder()
+                        .type(RuleItemType.VALUE_IN_LIST_FIELD)
+                        .refFieldName(m.group(1).trim())   // listField
+                        .compareValue(m.group(2).trim())   // fieldName in each row
+                        .build();
+            }
+
+            // 18. @TableName=>VALUE IS UNIQUE（列表唯一性校验）
+            //     用途: [252] Colour
+            m = LIST_UNIQUE_PATTERN.matcher(body);
+            if (m.matches()) {
+                return RuleItem.builder()
+                        .type(RuleItemType.LIST_UNIQUE)
+                        .refFieldName(m.group(1).trim())
                         .build();
             }
 

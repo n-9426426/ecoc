@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.vehicle.mapper.MaterialHistoryMapper">
+
+    <resultMap id="MaterialHistoryResult" type="com.ruoyi.vehicle.domain.MaterialHistory">
+        <id     property="id"                column="id"/>
+        <result property="materialId"        column="material_id"/>
+        <result property="oldVersion"        column="old_version"/>
+        <result property="newVersion"        column="new_version"/>
+        <result property="changeTime"        column="change_time"/>
+        <result property="trie"              column="trie"/>
+        <result property="weight"            column="weight"/>
+        <result property="brand"             column="brand"/>
+        <result property="saleName"          column="sale_name"/>
+        <result property="effectiveDate"     column="effective_date"/>
+        <result property="overdueDate"       column="overdue_date"/>
+    </resultMap>
+
+    <select id="selectByMaterialId" resultMap="MaterialHistoryResult">
+        SELECT mh.*, m.trie, m.weight, m.brand, m.sale_name,
+               vt.effective_date, vt.overdue_date
+        FROM material_history mh
+                 LEFT JOIN material m ON m.id = mh.material_id
+                 LEFT JOIN vehicle_template vt ON vt.template_id = m.vehicle_template_id AND vt.version = #{version}
+        WHERE mh.material_id = #{materialId}
+    </select>
+
+    <insert id="insert" parameterType="com.ruoyi.vehicle.domain.MaterialHistory" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO material_history (material_id, old_version, new_version, change_time)
+        VALUES (#{materialId}, #{oldVersion}, #{newVersion}, #{changeTime})
+    </insert>
+
+    <delete id="deleteById">
+        DELETE FROM material_history WHERE id = #{id}
+    </delete>
+
+</mapper>

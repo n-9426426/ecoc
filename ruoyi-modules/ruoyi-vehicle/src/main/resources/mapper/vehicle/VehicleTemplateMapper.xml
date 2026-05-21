@@ -28,6 +28,10 @@
         <result property="templateVersion" column="template_version"/>
         <result property="tvv"            column="tvv"/>
         <result property="effectiveDate"  column="effective_date"/>
+        <result property="brand"          column="brand"/>
+        <result property="tire"           column="tire"/>
+        <result property="weight"         column="weight"  />
+        <result property="saleName"       column="sale_name"/>
     </resultMap>
 
     <!-- ==================== 公共查询列 ==================== -->
@@ -244,16 +248,19 @@
     </select>
 
     <select id="selectVehicleTemplateIdByCondition" resultMap="VehicleTemplateResult">
-        select vt.*
+        select vt.*, vt.json->>'$.brand' AS brand, vt.json->>'$.weight' AS weight, vt.json->>'$.saleName' AS sale_name, vt.json->>'$.tire' AS tire
         from vehicle_template vt
         left join vehicle_template_material vtm on vtm.template_id = vt.template_id
-        where vt.del_flag = '0'
-        and vt.status = '0'
+        left join material m on m.vehicle_template_id = vt.template_id
+        where vt.del_flag = '0' and vt.status = '0' and vt.is_last = 1
         <choose>
             <when test="materialNo != null and materialNo != ''">
                 AND vtm.material_no = #{materialNo}
             </when>
             <otherwise>
+                <if test="tvv != null and tvv != ''">
+                    AND REPLACE(m.tvv, ',', '') = #{tvv}
+                </if>
                 <if test="brand != null and brand != ''">
                     AND vt.json->>'$.brand' = #{brand}
                 </if>

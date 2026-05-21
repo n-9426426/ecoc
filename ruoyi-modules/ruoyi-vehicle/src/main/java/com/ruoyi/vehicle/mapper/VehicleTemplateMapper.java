@@ -40,7 +40,8 @@ public interface VehicleTemplateMapper {
             @Param("brand") String brand,
             @Param("weight") String weight,
             @Param("saleName") String saleName,
-            @Param("tire") String tire
+            @Param("tire") String tire,
+            @Param("tvv") String tvv
     );
 
     int updateStatusByOverdueDate();
