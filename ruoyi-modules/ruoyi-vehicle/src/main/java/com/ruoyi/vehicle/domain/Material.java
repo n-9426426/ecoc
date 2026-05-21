@@ -80,6 +80,9 @@ public class Material extends BaseEntity {
     /** 最新版本号（子查询） */
     private String lastVersion;
 
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date effectiveDate;
+
     /** 关联车辆模版列表 */
     private List<VehicleTemplate> vehicleTemplates;
 
