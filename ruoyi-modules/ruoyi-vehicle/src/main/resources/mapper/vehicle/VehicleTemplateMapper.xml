@@ -217,7 +217,7 @@
 
     <update id="updateAllTemplateNotIsLast">
         UPDATE vehicle_template set is_last = 0
-        where coc_template_no = #{cocTemplateNo}
+        where uuid = #{uuid}
     </update>
 
     <!-- ==================== 查询即将过期的模板 ==================== -->
@@ -252,14 +252,14 @@
         from vehicle_template vt
         left join vehicle_template_material vtm on vtm.template_id = vt.template_id
         left join material m on m.vehicle_template_id = vt.template_id
-        where vt.del_flag = '0' and vt.status = '0' and vt.is_last = 1
+        where vt.del_flag = '0' and vt.status = '0'
         <choose>
             <when test="materialNo != null and materialNo != ''">
                 AND vtm.material_no = #{materialNo}
             </when>
             <otherwise>
                 <if test="tvv != null and tvv != ''">
-                    AND REPLACE(m.tvv, ',', '') = #{tvv}
+                    AND REPLACE(vt.tvv, ',', '') = #{tvv}
                 </if>
                 <if test="brand != null and brand != ''">
                     AND vt.json->>'$.brand' = #{brand}

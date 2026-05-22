@@ -12,6 +12,7 @@ import com.ruoyi.vehicle.service.IVehicleInfoService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -60,16 +61,28 @@ public class MaterialServiceImpl implements IMaterialService {
      */
     @Override
     public int insertMaterial(Material material) {
+        Material query = new Material();
+        query.setMaterialNo(material.getMaterialNo());
+        List<Material> existMaterial = materialMapper.selectMaterialList(query);
+        if (!existMaterial.isEmpty()) {
+            throw new RuntimeException("该物料号已经定义过版本，无法继续定义");
+        }
         LoginUser loginUser = SecurityUtils.getLoginUser();
         material.setCreateBy(loginUser.getUsername());
         material.setCreateTime(new Date());
         List<Map<String, Object>> template = vehicleInfoService.selectVehicleTemplateIdByCondition(
-                null, material.getBrand(), material.getWeight(), material.getSaleName(), material.getTrie(), material.getTvv()
+                material.getMaterialNo(), material.getBrand(), material.getWeight(), material.getSaleName(), material.getTrie(), material.getTvv()
         );
         if (template.isEmpty()) {
             throw new RuntimeException("没有匹配的模版");
         }
+        template.sort((a, b) -> {
+            BigDecimal versionA = new BigDecimal(String.valueOf(a.getOrDefault("version", "0")));
+            BigDecimal versionB = new BigDecimal(String.valueOf(b.getOrDefault("version", "0")));
+            return versionB.compareTo(versionA);
+        });
         material.setVersion(template.get(0) == null ? null : template.get(0).get("version").toString());
+        material.setVehicleTemplateId(template.get(0) == null ? null : (Long) template.get(0).get("vehicleTemplateId"));
         return materialMapper.insertMaterial(material);
     }
 

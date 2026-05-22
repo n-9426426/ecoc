@@ -313,7 +313,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 }
                 return response.body().string(); // 自动按 UTF-8 解码
             }
-
         } catch (Exception e) {
             log.error("预览XML文件失败", e);
             throw new RuntimeException(StringUtils.format(

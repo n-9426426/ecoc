@@ -130,7 +130,7 @@ public class ValueMappingParser {
 
         try {
             // 按首段关键字分发
-            String[] parts = descriptor.split(":", 3);
+            String[] parts = descriptor.split(":", 5);
             String type = parts[0].toUpperCase();
 
             switch (type) {
@@ -252,6 +252,34 @@ public class ValueMappingParser {
                     if (start >= raw.length()) return null;
                     if (end == -1 || end > raw.length()) end = raw.length();
                     return raw.substring(start, end);
+                }
+
+                // ── 正则多分组拼接 ──────────────────────────────────────
+                case "EXTRACT_PATTERN_JOIN": {
+                    // value_map 格式：EXTRACT_PATTERN_JOIN:{regex}:{g1}:{g2}:{sep}
+                    // 说明：
+                    //   {regex} — 正则表达式（不能含冒号，冒号用 \x3A 代替）
+                    //   {g1}    — 第一个捕获组序号（从1开始）
+                    //   {g2}    — 第二个捕获组序号（从1开始）
+                    //   {sep}   — 两个分组之间的拼接符（可为空）
+                    if (parts.length < 4) {
+                        log.warn("[ValueMappingParser] EXTRACT_PATTERN_JOIN 参数不足: {}", descriptor);
+                        return null;
+                    }
+                    String regex  = parts[1];
+                    int    g1     = parseIndex(parts[2], 1);
+                    int    g2     = parseIndex(parts[3], 2);
+                    // sep 是第5段，允许缺省（空字符串）
+                    String sep    = (parts.length >= 5) ? unescapeSep(parts[4]) : "";
+
+                    Matcher m = Pattern.compile(regex).matcher(raw);
+                    if (!m.find()) {
+                        log.warn("[ValueMappingParser] EXTRACT_PATTERN_JOIN 未匹配: regex={} raw={}", regex, raw);
+                        return null;
+                    }
+                    String part1 = m.group(g1);
+                    String part2 = m.group(g2).trim();
+                    return part1 + sep + part2;
                 }
 
                 default:

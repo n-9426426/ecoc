@@ -237,8 +237,10 @@ public class ExcelUtil {
             for (int i = 0; i < headerRow.getLastCellNum(); i++) {
                 Cell cell = headerRow.getCell(i);
                 if (cell != null) {
-                    String headerName = cell.getStringCellValue().trim();
-                    String fieldName  = headerFieldMap.get(headerName);
+                    String headerName = getCellValue(cell);
+                    if (headerName == null || headerName.trim().isEmpty()) continue;
+                    headerName = headerName.trim();
+                    String fieldName = headerFieldMap.get(headerName);
                     if (fieldName != null) {
                         indexFieldMap.put(i, fieldName);
                     } else {

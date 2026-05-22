@@ -19,10 +19,7 @@ import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.system.api.domain.SysNotice;
 import com.ruoyi.system.api.model.LoginUser;
-import com.ruoyi.vehicle.domain.AbnormalClassify;
-import com.ruoyi.vehicle.domain.VehicleInfo;
-import com.ruoyi.vehicle.domain.VehicleLifecycle;
-import com.ruoyi.vehicle.domain.VehicleTemplate;
+import com.ruoyi.vehicle.domain.*;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import com.ruoyi.vehicle.mapper.*;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
@@ -39,7 +36,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.stream.Collectors;
 
 
 @Service("vehicleInfoService")
@@ -76,6 +72,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Autowired
     private VehicleTemplateMapper vehicleTemplateMapper;
+
+    @Autowired
+    private MaterialMapper materialMapper;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -133,11 +132,19 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         }
 
         // 查模板
-        Long vehicleTemplateId = vehicleTemplateMaterialMapper
-                .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getTvv(), vehicleInfo.getBrand(),
-                        vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getBreakpointTime());
-        if (vehicleTemplateId == null) {
-            throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎无对应的可用车辆模板");
+        Material material = new Material();
+        material.setMaterialNo(vehicleInfo.getMaterialNo());
+        List<Material> materialList = materialMapper.selectMaterialList(material);
+        Long vehicleTemplateId;
+        if (materialList.isEmpty()) {
+            vehicleTemplateId = vehicleTemplateMaterialMapper
+                    .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getTvv(), vehicleInfo.getBrand(),
+                            vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getBreakpointTime());
+            if (vehicleTemplateId == null) {
+                throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎无对应的可用车辆模板");
+            }
+        } else {
+            vehicleTemplateId = materialList.get(0).getVehicleTemplateId();
         }
 
         // 查模板详情，自动填充关联字段
@@ -185,14 +192,21 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     @Transactional(rollbackFor = Exception.class)
     public int updateVehicleInfo(VehicleInfo vehicleInfo, boolean needValid) {
         if (StringUtils.isNotBlank(vehicleInfo.getMaterialNo())) {
-            Long vehicleTemplateId = vehicleTemplateMaterialMapper
-                    .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getTvv(), vehicleInfo.getBrand(),
-                            vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getBreakpointTime());
-            if (vehicleTemplateId == null) {
-                throw new RuntimeException("该物料号无对应的可用车辆模板");
+            Material material = new Material();
+            material.setMaterialNo(vehicleInfo.getMaterialNo());
+            List<Material> materialList = materialMapper.selectMaterialList(material);
+            Long vehicleTemplateId;
+            if (materialList.isEmpty()) {
+                vehicleTemplateId = vehicleTemplateMaterialMapper
+                        .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getTvv(), vehicleInfo.getBrand(),
+                                vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getBreakpointTime());
+                if (vehicleTemplateId == null) {
+                    throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎无对应的可用车辆模板");
+                }
+            } else {
+                vehicleTemplateId = materialList.get(0).getVehicleTemplateId();
             }
-            VehicleTemplate template = vehicleTemplateMapper
-                    .selectVehicleTemplateById(vehicleTemplateId);
+            VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(vehicleTemplateId);
             if (template == null) {
                 throw new RuntimeException("模板不存在，templateId=" + vehicleTemplateId);
             }
@@ -591,51 +605,89 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     private int insert(VehicleInfo vehicleInfo) {
         Map<String, Object> map = vehicleInfo.getJsonMap();
-        // 用于最终序列化的 map，默认指向原始 map
-        Map<String, Object> finalMap = map;
-
         if (map != null && !map.isEmpty()) {
-            List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
+            map = new LinkedHashMap<>(map);
+        }
+        Map<String, Object> finalMap = map;
+        if (map != null && !map.isEmpty()) {
+            List<SysDictData> dictDataList = remoteDictService
+                    .getDictDataByType("vehicle_attribute").getData();
 
             if (dictDataList != null && !dictDataList.isEmpty()) {
-                Map<String, List<SysDictData>> keyMappingRules = dictDataList.stream()
-                        .filter(d -> StringUtils.isNotBlank(d.getKeyMap()))
-                        .collect(Collectors.groupingBy(SysDictData::getKeyMap));
+
+                // ── 第一步：按 uuid 分组，无 uuid 的每条独立 ──────────────────
+                Map<String, List<SysDictData>> uuidGroups = new LinkedHashMap<>();
+                for (SysDictData rule : dictDataList) {
+                    String groupKey = StringUtils.isNotBlank(rule.getUuid())
+                            ? rule.getUuid()
+                            : "$$solo$$" + rule.getDictCode();
+                    uuidGroups.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(rule);
+                }
+
+                // ── 第二步：每组按 dict_code 排序，取第一条有 key_map 的作为入口 ──
+                // key = keyMap字段值, value = 该 keyMap 下的所有链组列表
+                Map<String, List<List<SysDictData>>> keyToChains = new LinkedHashMap<>();
+                for (List<SysDictData> chain : uuidGroups.values()) {
+                    // 按 dict_code 排序
+                    chain.sort(Comparator.comparingLong(SysDictData::getDictCode));
+                    // 找链中第一条有 key_map 的记录作为匹配入口
+                    String keyMap = chain.stream()
+                            .map(SysDictData::getKeyMap)
+                            .filter(StringUtils::isNotBlank)
+                            .findFirst()
+                            .orElse(null);
+                    if (keyMap == null) continue; // 整条链都没有 key_map，跳过
+                    keyToChains.computeIfAbsent(keyMap, k -> new ArrayList<>()).add(chain);
+                }
 
                 Map<String, Object> result = new LinkedHashMap<>();
 
                 for (Map.Entry<String, Object> entry : map.entrySet()) {
                     String fieldName = entry.getKey();
-                    List<SysDictData> matchedRules = keyMappingRules.get(fieldName);
+                    List<List<SysDictData>> chains = keyToChains.get(fieldName);
 
-                    if (matchedRules == null || matchedRules.isEmpty()) {
+                    // 无规则：原样保留
+                    if (chains == null || chains.isEmpty()) {
                         result.put(fieldName, entry.getValue());
                         continue;
                     }
 
-                    String rawValue = entry.getValue() == null
-                            ? null
-                            : String.valueOf(entry.getValue());
+                    String rawValue = entry.getValue() == null ? null : String.valueOf(entry.getValue());
 
-                    for (SysDictData rule : matchedRules) {
-                        String converted;
-                        if (StringUtils.isBlank(rule.getValueMap())) {
-                            converted = "";
-                        } else {
-                            converted = ValueMappingParser.convert(rawValue, rule.getValueMap());
-                            converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
-                            converted = "N/A".equals(converted) ? "" : converted;
+                    // ── 每条链独立执行 ────────────────────────────────────────
+                    for (List<SysDictData> chain : chains) {
+                        String converted = rawValue;
+                        for (SysDictData rule : chain) {
+                            if (StringUtils.isBlank(rule.getValueMap())) {
+                                converted = "";
+                                break;
+                            }
+                            String stepped = ValueMappingParser.convert(converted, rule.getValueMap());
+
+                            if (stepped == null) {
+                                log.warn("[insert] value_map 链式第 {} 步返回 null，终止。dict_code={}, fieldName={}",
+                                        rule.getDictSort(), rule.getDictCode(), fieldName);
+                                break;
+                            }
+                            converted = stepped;
                         }
-                        result.put(rule.getDictLabel(), converted);
+
+                        // 兜底处理
+                        converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
+                        converted = "N/A".equals(converted) ? "" : converted;
+
+                        // 用链中最后一条记录的 dictLabel 作为目标字段名
+                        String targetLabel = chain.get(chain.size() - 1).getDictLabel();
+                        result.put(targetLabel, converted);
                     }
                 }
 
-                finalMap = result; // 直接用 result，不再依赖 map 的引用同步
+                finalMap = result;
             }
         }
 
         try {
-            vehicleInfo.setJson(objectMapper.writeValueAsString(finalMap)); // 序列化映射后的数据
+            vehicleInfo.setJson(objectMapper.writeValueAsString(finalMap));
         } catch (Exception e) {
             throw new RuntimeException("无法格式化JSON数据");
         }

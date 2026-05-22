@@ -1,5 +1,7 @@
 package com.ruoyi.vehicle.service.impl;
 
+import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.core.enums.RuleItemType;
 import com.ruoyi.common.core.exception.ServiceException;
@@ -178,7 +180,10 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(DateUtils.getNowDate());
         template.setTvv(template.getType() + "," + template.getVariant() + "," + template.getVersionNo());
-        templateMapper.updateAllTemplateNotIsLast(template.getCocTemplateNo());
+        template.setValidateResult("0");
+        template.setValidateTime(null);
+        template.setValidateMsg(null);
+        templateMapper.updateAllTemplateNotIsLast(template.getUuid());
         return templateMapper.insertVehicleTemplate(template);
     }
 
@@ -198,7 +203,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         if (status.equals(template.getStatus())) {
             return 1;
         }
-        if (status.equals("0") && new Date().after(template.getOverdueDate())) {
+        if (template.getOverdueDate() != null && status.equals("0") && new Date().after(template.getOverdueDate())) {
             throw new RuntimeException("已超过失效时间，操作无法执行。如需启用该模版请先修改失效时间后重试");
         }
         return templateMapper.updateStatus(templateId, status);
@@ -410,6 +415,13 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                             SysDictData::getDictValue,
                             (k1, k2) -> k1
                     ));
+            List<SysDictData> vehicleAttribute = remoteDictService.getDictDataByType("vehicle_attribute").getData();
+            Map<String, String> keyMap = vehicleAttribute.stream()
+                    .collect(Collectors.toMap(
+                            SysDictData::getDictLabel,
+                            SysDictData::getKeyMap,
+                            (k1, k2) -> k1
+                    ));
 
             // 遍历替换 vehicleType
             vehicleTemplates.forEach(template -> {
@@ -425,7 +437,8 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 template.setValidateResult("0");
                 template.setCreateBy(SecurityUtils.getUsername());
                 template.setCreateTime(DateUtils.getNowDate());
-                template.setTvv(template.getType() + "," + template.getVariant() + template.getVersionNo());
+                Map<String, String> jsonMap = JSONObject.parseObject(template.getJson(), new TypeReference<Map<String, String>>() {});
+                template.setTvv(jsonMap.get(keyMap.get("Type")) + "," + jsonMap.get(keyMap.get("Variant")) + jsonMap.get(keyMap.get("Version")));
                 templateMapper.insertVehicleTemplate(template);
             });
         } catch (Exception e) {

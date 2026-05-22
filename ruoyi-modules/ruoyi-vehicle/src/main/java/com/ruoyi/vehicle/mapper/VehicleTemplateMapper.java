@@ -29,7 +29,7 @@ public interface VehicleTemplateMapper {
 
     VehicleTemplate selectVehicleByUuid(@Param("uuid") String uuid);
 
-    int updateAllTemplateNotIsLast(@Param("cocTemplateNo") String cocTemplateNo);
+    int updateAllTemplateNotIsLast(@Param("uuid") String uuid);
 
     List<VehicleTemplate> selectExpiringTemplates(@Param("needExpiredNotice") Integer needExpiredNotice);
 
