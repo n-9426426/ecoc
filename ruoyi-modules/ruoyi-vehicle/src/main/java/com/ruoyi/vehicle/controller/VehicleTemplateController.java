@@ -136,17 +136,13 @@ public class VehicleTemplateController extends BaseController {
      */
     @RequiresPermissions("vehicle:template:import")
     @Log(title = "车辆模板管理", businessType = BusinessType.IMPORT)
-    @PostMapping(value = "/import/excel", produces =  MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<String>> uploadExcelFile(@RequestParam("file") MultipartFile file) {
-        try {
-            if (!(validateFile(file) == FileTypeEnum.EXCEL)) {
-                throw new ServiceException(remoteTranslateService.translate("common.upload.file.type.unsupported", null));
-            }
-            return vehicleTemplateService.importExcel(file);
-        } catch (Exception e) {
-            log.error("文件导入失败", e);
-            throw new ServiceException("文件导入失败: " + e.getMessage());
+    @PostMapping("/import/excel")
+    public AjaxResult uploadExcelFile(@RequestParam("file") MultipartFile file) {
+        if (!(validateFile(file) == FileTypeEnum.EXCEL)) {
+            throw new ServiceException(remoteTranslateService.translate("common.upload.file.type.unsupported", null));
         }
+        vehicleTemplateService.importExcel(file);
+        return AjaxResult.success("导入成功");
     }
 
     /**
