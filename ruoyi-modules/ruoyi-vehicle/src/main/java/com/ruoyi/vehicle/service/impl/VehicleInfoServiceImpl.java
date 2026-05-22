@@ -624,24 +624,45 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                     uuidGroups.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(rule);
                 }
 
-                // ── 第二步：每组按 dict_code 排序，取第一条有 key_map 的作为入口 ──
-                // key = keyMap字段值, value = 该 keyMap 下的所有链组列表
+                // ── 第二步：识别单 key_map 链 vs 多 key_map 链 ────────────────
+                // 单 key_map 链：同 uuid 下所有记录的 key_map 相同（或只有一条有值）
+                //               → 原有链式转换逻辑，多步处理同一字段值
+                // 多 key_map 链：同 uuid 下存在多个不同 key_map
+                //               → 各 key_map 独立取值转换，按 dict_code 顺序拼接输出
                 Map<String, List<List<SysDictData>>> keyToChains = new LinkedHashMap<>();
-                for (List<SysDictData> chain : uuidGroups.values()) {
-                    // 按 dict_code 排序
+                // key=uuid, value=按 dict_code 排序后的完整链（多 key_map 场景）
+                Map<String, List<SysDictData>> multiKeyChainMap = new LinkedHashMap<>();
+
+                for (Map.Entry<String, List<SysDictData>> groupEntry : uuidGroups.entrySet()) {
+                    List<SysDictData> chain = groupEntry.getValue();
+                    // 按 dict_code 升序排序，保证拼接顺序与数据库录入顺序一致
                     chain.sort(Comparator.comparingLong(SysDictData::getDictCode));
-                    // 找链中第一条有 key_map 的记录作为匹配入口
-                    String keyMap = chain.stream()
+
+                    // 统计不同 key_map 的数量
+                    long distinctKeyMapCount = chain.stream()
                             .map(SysDictData::getKeyMap)
                             .filter(StringUtils::isNotBlank)
-                            .findFirst()
-                            .orElse(null);
-                    if (keyMap == null) continue; // 整条链都没有 key_map，跳过
-                    keyToChains.computeIfAbsent(keyMap, k -> new ArrayList<>()).add(chain);
+                            .distinct()
+                            .count();
+
+                    if (distinctKeyMapCount > 1) {
+                        // 多 key_map 链
+                        multiKeyChainMap.put(groupEntry.getKey(), chain);
+                    } else {
+                        // 单 key_map 链（原有逻辑）
+                        String keyMap = chain.stream()
+                                .map(SysDictData::getKeyMap)
+                                .filter(StringUtils::isNotBlank)
+                                .findFirst()
+                                .orElse(null);
+                        if (keyMap == null) continue;
+                        keyToChains.computeIfAbsent(keyMap, k -> new ArrayList<>()).add(chain);
+                    }
                 }
 
                 Map<String, Object> result = new LinkedHashMap<>();
 
+                // ── 第三步：执行单 key_map 链式规则（原有逻辑）────────────────
                 for (Map.Entry<String, Object> entry : map.entrySet()) {
                     String fieldName = entry.getKey();
                     List<List<SysDictData>> chains = keyToChains.get(fieldName);
@@ -652,33 +673,69 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                         continue;
                     }
 
-                    String rawValue = entry.getValue() == null ? null : String.valueOf(entry.getValue());
+                    String rawValue = entry.getValue() == null
+                            ? null : String.valueOf(entry.getValue());
 
-                    // ── 每条链独立执行 ────────────────────────────────────────
-                    for (List<SysDictData> chain : chains) {
+                    for (List<SysDictData> singleChain : chains) {
                         String converted = rawValue;
-                        for (SysDictData rule : chain) {
+                        for (SysDictData rule : singleChain) {
                             if (StringUtils.isBlank(rule.getValueMap())) {
                                 converted = "";
                                 break;
                             }
                             String stepped = ValueMappingParser.convert(converted, rule.getValueMap());
-
                             if (stepped == null) {
-                                log.warn("[insert] value_map 链式第 {} 步返回 null，终止。dict_code={}, fieldName={}",
+                                log.warn("[insert] value_map 链式第 {} 步返回 null，终止。" +
+                                                "dict_code={}, fieldName={}",
                                         rule.getDictSort(), rule.getDictCode(), fieldName);
                                 break;
                             }
                             converted = stepped;
                         }
-
-                        // 兜底处理
                         converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
                         converted = "N/A".equals(converted) ? "" : converted;
 
-                        // 用链中最后一条记录的 dictLabel 作为目标字段名
-                        String targetLabel = chain.get(chain.size() - 1).getDictLabel();
+                        String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
                         result.put(targetLabel, converted);
+                    }
+                }
+
+                // ── 第四步：执行多 key_map 链（各字段独立转换后按顺序拼接）────
+                for (List<SysDictData> multiChain : multiKeyChainMap.values()) {
+                    List<String> parts = new ArrayList<>();
+                    SysDictData lastRule = null;
+
+                    for (SysDictData rule : multiChain) {
+                        // 跳过无 key_map 的记录（纯转换步骤，不作为独立取值入口）
+                        if (StringUtils.isBlank(rule.getKeyMap())) continue;
+
+                        // 从原始 map 取该 key_map 对应的值
+                        Object rawObj = map.get(rule.getKeyMap());
+                        String rawValue = rawObj == null ? null : String.valueOf(rawObj);
+
+                        // 执行该条记录的 value_map 转换
+                        String converted = rawValue;
+                        if (StringUtils.isNotBlank(rule.getValueMap())) {
+                            String stepped = ValueMappingParser.convert(rawValue, rule.getValueMap());
+                            if (stepped != null) {
+                                converted = stepped;
+                            } else {
+                                log.warn("[insert] 多key_map链转换返回 null，dict_code={}, keyMap={}",
+                                        rule.getDictCode(), rule.getKeyMap());
+                            }
+                        }
+                        converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
+                        converted = "N/A".equals(converted) ? "" : converted;
+
+                        if (StringUtils.isNotBlank(converted)) {
+                            parts.add(converted);
+                        }
+                        lastRule = rule;
+                    }
+
+                    if (lastRule != null && !parts.isEmpty()) {
+                        String targetLabel = lastRule.getDictLabel();
+                        result.put(targetLabel, String.join("/", parts));
                     }
                 }
 

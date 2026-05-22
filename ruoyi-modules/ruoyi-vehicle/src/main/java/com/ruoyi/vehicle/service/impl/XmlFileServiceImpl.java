@@ -1,5 +1,6 @@
 package com.ruoyi.vehicle.service.impl;
 
+import com.alibaba.fastjson2.util.DateUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.core.enums.RuleItemType;
 import com.ruoyi.common.core.exception.ServiceException;
@@ -1322,8 +1323,19 @@ public class XmlFileServiceImpl implements IXmlFileService {
         msg.append("的生成结果为: ");
         try {
             Map<String, Object> jsonMap = vehicle.getJsonMap();
-            if (jsonMap == null) {
-                jsonMap = new HashMap<>();
+            jsonMap.put("IviReferenceId", UUID.randomUUID().toString());
+            jsonMap.put("IviVersionDateTime", DateUtils.format(new Date(), "yyyy/MM/dd"));
+            if (StringUtils.isBlank((String) (jsonMap.get("VehicleIdentificationNumber")))) {
+                jsonMap.put("VehicleIdentificationNumber", vehicle.getVin());
+            }
+            if (vehicle.getManufactureDate() != null) {
+                jsonMap.put("DateManufactureVehicle", DateUtils.format(vehicle.getManufactureDate(), "yyyy/MM/dd"));
+            }
+            if (vehicle.getIssueDate() != null) {
+                jsonMap.put("SignatureDate", DateUtils.format(vehicle.getIssueDate(), "yyyy/MM/dd"));
+            }
+            if(StringUtils.isBlank((String) (jsonMap.get("SignatureDate")))) {
+                jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy/MM/dd"));
             }
 
             // 2.匹配模板

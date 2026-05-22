@@ -174,14 +174,16 @@ public class ValueMappingParser {
 
                 // ── 日期格式转换 → xs:date ────────────────────────
                 case "DATE_FORMAT": {
-                    String inputFmt = (parts.length >= 2) ? parts[1] : null;
-                    return convertDate(raw, inputFmt);
+                    String inputFmt  = (parts.length >= 2) ? parts[1] : null;
+                    String outputFmt = (parts.length >= 3) ? parts[2] : null;
+                    return convertDate(raw, inputFmt, outputFmt);
                 }
 
                 // ── 日期时间格式转换 → xs:dateTime ────────────────
                 case "DATETIME_FORMAT": {
-                    String inputFmt = (parts.length >= 2) ? parts[1] : null;
-                    return convertDateTime(raw, inputFmt);
+                    String inputFmt  = (parts.length >= 2) ? parts[1] : null;
+                    String outputFmt = (parts.length >= 3) ? parts[2] : null;
+                    return convertDateTime(raw, inputFmt, outputFmt);
                 }
 
                 // ── 分隔符替换 ────────────────────────────────────
@@ -392,16 +394,16 @@ public class ValueMappingParser {
         return sb.toString();
     }
 
-    /**
-     * 日期转换：输入格式 → xs:date (yyyy-MM-dd)。
-     * inputFmt 为 null 时自动尝试常见格式。
-     */
-    private static String convertDate(String raw, String inputFmt) {
+    private static String convertDate(String raw, String inputFmt, String outputFmt) {
         if (raw == null || StringUtils.isBlank(raw)) return null;
-        if (inputFmt != null && !StringUtils.isBlank(inputFmt)) {
+        DateTimeFormatter outFormatter = StringUtils.isNotBlank(outputFmt)
+                ? DateTimeFormatter.ofPattern(outputFmt)
+                : XSD_DATE;  // 默认 yyyy-MM-dd
+
+        if (StringUtils.isNotBlank(inputFmt)) {
             try {
                 LocalDate d = LocalDate.parse(raw, DateTimeFormatter.ofPattern(inputFmt));
-                return d.format(XSD_DATE);
+                return d.format(outFormatter);
             } catch (DateTimeParseException e) {
                 log.warn("[ValueMappingParser] 日期解析失败 fmt={} raw={}", inputFmt, raw);
             }
@@ -409,35 +411,36 @@ public class ValueMappingParser {
         // 自动探测
         for (DateTimeFormatter fmt : COMMON_DATE_FORMATS) {
             try {
-                return LocalDate.parse(raw, fmt).format(XSD_DATE);
+                return LocalDate.parse(raw, fmt).format(outFormatter);
             } catch (DateTimeParseException ignored) { }
         }
         // 已是 ISO 格式（含时间部分）
         try {
-            return LocalDateTime.parse(raw).toLocalDate().format(XSD_DATE);
+            return LocalDateTime.parse(raw).toLocalDate().format(outFormatter);
         } catch (DateTimeParseException ignored) { }
         log.warn("[ValueMappingParser] 无法解析日期: {}", raw);
         return null;
     }
 
-    /**
-     * 日期时间转换：输入格式 → xs:dateTime (yyyy-MM-dd'T'HH:mm:ss)。
-     */
-    private static String convertDateTime(String raw, String inputFmt) {
+    private static String convertDateTime(String raw, String inputFmt, String outputFmt) {
         if (raw == null || StringUtils.isBlank(raw)) return null;
-        if (inputFmt != null && !StringUtils.isBlank(inputFmt)) {
+        DateTimeFormatter outFormatter = StringUtils.isNotBlank(outputFmt)
+                ? DateTimeFormatter.ofPattern(outputFmt)
+                : XSD_DATETIME;  // 默认 yyyy-MM-dd'T'HH:mm:ss
+
+        if (StringUtils.isNotBlank(inputFmt)) {
             try {
                 LocalDateTime dt = LocalDateTime.parse(raw, DateTimeFormatter.ofPattern(inputFmt));
-                return dt.format(XSD_DATETIME);
+                return dt.format(outFormatter);
             } catch (DateTimeParseException e) {
                 log.warn("[ValueMappingParser] 日期时间解析失败 fmt={} raw={}", inputFmt, raw);
             }
         }
         try {
-            return LocalDateTime.parse(raw).format(XSD_DATETIME);
+            return LocalDateTime.parse(raw).format(outFormatter);
         } catch (DateTimeParseException ignored) { }
         // 尝试当作纯日期补 00:00:00
-        String dateOnly = convertDate(raw, inputFmt);
+        String dateOnly = convertDate(raw, inputFmt, outputFmt);
         return (dateOnly != null) ? dateOnly + "T00:00:00" : null;
     }
 
