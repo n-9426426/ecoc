@@ -1440,6 +1440,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             // 12. 检测循环模式
             LoopDetectionResult loopResult = detectLoopPattern(leafNodes, dictCodeMap, jsonMap);
+            log.info("=== loopMode: {}", loopResult.getLoopMode());  // 加这行
 
             if (loopResult.getLoopMode() == LoopMode.NONE) {
                 // 无循环 → 普通树结构
@@ -1455,7 +1456,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
 
             // 13. 移除空结构节点
-            removeEmptyStructNodes(root, attrList, dictCodeMap);
+           // removeEmptyStructNodes(root, attrList, dictCodeMap);
 
             // 14. 生成XML字符串（不输出 <?xml ...?> 声明头）
             TransformerFactory transformerFactory = TransformerFactory.newInstance();
@@ -1523,7 +1524,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             // 19. 更新状态
             vehicle.setUploadStatus(1);
-            vehicle.setJson(null);
+           // vehicle.setJson(null);
 
             // 20. 记录生命周期
             vehicleLifecycle.setEntryId(vehicle.getVehicleId());
@@ -2301,18 +2302,15 @@ public class XmlFileServiceImpl implements IXmlFileService {
             Node child = children.item(i);
             if (child instanceof Element) {
                 Element childElement = (Element) child;
-                // 先递归处理子节点（深度优先，先清理孙子节点）
+                // 先递归清理子节点（深度优先）
                 removeEmptyStructNodes(childElement, attrList, dictCodeMap);
-                // 若该元素无任何有实质内容的后代，则移除
-                if (!hasNonEmptyDescendantText(childElement) && childElement.getChildNodes().getLength() == 0) {
-                    // 叶子节点且无文本内容 → 已由 addElement 拦截，此处兜底
+                // 递归完之后，如果该节点：既没有子元素、也没有文本内容 → 删除
+                boolean noChildren = childElement.getChildNodes().getLength() == 0;
+                boolean noText = !hasNonEmptyDescendantText(childElement);
+                if (noChildren && noText) {
                     element.removeChild(childElement);
-                    log.debug("移除无值叶子节点:<{}>", childElement.getTagName());
-                } else if (!hasNonEmptyDescendantText(childElement)) {
-                    // 结构节点（有子元素但全为空）→ 移除
-                    element.removeChild(childElement);
-                    log.debug("移除空结构节点:<{}>", childElement.getTagName());
                 }
+                // 注意：不再有 else if，有子节点的结构节点不主动删除
             }
         }
     }
