@@ -1410,9 +1410,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             SysDictData rootDict = dictCodeMap.get(rootAttrPath);
             String rootTagName = (rootDict != null && StringUtils.isNotBlank(rootDict.getDictLabel()))
                     ? sanitizeXmlTagName(rootDict.getDictLabel()) : "Root";
-            Element root = doc.createElement(rootTagName);
-            // 将模板属性的 defaultValue 解析为 key=value 对，写入根节点属性
-            applyDefaultValueAsAttributes(root, rootAttr.getDefaultValue());
+            // 创建根节点：若 defaultValue 含 xmlns 则用 createElementNS，保证命名空间正确
+            String rootNsUri = extractNamespaceUri(rootAttr.getDefaultValue());
+            Element root = createElementWithDefault(doc, rootTagName, rootAttr.getDefaultValue());
             doc.appendChild(root);
 
             // 9. 路径 -> Element 映射（记录已创建的节点）
@@ -1522,8 +1522,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             xmlVersionMapper.insertXmlVersion(version);
 
             // 19. 更新状态
-            vehicle.setUploadStatus(1);
-            vehicle.setJson(null);
+            VehicleInfo updateObj = new VehicleInfo();
+            updateObj.setVehicleId(vehicle.getVehicleId());
+            updateObj.setUploadStatus(1);
 
             // 20. 记录生命周期
             vehicleLifecycle.setEntryId(vehicle.getVehicleId());
@@ -1531,7 +1532,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             vehicleLifecycle.setVin(vehicle.getVin());
             vehicleLifecycle.setOperate("2");
             vehicleLifecycle.setResult(0);
-            vehicleInfoService.updateVehicleInfo(vehicle, false);
+            vehicleInfoService.updateVehicleInfo(updateObj, false);
             vehicleLifecycleMapper.insert(vehicleLifecycle);
 
             msg.append("成功");
@@ -1666,7 +1667,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (attrPath.equals(rootAttrPath)) continue;
 
             String[] parts = attrPath.split("\\.");
-            SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
+            String lastPart = parts[parts.length - 1];
+            SysDictData dict = dictCodeMap.get(lastPart);
             if (dict == null) continue;
 
             String parentPath = getParentPath(attrPath);
@@ -1675,8 +1677,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             if (isStructNode(dict)) {
                 // 结构节点，将 defaultValue 写入标签属性
-                Element structElement = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
-                applyDefaultValueAsAttributes(structElement, attr.getDefaultValue());
+                Element structElement = createElementWithDefault(doc, sanitizeXmlTagName(dict.getDictLabel()), attr.getDefaultValue());
                 parentElement.appendChild(structElement);
                 pathNodeMap.put(attrPath, structElement);
             } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
@@ -1735,8 +1736,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             } else if (isStructNode(dict)) {
                 // 结构节点
                 if (!pathNodeMap.containsKey(sibling.getAttrPath())) {
-                    Element structElement = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
-                    applyDefaultValueAsAttributes(structElement, sibling.getDefaultValue());
+                    Element structElement = createElementWithDefault(doc, sanitizeXmlTagName(dict.getDictLabel()), sibling.getDefaultValue());
                     parentElement.appendChild(structElement);
                     pathNodeMap.put(sibling.getAttrPath(), structElement);
                     buildSubTree(doc, structElement,
@@ -1804,9 +1804,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (dict == null) continue;
 
             if (isStructNode(dict)) {
-                Element structElement = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
+                Element structElement = createElementWithDefault(doc, sanitizeXmlTagName(dict.getDictLabel()), child.getDefaultValue());
                 structElement.setUserData("loopGenerated", Boolean.TRUE, null);
-                applyDefaultValueAsAttributes(structElement, child.getDefaultValue());
                 container.appendChild(structElement);
                 buildContainerByPrefix(doc, structElement, child.getAttrPath(), attrList, dictCodeMap, jsonMap, prefix, prefixIndex);
             } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
@@ -1886,8 +1885,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             } else if (isStructNode(dict)) {
                 // 结构节点
                 if (!pathNodeMap.containsKey(sibling.getAttrPath())) {
-                    Element structElement = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
-                    applyDefaultValueAsAttributes(structElement, sibling.getDefaultValue());
+                    Element structElement = createElementWithDefault(doc, sanitizeXmlTagName(dict.getDictLabel()), sibling.getDefaultValue());
                     parentElement.appendChild(structElement);
                     pathNodeMap.put(sibling.getAttrPath(), structElement);
                     buildSubTree(doc, structElement,
@@ -2039,8 +2037,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             if (isStructNode(dict)) {
                 // 结构节点：创建并注册到 pathNodeMap，将 defaultValue 写入标签属性
-                Element structElement = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
-                applyDefaultValueAsAttributes(structElement, attr.getDefaultValue());
+                Element structElement = createElementWithDefault(doc, sanitizeXmlTagName(dict.getDictLabel()), attr.getDefaultValue());
                 parentElement.appendChild(structElement);
                 pathNodeMap.put(attrPath, structElement);
             } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
@@ -2085,8 +2082,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             if (isStructNode(dict)) {
                 if (pathNodeMap.containsKey(sibling.getAttrPath())) continue;
-                Element structElement = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
-                applyDefaultValueAsAttributes(structElement, sibling.getDefaultValue());
+                Element structElement = createElementWithDefault(doc, sanitizeXmlTagName(dict.getDictLabel()), sibling.getDefaultValue());
                 parentElement.appendChild(structElement);
                 pathNodeMap.put(sibling.getAttrPath(), structElement);
                 buildSubTree(doc, structElement,
@@ -2137,8 +2133,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (parentElement == null) continue;
 
             if (isStructNode(dict)) {
-                Element structElement = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
-                applyDefaultValueAsAttributes(structElement, attr.getDefaultValue());
+                Element structElement = createElementWithDefault(doc, sanitizeXmlTagName(dict.getDictLabel()), attr.getDefaultValue());
                 parentElement.appendChild(structElement);
                 pathNodeMap.put(attrPath, structElement);
             } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
@@ -2273,7 +2268,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             // 无值则不添加该标签
             return;
         }
-        Element element = doc.createElement(tagName);
+        // 与根节点保持命名空间一致，避免混用 createElement/createElementNS 导致序列化异常
+        String nsUri = (doc.getDocumentElement() != null) ? doc.getDocumentElement().getNamespaceURI() : null;
+        Element element = (nsUri != null) ? doc.createElementNS(nsUri, tagName) : doc.createElement(tagName);
         element.setTextContent(textContent);
         parent.appendChild(element);
     }
@@ -2290,9 +2287,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
     }
 
     /**
-     * 递归移除空结构节点：
-     * 1. 循环动态生成（loopGenerated=true）且无有效子内容 → 移除
-     * 2. 非循环结构节点若所有子孙均无实质内容 → 同样移除
+     * 递归移除空节点（深度优先）：
+     * - addElement 已在值为空时不创建叶子节点，所以底层空叶子不会出现在 DOM 中。
+     * - 本方法只需：递归清理子孙后，若某 Element 的 childNodes 已为 0，则删除该节点。
+     * - 当结构节点下所有叶子都因无值未被添加时，childNodes.length 自然为 0，向上级联删除。
      */
     private void removeEmptyStructNodes(Element element, List<XmlTemplateAttribute> attrList,
                                         Map<String, SysDictData> dictCodeMap) {
@@ -2301,17 +2299,12 @@ public class XmlFileServiceImpl implements IXmlFileService {
             Node child = children.item(i);
             if (child instanceof Element) {
                 Element childElement = (Element) child;
-                // 先递归处理子节点（深度优先，先清理孙子节点）
+                // 先递归处理子节点（深度优先）
                 removeEmptyStructNodes(childElement, attrList, dictCodeMap);
-                // 若该元素无任何有实质内容的后代，则移除
-                if (!hasNonEmptyDescendantText(childElement) && childElement.getChildNodes().getLength() == 0) {
-                    // 叶子节点且无文本内容 → 已由 addElement 拦截，此处兜底
+                // 递归后若该节点已无任何子节点，说明其下所有叶子均无值，删除该节点
+                int _childCount = childElement.getChildNodes().getLength();
+                if (_childCount == 0) {
                     element.removeChild(childElement);
-                    log.debug("移除无值叶子节点:<{}>", childElement.getTagName());
-                } else if (!hasNonEmptyDescendantText(childElement)) {
-                    // 结构节点（有子元素但全为空）→ 移除
-                    element.removeChild(childElement);
-                    log.debug("移除空结构节点:<{}>", childElement.getTagName());
                 }
             }
         }
@@ -2351,24 +2344,112 @@ public class XmlFileServiceImpl implements IXmlFileService {
     }
 
     /**
-     * 将 defaultValue 解析为 XML 属性写入元素。
-     * 支持两种格式：
-     *   - 单属性：  xmlns="http://example.com"
-     *   - 多属性（空格分隔）：xmlns="http://example.com" version="1.0"
-     * 若 defaultValue 为空或格式不符，则忽略（不写任何属性）。
+     * 解析 defaultValue 中的所有属性，按类型分类处理后写入元素。
+     * <p>
+     * defaultValue 格式示例（空格分隔多属性）：
+     *   xmlns="http://example.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     *   xsi:noNamespaceSchemaLocation="schema.xsd" version="1.0"
+     * <p>
+     * 属性分三类：
+     *   1. xmlns="..."               → 默认命名空间，由 createElementNS 在创建时处理，此处跳过
+     *   2. xmlns:prefix="..."        → 前缀命名空间声明，用 setAttributeNS 写入
+     *   3. prefix:localName="..."    → 带命名空间前缀的普通属性，用 setAttributeNS 写入
+     *   4. 其余普通属性               → 用 setAttribute 写入
      */
     private void applyDefaultValueAsAttributes(Element element, String defaultValue) {
         if (StringUtils.isBlank(defaultValue)) return;
-        // 使用正则逐个匹配 key="value" 或 key='value'
+        // 解析所有已声明的命名空间前缀（xmlns:prefix="uri"），供后续属性使用
+        Map<String, String> nsPrefixMap = new LinkedHashMap<>();
+        java.util.regex.Pattern nsDecl = java.util.regex.Pattern.compile(
+                "xmlns:([\\w.-]+)\\s*=\\s*[\"']([^\"']*)[\"']");
+        java.util.regex.Matcher nsm = nsDecl.matcher(defaultValue.trim());
+        while (nsm.find()) {
+            nsPrefixMap.put(nsm.group(1), nsm.group(2));
+        }
+
         java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
                 "([\\w:.-]+)\\s*=\\s*[\"']([^\"']*)[\"']");
         java.util.regex.Matcher matcher = pattern.matcher(defaultValue.trim());
         while (matcher.find()) {
             String attrName  = matcher.group(1);
             String attrValue = matcher.group(2);
-            element.setAttribute(attrName, attrValue);
+
+            if ("xmlns".equals(attrName)) {
+                // 默认命名空间由 createElementNS 处理，跳过
+                continue;
+            } else if (attrName.startsWith("xmlns:")) {
+                // 前缀命名空间声明：xmlns:xsi="http://..."
+                element.setAttributeNS(
+                        "http://www.w3.org/2000/xmlns/",
+                        attrName,
+                        attrValue);
+            } else if (attrName.contains(":")) {
+                // 带前缀的属性：xsi:noNamespaceSchemaLocation="..."
+                String prefix = attrName.substring(0, attrName.indexOf(':'));
+                String nsUri  = nsPrefixMap.get(prefix);
+                if (nsUri != null) {
+                    element.setAttributeNS(nsUri, attrName, attrValue);
+                } else {
+                    // 前缀未在同一 defaultValue 中声明，降级为普通属性
+                    element.setAttribute(attrName, attrValue);
+                }
+            } else {
+                // 普通属性
+                element.setAttribute(attrName, attrValue);
+            }
         }
     }
+
+    /**
+     * 从 defaultValue 中提取默认命名空间 URI（xmlns="..."）。
+     * 返回 null 表示没有默认命名空间声明。
+     */
+    private String extractNamespaceUri(String defaultValue) {
+        if (StringUtils.isBlank(defaultValue)) return null;
+        // 匹配 xmlns="..." 但排除 xmlns:prefix="..."
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                "xmlns(?!:)\\s*=\\s*[\"']([^\"']*)[\"']");
+        java.util.regex.Matcher matcher = pattern.matcher(defaultValue.trim());
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    /**
+     * 创建 XML 元素并应用 defaultValue 中的所有属性声明。
+     * <ul>
+     *   <li>若含 xmlns="..."，用 createElementNS 创建命名空间感知元素（避免 setAttribute("xmlns",...) 的 DOM 异常）</li>
+     *   <li>xmlns:prefix、prefix:attr 等通过 setAttributeNS 正确写入</li>
+     *   <li>普通属性通过 setAttribute 写入</li>
+     * </ul>
+     */
+    private Element createElementWithDefault(Document doc, String tagName, String defaultValue) {
+        // 自动继承根节点命名空间：根节点用 createElementNS 创建后，Document 进入命名空间感知模式，
+        // 子节点若用 createElement 创建会引发序列化异常，需统一用 createElementNS 并继承根节点 ns。
+        String inheritedNsUri = null;
+        if (doc.getDocumentElement() != null) {
+            inheritedNsUri = doc.getDocumentElement().getNamespaceURI();
+        }
+        return createElementWithDefault(doc, tagName, defaultValue, inheritedNsUri);
+    }
+
+    /**
+     * 创建元素，支持命名空间继承。
+     * @param inheritedNsUri 父节点的命名空间 URI（当 defaultValue 中无 xmlns 时继承使用）
+     */
+    private Element createElementWithDefault(Document doc, String tagName, String defaultValue, String inheritedNsUri) {
+        String nsUri = extractNamespaceUri(defaultValue);
+        Element element;
+        if (nsUri != null) {
+            element = doc.createElementNS(nsUri, tagName);
+        } else if (StringUtils.isNotBlank(inheritedNsUri)) {
+            // 无独立命名空间声明，继承上级命名空间，避免非命名空间感知节点挂在命名空间感知根节点下引发序列化异常
+            element = doc.createElementNS(inheritedNsUri, tagName);
+        } else {
+            element = doc.createElement(tagName);
+        }
+        applyDefaultValueAsAttributes(element, defaultValue);
+        return element;
+    }
+
 
     private String sanitizeXmlTagName(String raw) {
         if (StringUtils.isBlank(raw)) return "field";
