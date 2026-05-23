@@ -1324,20 +1324,22 @@ public class XmlFileServiceImpl implements IXmlFileService {
         try {
             Map<String, Object> jsonMap = vehicle.getJsonMap();
             jsonMap.put("IviReferenceId", UUID.randomUUID().toString());
-            jsonMap.put("IviVersionDateTime", DateUtils.format(new Date(), "yyyy/MM/dd"));
-            if (StringUtils.isBlank((String) (jsonMap.get("VehicleIdentificationNumber")))) {
-                jsonMap.put("VehicleIdentificationNumber", vehicle.getVin());
-            }
+            // ✅ 修改后
+// IviVersionDateTime 是 DateTime 类型，需要带时区的完整格式
+            jsonMap.put("IviVersionDateTime", DateUtils.format(new Date(), "yyyy-MM-dd'T'HH:mm:ss'Z'"));
+
+// DateManufactureVehicle 和 SignatureDate 是 Date 类型，只需年月日
             if (vehicle.getManufactureDate() != null) {
-                jsonMap.put("DateManufactureVehicle", DateUtils.format(vehicle.getManufactureDate(), "yyyy/MM/dd"));
+                jsonMap.put("DateManufactureVehicle", DateUtils.format(vehicle.getManufactureDate(), "yyyy-MM-dd"));
             }
             if (vehicle.getIssueDate() != null) {
-                jsonMap.put("SignatureDate", DateUtils.format(vehicle.getIssueDate(), "yyyy/MM/dd"));
+                jsonMap.put("SignatureDate", DateUtils.format(vehicle.getIssueDate(), "yyyy-MM-dd"));
+                // 同时写入 TypeApprovalIssueDate
+                jsonMap.put("TypeApprovalIssueDate", DateUtils.format(vehicle.getIssueDate(), "yyyy-MM-dd"));
             }
-            if(StringUtils.isBlank((String) (jsonMap.get("SignatureDate")))) {
-                jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy/MM/dd"));
+            if (StringUtils.isBlank((String) (jsonMap.get("SignatureDate")))) {
+                jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
             }
-
             // 2.匹配模板
             XmlTemplate xmlTemplate = matchTemplate(vehicle);
             if (xmlTemplate == null) {
