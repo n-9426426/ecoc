@@ -134,7 +134,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         t.setUuid(UUID.randomUUID().toString());
         t.setJson(json);
         t.setStatus("1");
-        t.setValidateResult("0");
+        t.setValidateResult("1");
         t.setCreateTime(DateUtils.getNowDate());
         return templateMapper.insertVehicleTemplate(t);
     }
@@ -149,7 +149,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         template.setUuid(UUID.randomUUID().toString());
         template.setVersion("1.0");
         template.setStatus("1");
-        template.setValidateResult("0");
+        template.setValidateResult("1");
         template.setValidateTime(null);
         template.setValidateMsg(null);
         template.setCreateBy(SecurityUtils.getUsername());
@@ -180,7 +180,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(DateUtils.getNowDate());
         template.setTvv(template.getType() + "," + template.getVariant() + "," + template.getVersionNo());
-        template.setValidateResult("0");
+        template.setValidateResult("1");
         template.setValidateTime(null);
         template.setValidateMsg(null);
         templateMapper.updateAllTemplateNotIsLast(template.getUuid());
@@ -417,6 +417,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                     ));
             List<SysDictData> vehicleAttribute = remoteDictService.getDictDataByType("vehicle_attribute").getData();
             Map<String, String> keyMap = vehicleAttribute.stream()
+                    .filter(item -> item.getKeyMap() != null)
                     .collect(Collectors.toMap(
                             SysDictData::getDictLabel,
                             SysDictData::getKeyMap,
@@ -434,11 +435,11 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 template.setUuid(UUID.randomUUID().toString());
                 template.setVersion("1.0");
                 template.setStatus("1");
-                template.setValidateResult("0");
+                template.setValidateResult("1");
                 template.setCreateBy(SecurityUtils.getUsername());
                 template.setCreateTime(DateUtils.getNowDate());
                 Map<String, String> jsonMap = JSONObject.parseObject(template.getJson(), new TypeReference<Map<String, String>>() {});
-                template.setTvv(jsonMap.get(keyMap.get("Type")) + "," + jsonMap.get(keyMap.get("Variant")) + jsonMap.get(keyMap.get("Version")));
+                template.setTvv(jsonMap.get(keyMap.get("Type")).replace(" ", ","));
                 templateMapper.insertVehicleTemplate(template);
             });
         } catch (Exception e) {
