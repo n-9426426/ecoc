@@ -1452,7 +1452,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             // 12. 检测循环模式
             LoopDetectionResult loopResult = detectLoopPattern(leafNodes, dictCodeMap, jsonMap);
-            log.info("=== loopMode: {}", loopResult.getLoopMode());  // 加这行
 
             if (loopResult.getLoopMode() == LoopMode.NONE) {
                 // 无循环 → 普通树结构
@@ -1468,7 +1467,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
 
             // 13. 移除空结构节点
-           // removeEmptyStructNodes(root, attrList, dictCodeMap);
+//            removeEmptyStructNodes(root, attrList, dictCodeMap);
 
             // 14. 生成XML字符串（不输出 <?xml ...?> 声明头）
             TransformerFactory transformerFactory = TransformerFactory.newInstance();
@@ -1844,9 +1843,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                        Map<String, SysDictData> dictCodeMap, Map<String, Object> jsonMap,
                                        Map<String, Element> pathNodeMap, Set<String> structNodePaths,
                                        LoopDetectionResult loopResult, String rootAttrPath) {
-
         String loopContainerPath = loopResult.getLoopContainerPath();
-
         // 1. 构建到循环容器父节点为止
         buildTreeUpToPath(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, structNodePaths, loopContainerPath, rootAttrPath);
 
@@ -1867,7 +1864,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
         // 预先找好循环子结构路径（ManufacturerGroup）
         String triggerPath = loopResult.getTriggerAttr().getAttrPath();
         String loopStructPath = findLoopStructPath(loopContainerPath, triggerPath, structNodePaths);
-
         for (XmlTemplateAttribute sibling : directSiblings) {
             String[] parts = sibling.getAttrPath().split("\\.");
             SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
@@ -2023,41 +2019,27 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                    Map<String, Element> pathNodeMap, Set<String> structNodePaths,
                                    String targetPath, String rootAttrPath) {
 
-        String targetParentPath = getParentPath(targetPath);
-        int targetDepth = targetPath.split("\\.").length;
-
         for (XmlTemplateAttribute attr : attrList) {
             String attrPath = attr.getAttrPath();
             if (attrPath.equals(rootAttrPath)) continue;
-
-            // 跳过 targetPath（循环容器）本身及其所有子孙节点
             if (attrPath.equals(targetPath) || attrPath.startsWith(targetPath + ".")) continue;
-
-            // 跳过与 targetPath 同级的所有节点
-            if (!targetParentPath.isEmpty()
-                    && attrPath.startsWith(targetParentPath + ".")
-                    && attrPath.split("\\.").length == targetDepth) {
-                continue;
-            }
-
             String[] parts = attrPath.split("\\.");
             SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
             if (dict == null) continue;
 
             String parentPath = getParentPath(attrPath);
+            log.info("[buildTreeUpToPath] attrPath='{}' parentPath='{}'", attrPath, parentPath);
             Element parentElement = pathNodeMap.get(parentPath);
             if (parentElement == null) continue;
 
             if (isStructNode(dict)) {
-                // 结构节点：创建并注册到 pathNodeMap，将 defaultValue 写入标签属性
                 Element structElement = createElementWithDefault(doc, sanitizeXmlTagName(dict.getDictLabel()), attr.getDefaultValue());
                 parentElement.appendChild(structElement);
                 pathNodeMap.put(attrPath, structElement);
+                log.info("[buildTreeUpToPath] 存入pathNodeMap key='{}', size={}", attrPath, pathNodeMap.size());
             } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
-                // ★ 改动：使用 dictLabel 匹配 jsonMap
                 Object raw = jsonMap.get(dict.getDictLabel());
                 String value = getValueOrDefault(raw, attr.getDefaultValue());
-                // 含分号 → 循环字段，由循环逻辑处理，此处跳过
                 if (!value.contains(";")) {
                     addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
                 }
@@ -2318,11 +2300,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 int _childCount = childElement.getChildNodes().getLength();
                 if (_childCount == 0) {
                     element.removeChild(childElement);
-                    log.debug("移除无值叶子节点:<{}>", childElement.getTagName());
                 } else if (!hasNonEmptyDescendantText(childElement)) {
                     // 结构节点（有子元素但全为空）→ 移除
                     element.removeChild(childElement);
-                    log.debug("移除空结构节点:<{}>", childElement.getTagName());
                 }
             }
         }

@@ -50,6 +50,9 @@ import java.util.regex.Pattern;
 @Slf4j
 public class ValueMappingParser {
 
+    // 哨兵值,区分“转换返回null（出错/未命中）"和"规则就是要置空"
+    public static final String EMPTY_SENTINEL = "\u0000__NULL__\u0000";
+
     // ── 日期格式 ──────────────────────────────────────────────────
     private static final DateTimeFormatter XSD_DATE     = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter XSD_DATETIME = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
@@ -98,6 +101,10 @@ public class ValueMappingParser {
     private static final Pattern CARET_SUP_PATTERN =
             Pattern.compile("\\^\\{?(\\d+)\\}?");
 
+    // 策略5：10后直接跟负号+数字：10-2 / 10-3
+    private static final Pattern PLAIN_NEG_EXP_PATTERN =
+            Pattern.compile("10(-\\d+)");
+
     /** Unicode 上标数字 → ASCII 数字 映射 */
     private static final Map<Character, Character> SUPERSCRIPT_MAP;
     static {
@@ -130,7 +137,14 @@ public class ValueMappingParser {
 
         try {
             // 按首段关键字分发
-            String[] parts = descriptor.split(":", 5);
+            String safeDescriptor = descriptor
+                    .replace("\\x3A", "\u0001")
+                    .replace("(?:", "\u0002")
+                    .replace("(?=", "\u0003")
+                    .replace("(?!", "\u0004")
+                    .replace("(?<=", "\u0005")
+                    .replace("(?<!", "\u0006");
+            String[] parts = safeDescriptor.split(":", 5);
             String type = parts[0].toUpperCase();
 
             switch (type) {
@@ -141,7 +155,7 @@ public class ValueMappingParser {
 
                 // ── 固定空值 ─────────────────────────────────────
                 case "NULL":
-                    return null;
+                    return EMPTY_SENTINEL;
 
                 // ── 去单位取纯数字 ────────────────────────────────
                 case "STRIP_UNIT": {
@@ -166,7 +180,14 @@ public class ValueMappingParser {
                         log.warn("[ValueMappingParser] EXTRACT_PATTERN 缺少参数: {}", descriptor);
                         return null;
                     }
-                    String regex = parts[1];
+                    String regex = parts[1]
+                            .replace("\\\\", "\\")
+                            .replace("\u0001", ":")
+                            .replace("\u0002", "(?:")
+                            .replace("\u0003", "(?=")
+                            .replace("\u0004", "(?!")
+                            .replace("\u0005", "(?<=")
+                            .replace("\u0006", "(?<!");
                     int group   = parseIndex(parts[2], 1);
                     Matcher m = Pattern.compile(regex).matcher(raw);
                     return m.find() ? m.group(group) : null;
@@ -268,12 +289,18 @@ public class ValueMappingParser {
                         log.warn("[ValueMappingParser] EXTRACT_PATTERN_JOIN 参数不足: {}", descriptor);
                         return null;
                     }
-                    String regex  = parts[1];
+                    String regex = parts[1]
+                            .replace("\\\\", "\\")
+                            .replace("\u0001", ":")
+                            .replace("\u0002", "(?:")
+                            .replace("\u0003", "(?=")
+                            .replace("\u0004", "(?!")
+                            .replace("\u0005", "(?<=")
+                            .replace("\u0006", "(?<!");
                     int    g1     = parseIndex(parts[2], 1);
                     int    g2     = parseIndex(parts[3], 2);
                     // sep 是第5段，允许缺省（空字符串）
                     String sep    = (parts.length >= 5) ? unescapeSep(parts[4]) : "";
-
                     Matcher m = Pattern.compile(regex).matcher(raw);
                     if (!m.find()) {
                         log.warn("[ValueMappingParser] EXTRACT_PATTERN_JOIN 未匹配: regex={} raw={}", regex, raw);
@@ -373,6 +400,12 @@ public class ValueMappingParser {
 
         // 策略4：脱字符 ^N 或 ^{N}
         m = CARET_SUP_PATTERN.matcher(text);
+        if (m.find()) {
+            return m.group(1);
+        }
+
+        // 策略5：10-N 格式（如 #.10-2/km）
+        m = PLAIN_NEG_EXP_PATTERN.matcher(text);
         if (m.find()) {
             return m.group(1);
         }
