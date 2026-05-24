@@ -1438,6 +1438,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             // 9. 路径 -> Element 映射（记录已创建的节点）
             Map<String, Element> pathNodeMap = new LinkedHashMap<>();
             pathNodeMap.put(rootAttrPath, root);
+            pathNodeMap.put("", root); // ★ 让深度1子节点通过 getParentPath 能拿到 root
 
             // 10. 识别所有结构节点（dict_value = "NULL"，表示容器节点，不含实际值）
             Set<String> structNodePaths = attrList.stream()
@@ -1831,6 +1832,13 @@ public class XmlFileServiceImpl implements IXmlFileService {
         XmlTemplateAttribute deepestTriggerAttr = null;
         Set<String> allPrefixes = new LinkedHashSet<>();
 
+        // 根节点路径（深度=1的节点）
+        String rootAttrPath = leafNodes.isEmpty() ? null :
+                leafNodes.stream()
+                        .map(XmlTemplateAttribute::getAttrPath)
+                        .map(p -> p.split("\\.")[0])
+                        .findFirst().orElse(null);
+
         for (XmlTemplateAttribute leaf : leafNodes) {
             String[] parts = leaf.getAttrPath().split("\\.");
             SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
@@ -1842,11 +1850,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
             String val = raw.toString().trim();
             if (!val.contains(";")) continue;
 
-            // ★ 改为选路径最浅的触发字段，避免深层字段（如 TestFamilyIdentifier）
-            //    抢占 loopContainerPath，破坏整体结构
+            // ★ 选路径最浅的触发字段，避免深层字段抢占 loopContainerPath
             if (deepestTriggerAttr == null ||
                     leaf.getAttrPath().split("\\.").length <
-            deepestTriggerAttr.getAttrPath().split("\\.").length) {
+                            deepestTriggerAttr.getAttrPath().split("\\.").length) {
                 deepestTriggerAttr = leaf;
             }
 
@@ -1885,17 +1892,37 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
         result.setTriggerAttr(deepestTriggerAttr);
 
+        // ★ 计算 loopContainerPath，并确保不等于根节点路径（深度=1）
+        String triggerPath = deepestTriggerAttr.getAttrPath();
+        String computedContainerPath = getParentPath(getParentPath(triggerPath));
+
+        // 如果计算出的容器路径深度 <= 1（即等于根节点或为空），
+        // 则改用触发字段的直接父路径，避免把根节点当循环容器
+        if (computedContainerPath.isEmpty()
+                || computedContainerPath.split("\\.").length <= 1) {
+            // 退化：将循环容器设为触发字段的父节点（Group 层），
+            // 实际循环将在 Group 内部而非根节点展开
+            computedContainerPath = getParentPath(triggerPath);
+        }
+
+        // 二次检查：如果仍然是根节点（只有1段），直接返回 NONE，走普通树
+        if (computedContainerPath.isEmpty()
+                || computedContainerPath.split("\\.").length <= 1) {
+            result.setLoopMode(LoopMode.NONE);
+            return result;
+        }
+
         if (hasPrefix && !hasNonPrefix) {
             result.setLoopMode(LoopMode.PARENT_LEVEL);
             result.setGroupKeys(new ArrayList<>(allPrefixes));
-            result.setLoopContainerPath(getParentPath(getParentPath(deepestTriggerAttr.getAttrPath())));
+            result.setLoopContainerPath(computedContainerPath);
         } else {
             result.setLoopMode(LoopMode.SIBLING_LEVEL);
             result.setMaxRows(maxRows);
             result.setGroupKeys(IntStream.range(0, maxRows)
                     .mapToObj(String::valueOf)
                     .collect(Collectors.toList()));
-            result.setLoopContainerPath(getParentPath(getParentPath(deepestTriggerAttr.getAttrPath())));
+            result.setLoopContainerPath(computedContainerPath);
         }
 
         return result;
@@ -1995,10 +2022,20 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                       Map<String, Element> pathNodeMap, Set<String> structNodePaths,
                                       LoopDetectionResult loopResult, String rootAttrPath) {
 
-        log.info("=== loopContainerPath: {}, groupKeys: {}",
-                loopResult.getLoopContainerPath(), loopResult.getGroupKeys());
-
         String loopContainerPath = loopResult.getLoopContainerPath();
+
+        // ★ 防护：loopContainerPath 不能是根节点自身
+        if (loopContainerPath == null
+                || loopContainerPath.equals(rootAttrPath)
+                || loopContainerPath.split("\\.").length <= 1) {
+            log.warn("=== buildParentLevelLoop: loopContainerPath={} 等于或浅于根节点 {}，退化为普通树",
+                    loopContainerPath, rootAttrPath);
+            buildNormalTree(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, rootAttrPath);
+            return;
+        }
+
+        log.info("=== loopContainerPath: {}, groupKeys: {}",
+                loopContainerPath, loopResult.getGroupKeys());
 
         // 1. 构建到循环容器父节点为止
         buildTreeUpToPath(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, structNodePaths, loopContainerPath, rootAttrPath);
@@ -2032,7 +2069,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
             } else if (isStructNode(dict)) {
                 // 结构节点
                 if (!pathNodeMap.containsKey(sibling.getAttrPath())) {
-                    Element structElement = createElementWithDefault(doc, sanitizeXmlTagName(dict.getDictLabel()), sibling.getDefaultValue());
+                    Element structElement = createElementWithDefault(doc,
+                            sanitizeXmlTagName(dict.getDictLabel()), sibling.getDefaultValue());
                     parentElement.appendChild(structElement);
                     pathNodeMap.put(sibling.getAttrPath(), structElement);
                     buildSubTree(doc, structElement,
@@ -2044,7 +2082,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
                             sibling.getAttrPath());
                 }
             } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
-                // ★ 改动：使用 dictLabel 匹配 jsonMap；含分号 → 循环字段跳过；无分号 → 正常生成
                 Object raw = jsonMap.get(dict.getDictLabel());
                 String value = getValueOrDefault(raw, sibling.getDefaultValue());
                 if (!value.contains(";")) {
@@ -2127,7 +2164,19 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                        Map<String, SysDictData> dictCodeMap, Map<String, Object> jsonMap,
                                        Map<String, Element> pathNodeMap, Set<String> structNodePaths,
                                        LoopDetectionResult loopResult, String rootAttrPath) {
+
         String loopContainerPath = loopResult.getLoopContainerPath();
+
+        // ★ 防护：loopContainerPath 不能是根节点自身，否则会产生双重根节点嵌套
+        if (loopContainerPath == null
+                || loopContainerPath.equals(rootAttrPath)
+                || loopContainerPath.split("\\.").length <= 1) {
+            log.warn("=== buildSiblingLevelLoop: loopContainerPath={} 等于或浅于根节点 {}，退化为普通树",
+                    loopContainerPath, rootAttrPath);
+            buildNormalTree(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, rootAttrPath);
+            return;
+        }
+
         // 1. 构建到循环容器父节点为止
         buildTreeUpToPath(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, structNodePaths, loopContainerPath, rootAttrPath);
 
@@ -2148,6 +2197,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
         // 预先找好循环子结构路径（ManufacturerGroup）
         String triggerPath = loopResult.getTriggerAttr().getAttrPath();
         String loopStructPath = findLoopStructPath(loopContainerPath, triggerPath, structNodePaths);
+
         for (XmlTemplateAttribute sibling : directSiblings) {
             String[] parts = sibling.getAttrPath().split("\\.");
             SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
@@ -2182,13 +2232,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
                             .filter(a -> a.getAttrPath().startsWith(sibling.getAttrPath() + "."))
                             .collect(Collectors.toList());
 
-                    // ★ 检查该子树下是否有 | 字段（仅检查直接子叶子，不跨子树污染）
                     boolean hasPipe = subAttrs.stream().anyMatch(a -> {
                         String[] p = a.getAttrPath().split("\\.");
                         SysDictData d = dictCodeMap.get(p[p.length - 1]);
                         if (d == null || isStructNode(d)) return false;
-                        // ★ 只检查该子树内的直接叶子，排除其他子树的 | 字段
-                        // 判断：该字段的路径必须以 sibling.getAttrPath() 开头（已由 filter 保证）
                         Object raw = jsonMap.get(d.getDictLabel());
                         return raw != null && raw.toString().contains("|");
                     });
