@@ -1140,7 +1140,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
 
             // keyMap → [tagLabel, rule, rangeRule]（用于后续补充violation消息）
-            Map<String, String[]> keyMapMeta = buildKeyMapMeta(attrList, dictCodeMap);
+            // ★ 从全量字典构建，支持 List（同一 keyMap 对应多个字段）
+            Map<String, List<String[]>> keyMapMeta = buildKeyMapMeta(dictCodeMap);
 
             // 提取 vehicleCategory / stageOfCompletion
             String vehicleCategory   = extractTextByKeyMap(doc, dictCodeMap, attrList, "vehicleCategory");
@@ -1440,7 +1441,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
             // 9. 路径 -> Element 映射（记录已创建的节点）
             Map<String, Element> pathNodeMap = new LinkedHashMap<>();
             pathNodeMap.put(rootAttrPath, root);
-            pathNodeMap.put("", root); // ★ 让深度1子节点通过 getParentPath 能拿到 root
 
             // 10. 识别所有结构节点（dict_value = "NULL"，表示容器节点，不含实际值）
             Set<String> structNodePaths = attrList.stream()
@@ -1834,13 +1834,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
         XmlTemplateAttribute deepestTriggerAttr = null;
         Set<String> allPrefixes = new LinkedHashSet<>();
 
-        // 根节点路径（深度=1的节点）
-        String rootAttrPath = leafNodes.isEmpty() ? null :
-                leafNodes.stream()
-                        .map(XmlTemplateAttribute::getAttrPath)
-                        .map(p -> p.split("\\.")[0])
-                        .findFirst().orElse(null);
-
         for (XmlTemplateAttribute leaf : leafNodes) {
             String[] parts = leaf.getAttrPath().split("\\.");
             SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
@@ -1852,7 +1845,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
             String val = raw.toString().trim();
             if (!val.contains(";")) continue;
 
-            // ★ 选路径最浅的触发字段，避免深层字段抢占 loopContainerPath
+            // ★ 改为选路径最浅的触发字段，避免深层字段（如 TestFamilyIdentifier）
+            //    抢占 loopContainerPath，破坏整体结构
             if (deepestTriggerAttr == null ||
                     leaf.getAttrPath().split("\\.").length <
                             deepestTriggerAttr.getAttrPath().split("\\.").length) {
@@ -1894,37 +1888,17 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
         result.setTriggerAttr(deepestTriggerAttr);
 
-        // ★ 计算 loopContainerPath，并确保不等于根节点路径（深度=1）
-        String triggerPath = deepestTriggerAttr.getAttrPath();
-        String computedContainerPath = getParentPath(getParentPath(triggerPath));
-
-        // 如果计算出的容器路径深度 <= 1（即等于根节点或为空），
-        // 则改用触发字段的直接父路径，避免把根节点当循环容器
-        if (computedContainerPath.isEmpty()
-                || computedContainerPath.split("\\.").length <= 1) {
-            // 退化：将循环容器设为触发字段的父节点（Group 层），
-            // 实际循环将在 Group 内部而非根节点展开
-            computedContainerPath = getParentPath(triggerPath);
-        }
-
-        // 二次检查：如果仍然是根节点（只有1段），直接返回 NONE，走普通树
-        if (computedContainerPath.isEmpty()
-                || computedContainerPath.split("\\.").length <= 1) {
-            result.setLoopMode(LoopMode.NONE);
-            return result;
-        }
-
         if (hasPrefix && !hasNonPrefix) {
             result.setLoopMode(LoopMode.PARENT_LEVEL);
             result.setGroupKeys(new ArrayList<>(allPrefixes));
-            result.setLoopContainerPath(computedContainerPath);
+            result.setLoopContainerPath(getParentPath(getParentPath(deepestTriggerAttr.getAttrPath())));
         } else {
             result.setLoopMode(LoopMode.SIBLING_LEVEL);
             result.setMaxRows(maxRows);
             result.setGroupKeys(IntStream.range(0, maxRows)
                     .mapToObj(String::valueOf)
                     .collect(Collectors.toList()));
-            result.setLoopContainerPath(computedContainerPath);
+            result.setLoopContainerPath(getParentPath(getParentPath(deepestTriggerAttr.getAttrPath())));
         }
 
         return result;
@@ -2024,20 +1998,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                       Map<String, Element> pathNodeMap, Set<String> structNodePaths,
                                       LoopDetectionResult loopResult, String rootAttrPath) {
 
-        String loopContainerPath = loopResult.getLoopContainerPath();
-
-        // ★ 防护：loopContainerPath 不能是根节点自身
-        if (loopContainerPath == null
-                || loopContainerPath.equals(rootAttrPath)
-                || loopContainerPath.split("\\.").length <= 1) {
-            log.warn("=== buildParentLevelLoop: loopContainerPath={} 等于或浅于根节点 {}，退化为普通树",
-                    loopContainerPath, rootAttrPath);
-            buildNormalTree(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, rootAttrPath);
-            return;
-        }
-
         log.info("=== loopContainerPath: {}, groupKeys: {}",
-                loopContainerPath, loopResult.getGroupKeys());
+                loopResult.getLoopContainerPath(), loopResult.getGroupKeys());
+
+        String loopContainerPath = loopResult.getLoopContainerPath();
 
         // 1. 构建到循环容器父节点为止
         buildTreeUpToPath(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, structNodePaths, loopContainerPath, rootAttrPath);
@@ -2071,8 +2035,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             } else if (isStructNode(dict)) {
                 // 结构节点
                 if (!pathNodeMap.containsKey(sibling.getAttrPath())) {
-                    Element structElement = createElementWithDefault(doc,
-                            sanitizeXmlTagName(dict.getDictLabel()), sibling.getDefaultValue());
+                    Element structElement = createElementWithDefault(doc, sanitizeXmlTagName(dict.getDictLabel()), sibling.getDefaultValue());
                     parentElement.appendChild(structElement);
                     pathNodeMap.put(sibling.getAttrPath(), structElement);
                     buildSubTree(doc, structElement,
@@ -2084,6 +2047,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                             sibling.getAttrPath());
                 }
             } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
+                // ★ 改动：使用 dictLabel 匹配 jsonMap；含分号 → 循环字段跳过；无分号 → 正常生成
                 Object raw = jsonMap.get(dict.getDictLabel());
                 String value = getValueOrDefault(raw, sibling.getDefaultValue());
                 if (!value.contains(";")) {
@@ -2166,19 +2130,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                        Map<String, SysDictData> dictCodeMap, Map<String, Object> jsonMap,
                                        Map<String, Element> pathNodeMap, Set<String> structNodePaths,
                                        LoopDetectionResult loopResult, String rootAttrPath) {
-
         String loopContainerPath = loopResult.getLoopContainerPath();
-
-        // ★ 防护：loopContainerPath 不能是根节点自身，否则会产生双重根节点嵌套
-        if (loopContainerPath == null
-                || loopContainerPath.equals(rootAttrPath)
-                || loopContainerPath.split("\\.").length <= 1) {
-            log.warn("=== buildSiblingLevelLoop: loopContainerPath={} 等于或浅于根节点 {}，退化为普通树",
-                    loopContainerPath, rootAttrPath);
-            buildNormalTree(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, rootAttrPath);
-            return;
-        }
-
         // 1. 构建到循环容器父节点为止
         buildTreeUpToPath(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, structNodePaths, loopContainerPath, rootAttrPath);
 
@@ -2199,7 +2151,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
         // 预先找好循环子结构路径（ManufacturerGroup）
         String triggerPath = loopResult.getTriggerAttr().getAttrPath();
         String loopStructPath = findLoopStructPath(loopContainerPath, triggerPath, structNodePaths);
-
         for (XmlTemplateAttribute sibling : directSiblings) {
             String[] parts = sibling.getAttrPath().split("\\.");
             SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
@@ -2234,10 +2185,13 @@ public class XmlFileServiceImpl implements IXmlFileService {
                             .filter(a -> a.getAttrPath().startsWith(sibling.getAttrPath() + "."))
                             .collect(Collectors.toList());
 
+                    // ★ 检查该子树下是否有 | 字段（仅检查直接子叶子，不跨子树污染）
                     boolean hasPipe = subAttrs.stream().anyMatch(a -> {
                         String[] p = a.getAttrPath().split("\\.");
                         SysDictData d = dictCodeMap.get(p[p.length - 1]);
                         if (d == null || isStructNode(d)) return false;
+                        // ★ 只检查该子树内的直接叶子，排除其他子树的 | 字段
+                        // 判断：该字段的路径必须以 sibling.getAttrPath() 开头（已由 filter 保证）
                         Object raw = jsonMap.get(d.getDictLabel());
                         return raw != null && raw.toString().contains("|");
                     });
@@ -3003,53 +2957,82 @@ public class XmlFileServiceImpl implements IXmlFileService {
     }
 
     /**
-     * 构建 keyMap → [tagLabel, rule, rangeRule] 映射
+     * 构建 keyMap → List<[tagLabel, rule, rangeRule]> 映射。
+     * ★ 改为从全量字典（dictCodeMap）构建，不再依赖模板 attrList，
+     *   避免模板未配置的字段（如 18.4.）在校验结果中无法映射为 tagLabel。
+     * ★ 同一 keyMap 可能对应多个字段（如 BodyworkTypeTrailer / BrakedTypeTrail 共享 18.4.），
+     *   改用 List 存储，防止 HashMap 覆盖导致其中一个字段丢失。
      */
-    private Map<String, String[]> buildKeyMapMeta(List<XmlTemplateAttribute> attrList,
-                                                  Map<String, SysDictData> dictCodeMap) {
-        Map<String, String[]> keyMapMeta = new HashMap<>();
-        for (XmlTemplateAttribute attr : attrList) {
-            String[] parts = attr.getAttrPath().split("\\.");
-            SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
-            if (dict == null || StringUtils.isBlank(dict.getKeyMap())) continue;
-            keyMapMeta.put(dict.getKeyMap(), new String[]{
-                    sanitizeXmlTagName(dict.getDictLabel()),
-                    StringUtils.defaultString(dict.getRule()),
-                    StringUtils.defaultString(dict.getRangeRule())
-            });
+    private Map<String, List<String[]>> buildKeyMapMeta(Map<String, SysDictData> dictCodeMap) {
+        Map<String, List<String[]>> keyMapMeta = new HashMap<>();
+        for (SysDictData dict : dictCodeMap.values()) {
+            if (StringUtils.isBlank(dict.getKeyMap())) continue;
+            if (isStructNode(dict)) continue;
+            keyMapMeta
+                    .computeIfAbsent(dict.getKeyMap(), k -> new ArrayList<>())
+                    .add(new String[]{
+                            sanitizeXmlTagName(dict.getDictLabel()),
+                            StringUtils.defaultString(dict.getRule()),
+                            StringUtils.defaultString(dict.getRangeRule())
+                    });
         }
         return keyMapMeta;
     }
 
     /**
-     * 补充 violation 消息，并将 report 合并到 merged 中
+     * 补充 violation 消息，并将 report 合并到 merged 中。
+     * keyMapMeta 的 value 改为 List，支持同一 keyMap 对应多个字段（如 18.4. 对应
+     * BodyworkTypeTrailer 和 BrakedTypeTrail），显示时拼接为 "A / B" 形式。
      */
     private ValidationReport enrichAndMerge(ValidationReport merged,
                                             ValidationReport report,
-                                            Map<String, String[]> keyMapMeta) {
+                                            Map<String, List<String[]>> keyMapMeta) {
         if (report == null) return merged;
 
-        // 补充 fieldName 和 violation 消息
         if (report.getFieldResults() != null) {
             for (FieldValidationResult fr : report.getFieldResults()) {
-                String[] meta = keyMapMeta.get(fr.getFieldName());
-                if (meta == null) continue;
-                String tagLabel = meta[0];
+                List<String[]> metaList = keyMapMeta.get(fr.getFieldName());
+                // 全量字典里也找不到（如 STRUCTURE 等虚拟字段），保持原 fieldName 不变
+                if (metaList == null || metaList.isEmpty()) continue;
+
+                // 同一 keyMap 对应多个字段时，tagLabel 拼接展示；rule/rangeRule 取唯一值，多值时留空
+                String tagLabel;
+                String rule;
+                String rangeRule;
+                if (metaList.size() == 1) {
+                    tagLabel  = metaList.get(0)[0];
+                    rule      = metaList.get(0)[1];
+                    rangeRule = metaList.get(0)[2];
+                } else {
+                    tagLabel  = metaList.stream()
+                            .map(m -> m[0])
+                            .distinct()
+                            .collect(Collectors.joining(" / "));
+                    // 多字段共享 keyMap 时，rule 描述从 violation 自身的 rawRule 取，此处留空
+                    rule      = "";
+                    rangeRule = "";
+                }
+
                 fr.setFieldName(tagLabel);
                 if (fr.isValid() || fr.getViolations() == null) continue;
 
-                String ruleDescEn = buildRuleDesc(meta[1], meta[2], false);
-                String ruleDescZh = buildRuleDesc(meta[1], meta[2], true);
+                String ruleDescEn = buildRuleDesc(rule, rangeRule, false);
+                String ruleDescZh = buildRuleDesc(rule, rangeRule, true);
                 for (RuleViolation v : fr.getViolations()) {
+                    // 多字段共享 keyMap 时，用 violation 自身的 rawRule 补充描述
+                    String effectiveRuleDescEn = StringUtils.isNotBlank(ruleDescEn) ? ruleDescEn
+                            : (StringUtils.isNotBlank(v.getRawRule()) ? " (rule: " + v.getRawRule() + ")" : "");
+                    String effectiveRuleDescZh = StringUtils.isNotBlank(ruleDescZh) ? ruleDescZh
+                            : (StringUtils.isNotBlank(v.getRawRule()) ? "（rule：" + v.getRawRule() + "）" : "");
                     if (StringUtils.isBlank(v.getMessageEn())) {
                         v.setMessageEn(String.format(
                                 "Tag <%s> value \"%s\" failed validation%s",
-                                tagLabel, fr.getValue(), ruleDescEn));
+                                tagLabel, fr.getValue(), effectiveRuleDescEn));
                     }
                     if (StringUtils.isBlank(v.getMessageZh())) {
                         v.setMessageZh(String.format(
                                 "标签 <%s> 的值 \"%s\" 不满足校验规则%s",
-                                tagLabel, fr.getValue(), ruleDescZh));
+                                tagLabel, fr.getValue(), effectiveRuleDescZh));
                     }
                 }
             }
@@ -3060,7 +3043,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
         if (report.getFieldResults() != null) {
             merged.getFieldResults().addAll(report.getFieldResults());
         }
-        // 只要有一个不通过，整体就不通过
         if (!report.isAllValid()) {
             merged.setAllValid(false);
         }
