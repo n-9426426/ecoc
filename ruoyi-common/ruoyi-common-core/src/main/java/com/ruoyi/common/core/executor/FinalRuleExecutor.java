@@ -86,6 +86,7 @@ public class FinalRuleExecutor {
                         return buildViolation(rule, fieldName, actualValue,
                                 "Value not in allowed list: " + rule.getEnumValues(), "值不在允许的枚举列表中: " + rule.getEnumValues());
                     }
+                    return null;
 
                 case VALUE_REGEX:
                     strVal = String.valueOf(actualValue);
@@ -93,6 +94,7 @@ public class FinalRuleExecutor {
                         return buildViolation(rule, fieldName, actualValue,
                                 "Value does not match pattern: " + rule.getRegexPattern(), "值不符合正则格式: " + rule.getRegexPattern());
                     }
+                    return null;
 
                 case VALUE_COMPARE:
                     if (!compareValue(actualValue, rule.getCompareValue(), rule.getOperator())) {
@@ -100,6 +102,7 @@ public class FinalRuleExecutor {
                                 "Value compare failed: " + rule.getOperator() + " " + rule.getCompareValue(),
                                 "数值比较不通过: " + rule.getOperator() + " " + rule.getCompareValue());
                     }
+                    return null;
 
                 case MANDATORY_IF_ANY:
                     return checkMandatoryIfAny(fieldName, actualValue, rule, context);

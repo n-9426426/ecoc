@@ -1111,68 +1111,39 @@ public class XmlFileServiceImpl implements IXmlFileService {
      */
     private ValidationReport validateXmlData(Document doc, XmlFile xmlFile) {
         try {
-            // 1. 获取车辆信息（用于匹配模板和提取 vehicleCategory/stageOfCompletion）
             xmlFile = xmlFileMapper.selectXmlFileById(xmlFile.getId());
-            if (xmlFile == null) {
-                throw new ServiceException("该文件不存在");
-            }
-            String vin = xmlFile.getFileName().split("_")[1];
-            vin = vin.split("\\.")[0];
+            if (xmlFile == null) throw new ServiceException("该文件不存在");
+
+            String vin = xmlFile.getFileName().split("_")[1].split("\\.")[0];
             VehicleInfo vehicle = vehicleInfoService.selectVehicleInfoByVin(vin);
             if (vehicle == null) return null;
 
             XmlTemplate template = matchTemplate(vehicle);
             if (template == null) return null;
 
-            // 2. 查询模板属性列表和字典映射
-            List<XmlTemplateAttribute> attrList = xmlTemplateAttributeMapper.selectByTemplateId(template.getTemplateId());
+            List<XmlTemplateAttribute> attrList =
+                    xmlTemplateAttributeMapper.selectByTemplateId(template.getTemplateId());
             if (attrList == null || attrList.isEmpty()) return null;
 
-            List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
-            Map<String, SysDictData> dictCodeMap = new HashMap<>();
+            List<SysDictData> dictDataList =
+                    remoteDictService.getDictDataByType("vehicle_attribute").getData();
+
+            Map<String, SysDictData> labelToDictMap = new HashMap<>();
+            Map<String, SysDictData> dictCodeMap    = new HashMap<>();
             for (SysDictData d : dictDataList) {
                 if (d.getDictCode() != null) {
                     dictCodeMap.put(String.valueOf(d.getUuid()), d);
                 }
-            }
-
-            // 3. 遍历叶子节点，从 XML DOM 中读取值，以 keyMap 为键重建 jsonMap
-            //    ★ 改造：不再跳过无 rule/rangeRule 字段——所有有 keyMap 的字段都放入 jsonMap，
-            //           保证条件规则的上下文完整，规则引擎对全量字段执行校验
-            Map<String, Object> reconstructedJsonMap = new LinkedHashMap<>();
-
-            for (XmlTemplateAttribute attr : attrList) {
-                String[] parts = attr.getAttrPath().split("\\.");
-                SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
-                if (dict == null) continue;
-                // 只处理叶子节点（dict_value != NULL）且有 keyMap 的字段
-                if (isStructNode(dict)) continue;
-                if (StringUtils.isBlank(dict.getKeyMap())) continue;
-                // ★ 不再跳过无规则字段，全部纳入 jsonMap 以支持条件规则上下文
-
-                String tagName = sanitizeXmlTagName(dict.getDictLabel());
-                NodeList nodeList = doc.getElementsByTagName(tagName);
-                if (nodeList.getLength() == 0) continue;
-
-                if (nodeList.getLength() == 1) {
-                    // 非循环节点：直接取值
-                    String value = nodeList.item(0).getTextContent();
-                    reconstructedJsonMap.put(dict.getKeyMap(), value);
-                } else {
-                    // 循环节点：拼接为分号分隔字符串，与原始 json 格式对齐
-                    StringJoiner joiner = new StringJoiner(";");
-                    for (int i = 0; i < nodeList.getLength(); i++) {
-                        String v = nodeList.item(i).getTextContent();
-                        joiner.add(v != null ? v : "");
-                    }
-                    reconstructedJsonMap.put(dict.getKeyMap(), joiner.toString());
+                if (d.getDictLabel() != null) {
+                    labelToDictMap.put(sanitizeXmlTagName(d.getDictLabel()), d);
                 }
             }
 
-            if (reconstructedJsonMap.isEmpty()) return null;
+            // keyMap → [tagLabel, rule, rangeRule]（用于后续补充violation消息）
+            Map<String, String[]> keyMapMeta = buildKeyMapMeta(attrList, dictCodeMap);
 
-            // 4. 提取 vehicleCategory / stageOfCompletion（优先取 XML，回退到车辆信息）
-            String vehicleCategory  = extractTextByKeyMap(doc, dictCodeMap, attrList, "vehicleCategory");
+            // 提取 vehicleCategory / stageOfCompletion
+            String vehicleCategory   = extractTextByKeyMap(doc, dictCodeMap, attrList, "vehicleCategory");
             String stageOfCompletion = extractTextByKeyMap(doc, dictCodeMap, attrList, "stageOfCompletion");
             if (vehicleCategory == null && vehicle.getJsonMap() != null) {
                 Object v = vehicle.getJsonMap().get("vehicleCategory");
@@ -1183,70 +1154,101 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 stageOfCompletion = v != null ? v.toString() : null;
             }
 
-            // 5. 序列化 jsonMap → JSON 字符串，调用规则引擎（全量字段均参与，报告包含所有不通过项）
-            String jsonStr = new ObjectMapper().writeValueAsString(reconstructedJsonMap);
-            ValidationReport report = vehicleValidationService.validate(jsonStr, vehicleCategory, stageOfCompletion);
+            // ★ 先构建"非循环节点"的基础 jsonMap（上下文字段，所有校验都带上）
+            Map<String, Object> baseJsonMap = new LinkedHashMap<>();
 
-            // ★ 对规则校验不通过的字段，将标签名和规则内容补充到 violation 消息中，
-            //    风格与 FinalRuleExecutor.buildViolation 保持一致（英文在前、中文在后）
-            if (report != null && report.getFieldResults() != null) {
-                // 构建 keyMap → (dictLabel标签名, rule, rangeRule) 辅助映射
-                Map<String, String[]> keyMapMeta = new HashMap<>();
-                for (XmlTemplateAttribute attr : attrList) {
-                    String[] parts = attr.getAttrPath().split("\\.");
-                    SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
-                    if (dict == null || StringUtils.isBlank(dict.getKeyMap())) continue;
-                    keyMapMeta.put(dict.getKeyMap(), new String[]{
-                            sanitizeXmlTagName(dict.getDictLabel()),
-                            StringUtils.defaultString(dict.getRule()),
-                            StringUtils.defaultString(dict.getRangeRule())
-                    });
-                }
-                for (FieldValidationResult fr : report.getFieldResults()) {
-                    String[] meta = keyMapMeta.get(fr.getFieldName());
-                    if (meta == null) continue;
-                    String tagLabel = meta[0];
-                    // ★ 将 fieldName 由 keyMap（如 "11.1"）映射为 dictLabel（如 "ManufacturerPlaceOfResidence"）
-                    fr.setFieldName(tagLabel);
-                    if (fr.isValid() || fr.getViolations() == null) continue;
-                    String rule     = meta[1];
-                    String range    = meta[2];
-                    String ruleDesc = "";
-                    if (!rule.isEmpty() && !range.isEmpty()) {
-                        ruleDesc = " (rule: " + rule + ", rangeRule: " + range + ")";
-                    } else if (!rule.isEmpty()) {
-                        ruleDesc = " (rule: " + rule + ")";
-                    } else if (!range.isEmpty()) {
-                        ruleDesc = " (rangeRule: " + range + ")";
-                    }
-                    String ruleDescZh = "";
-                    if (!rule.isEmpty() && !range.isEmpty()) {
-                        ruleDescZh = "（rule：" + rule + "，rangeRule：" + range + "）";
-                    } else if (!rule.isEmpty()) {
-                        ruleDescZh = "（rule：" + rule + "）";
-                    } else if (!range.isEmpty()) {
-                        ruleDescZh = "（rangeRule：" + range + "）";
-                    }
-                    for (RuleViolation v : fr.getViolations()) {
-                        if (StringUtils.isBlank(v.getMessageEn())) {
-                            v.setMessageEn(String.format(
-                                    "Tag <%s> value \"%s\" failed validation%s",
-                                    tagLabel, fr.getValue(), ruleDesc));
-                        }
-                        if (StringUtils.isBlank(v.getMessageZh())) {
-                            v.setMessageZh(String.format(
-                                    "标签 <%s> 的值 \"%s\" 不满足校验规则%s",
-                                    tagLabel, fr.getValue(), ruleDescZh));
-                        }
-                    }
+            // ★ 修复：按"父节点实例 + tagName"统计，正确识别真正的循环节点。
+            //   原来用 getElementsByTagName("*") 全文档计数，导致同名标签在不同父节点下
+            //   各出现一次也会被误判为循环节点（如 VehicleIdentificationNumber 出现在3个
+            //   不同结构节点下，count=3，被错误地校验3遍）。
+            //   修复后：只有同一父节点下出现多次的兄弟节点才视为循环节点。
+            NodeList allNodes = doc.getElementsByTagName("*");
+            Map<String, Integer> parentTagCount = new LinkedHashMap<>();
+            Set<String> loopTagNames = new HashSet<>();
+            for (int i = 0; i < allNodes.getLength(); i++) {
+                Element element = (Element) allNodes.item(i);
+                String tagName = element.getTagName();
+                Node parent = element.getParentNode();
+                // 用父节点对象的内存标识区分不同父节点实例
+                String key = System.identityHashCode(parent) + "#" + tagName;
+                int count = parentTagCount.merge(key, 1, Integer::sum);
+                if (count > 1) {
+                    // 该 tagName 在某个父节点下出现了多次，才是真正的循环节点
+                    loopTagNames.add(tagName);
                 }
             }
-            return report;
+
+            for (int i = 0; i < allNodes.getLength(); i++) {
+                Element element = (Element) allNodes.item(i);
+                String tagName  = element.getTagName();
+                SysDictData dict = labelToDictMap.get(tagName);
+                if (dict == null || isStructNode(dict) || StringUtils.isBlank(dict.getKeyMap())) continue;
+
+                // 只把非循环节点放入 baseJsonMap
+                if (!loopTagNames.contains(tagName)) {
+                    baseJsonMap.put(dict.getKeyMap(),
+                            StringUtils.defaultString(element.getTextContent()));
+                }
+            }
+
+            // ★ 用于汇总所有校验结果
+            ValidationReport mergedReport = null;
+
+            // 非循环节点：整体校验一次
+            if (!baseJsonMap.isEmpty()) {
+                String jsonStr = new ObjectMapper().writeValueAsString(baseJsonMap);
+                ValidationReport report = vehicleValidationService.validate(
+                        jsonStr, vehicleCategory, stageOfCompletion);
+                mergedReport = enrichAndMerge(mergedReport, report, keyMapMeta);
+            }
+
+            // 循环节点：每个元素单独校验
+            // 找出所有循环 tagName（去重，保证每种只处理一次）
+            Set<String> processedLoopTags = new HashSet<>();
+            for (int i = 0; i < allNodes.getLength(); i++) {
+                Element element = (Element) allNodes.item(i);
+                String tagName  = element.getTagName();
+                if (!loopTagNames.contains(tagName)) continue;       // ★ 非循环节点跳过
+                if (processedLoopTags.contains(tagName)) continue;   // 已处理过跳过
+                processedLoopTags.add(tagName);
+
+                SysDictData dict = labelToDictMap.get(tagName);
+                if (dict == null || isStructNode(dict) || StringUtils.isBlank(dict.getKeyMap())) continue;
+
+                // 取出该 tagName 的所有节点，逐个校验
+                NodeList loopNodes = doc.getElementsByTagName(tagName);
+                for (int j = 0; j < loopNodes.getLength(); j++) {
+                    String value = StringUtils.defaultString(
+                            loopNodes.item(j).getTextContent());
+
+                    // 以 baseJsonMap 为上下文，覆盖当前循环字段的值
+                    Map<String, Object> singleJsonMap = new LinkedHashMap<>(baseJsonMap);
+                    singleJsonMap.put(dict.getKeyMap(), value);
+
+                    String jsonStr = new ObjectMapper().writeValueAsString(singleJsonMap);
+                    ValidationReport report = vehicleValidationService.validate(
+                            jsonStr, vehicleCategory, stageOfCompletion);
+
+                    // ★ 在violation消息里标注是第几个循环节点，便于定位
+                    if (report != null && report.getFieldResults() != null) {
+                        final int index = j + 1;
+                        for (FieldValidationResult fr : report.getFieldResults()) {
+                            if (!fr.isValid() && fr.getViolations() != null) {
+                                for (RuleViolation v : fr.getViolations()) {
+                                    appendLoopIndex(v, tagName, index);
+                                }
+                            }
+                        }
+                    }
+                    mergedReport = enrichAndMerge(mergedReport, report, keyMapMeta);
+                }
+            }
+
+            return mergedReport;
 
         } catch (Exception e) {
             log.error("XML数据校验失败", e);
-            ValidationReport errReport = ValidationReport.fail("数据规则校验异常：" + e.getMessage());
-            return errReport;
+            return ValidationReport.fail("数据规则校验异常：" + e.getMessage());
         }
     }
 
@@ -2999,5 +3001,98 @@ public class XmlFileServiceImpl implements IXmlFileService {
         }
         return StringUtils.isNotBlank(defaultValue) ? defaultValue : "";
     }
-}
 
+    /**
+     * 构建 keyMap → [tagLabel, rule, rangeRule] 映射
+     */
+    private Map<String, String[]> buildKeyMapMeta(List<XmlTemplateAttribute> attrList,
+                                                  Map<String, SysDictData> dictCodeMap) {
+        Map<String, String[]> keyMapMeta = new HashMap<>();
+        for (XmlTemplateAttribute attr : attrList) {
+            String[] parts = attr.getAttrPath().split("\\.");
+            SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
+            if (dict == null || StringUtils.isBlank(dict.getKeyMap())) continue;
+            keyMapMeta.put(dict.getKeyMap(), new String[]{
+                    sanitizeXmlTagName(dict.getDictLabel()),
+                    StringUtils.defaultString(dict.getRule()),
+                    StringUtils.defaultString(dict.getRangeRule())
+            });
+        }
+        return keyMapMeta;
+    }
+
+    /**
+     * 补充 violation 消息，并将 report 合并到 merged 中
+     */
+    private ValidationReport enrichAndMerge(ValidationReport merged,
+                                            ValidationReport report,
+                                            Map<String, String[]> keyMapMeta) {
+        if (report == null) return merged;
+
+        // 补充 fieldName 和 violation 消息
+        if (report.getFieldResults() != null) {
+            for (FieldValidationResult fr : report.getFieldResults()) {
+                String[] meta = keyMapMeta.get(fr.getFieldName());
+                if (meta == null) continue;
+                String tagLabel = meta[0];
+                fr.setFieldName(tagLabel);
+                if (fr.isValid() || fr.getViolations() == null) continue;
+
+                String ruleDescEn = buildRuleDesc(meta[1], meta[2], false);
+                String ruleDescZh = buildRuleDesc(meta[1], meta[2], true);
+                for (RuleViolation v : fr.getViolations()) {
+                    if (StringUtils.isBlank(v.getMessageEn())) {
+                        v.setMessageEn(String.format(
+                                "Tag <%s> value \"%s\" failed validation%s",
+                                tagLabel, fr.getValue(), ruleDescEn));
+                    }
+                    if (StringUtils.isBlank(v.getMessageZh())) {
+                        v.setMessageZh(String.format(
+                                "标签 <%s> 的值 \"%s\" 不满足校验规则%s",
+                                tagLabel, fr.getValue(), ruleDescZh));
+                    }
+                }
+            }
+        }
+
+        // 合并：首个直接返回，后续追加 fieldResults
+        if (merged == null) return report;
+        if (report.getFieldResults() != null) {
+            merged.getFieldResults().addAll(report.getFieldResults());
+        }
+        // 只要有一个不通过，整体就不通过
+        if (!report.isAllValid()) {
+            merged.setAllValid(false);
+        }
+        return merged;
+    }
+
+    /**
+     * 在循环节点的 violation 消息里追加序号，便于定位是第几个
+     */
+    private void appendLoopIndex(RuleViolation v, String tagName, int index) {
+        String suffix   = String.format(" [%s #%d]", tagName, index);
+        String suffixZh = String.format("【%s 第%d项】", tagName, index);
+        if (StringUtils.isNotBlank(v.getMessageEn())) {
+            v.setMessageEn(v.getMessageEn() + suffix);
+        }
+        if (StringUtils.isNotBlank(v.getMessageZh())) {
+            v.setMessageZh(v.getMessageZh() + suffixZh);
+        }
+    }
+
+    private String buildRuleDesc(String rule, String range, boolean zh) {
+        boolean hasRule  = StringUtils.isNotBlank(rule);
+        boolean hasRange = StringUtils.isNotBlank(range);
+        if (!hasRule && !hasRange) return "";
+        if (zh) {
+            if (hasRule && hasRange) return "（rule：" + rule + "，rangeRule：" + range + "）";
+            if (hasRule)             return "（rule：" + rule + "）";
+            return                          "（rangeRule：" + range + "）";
+        } else {
+            if (hasRule && hasRange) return " (rule: " + rule + ", rangeRule: " + range + ")";
+            if (hasRule)             return " (rule: " + rule + ")";
+            return                          " (rangeRule: " + range + ")";
+        }
+    }
+}
