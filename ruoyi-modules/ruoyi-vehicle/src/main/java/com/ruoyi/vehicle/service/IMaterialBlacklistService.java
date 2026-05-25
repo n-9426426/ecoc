@@ -3,6 +3,7 @@ package com.ruoyi.vehicle.service;
 import com.ruoyi.vehicle.domain.MaterialBlacklist;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 物料黑名单 Service 接口
@@ -23,4 +24,6 @@ public interface IMaterialBlacklistService {
      * 根据物料号查询黑名单记录
      */
     MaterialBlacklist selectMaterialBlacklistByMaterialNo(String materialNo);
+
+    Map<String, Integer> updateMaterialBlacklistStatus(Long id);
 }

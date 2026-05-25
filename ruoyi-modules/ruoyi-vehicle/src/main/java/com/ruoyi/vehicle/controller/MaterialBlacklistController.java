@@ -63,4 +63,11 @@ public class MaterialBlacklistController extends BaseController {
     public AjaxResult remove(@PathVariable Long[] ids) {
         return toAjax(materialBlacklistService.deleteMaterialBlacklistByIds(ids));
     }
+
+    @RequiresPermissions("material:blacklist:edit")
+    @Log(title = "物料黑名单", businessType = BusinessType.UPDATE)
+    @PutMapping("/status/{id}")
+    public AjaxResult updateStatus(@PathVariable Long id) {
+        return success(materialBlacklistService.updateMaterialBlacklistStatus(id));
+    }
 }
