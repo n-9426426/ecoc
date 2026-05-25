@@ -18,4 +18,9 @@ public interface IMaterialBlacklistService {
     int updateMaterialBlacklist(MaterialBlacklist materialBlacklist);
 
     int deleteMaterialBlacklistByIds(Long[] ids);
+
+    /**
+     * 根据物料号查询黑名单记录
+     */
+    MaterialBlacklist selectMaterialBlacklistByMaterialNo(String materialNo);
 }

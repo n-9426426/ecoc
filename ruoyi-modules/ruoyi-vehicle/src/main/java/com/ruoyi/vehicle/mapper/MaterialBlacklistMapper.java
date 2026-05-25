@@ -33,4 +33,9 @@ public interface MaterialBlacklistMapper {
      * 批量删除物料黑名单
      */
     int deleteMaterialBlacklistByIds(Long[] ids);
+
+    /**
+     * 根据物料号查询黑名单记录
+     */
+    MaterialBlacklist selectMaterialBlacklistByMaterialNo(String materialNo);
 }

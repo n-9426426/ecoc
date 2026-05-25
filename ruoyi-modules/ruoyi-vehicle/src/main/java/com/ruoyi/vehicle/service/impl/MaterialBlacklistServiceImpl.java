@@ -47,4 +47,9 @@ public class MaterialBlacklistServiceImpl implements IMaterialBlacklistService {
     public int deleteMaterialBlacklistByIds(Long[] ids) {
         return materialBlacklistMapper.deleteMaterialBlacklistByIds(ids);
     }
+
+    @Override
+    public MaterialBlacklist selectMaterialBlacklistByMaterialNo(String materialNo) {
+        return materialBlacklistMapper.selectMaterialBlacklistByMaterialNo(materialNo);
+    }
 }

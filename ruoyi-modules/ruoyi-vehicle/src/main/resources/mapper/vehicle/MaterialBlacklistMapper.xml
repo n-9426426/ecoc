@@ -75,4 +75,9 @@
         </foreach>
     </delete>
 
+    <!-- 根据物料号查询 -->
+    <select id="selectMaterialBlacklistByMaterialNo" resultMap="MaterialBlacklistResult">
+        <include refid="selectMaterialBlacklistVo"/>
+        WHERE material_no = #{materialNo} and status = 0
+    </select>
 </mapper>

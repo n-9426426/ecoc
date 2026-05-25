@@ -22,6 +22,7 @@ import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.*;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import com.ruoyi.vehicle.mapper.*;
+import com.ruoyi.vehicle.service.IMaterialBlacklistService;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.service.IVehicleValidationService;
 import com.ruoyi.vehicle.utils.JsonDictConverter;
@@ -75,6 +76,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Autowired
     private MaterialMapper materialMapper;
+
+    @Autowired
+    private IMaterialBlacklistService materialBlacklistService;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -918,6 +922,16 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         } catch (Exception e) {
             throw new RuntimeException("无法格式化JSON数据");
         }
+
+        MaterialBlacklist materialBlacklist = materialBlacklistService.selectMaterialBlacklistByMaterialNo(vehicleInfo.getMaterialNo());
+        if (materialBlacklist == null) {
+            return vehicleInfo;
+        }
+        vehicleInfo.setRemark(StringUtils.isBlank(vehicleInfo.getRemark())
+                ?
+                "该物料号存在于物料号黑名单中"
+                :
+                vehicleInfo.getRemark() + ";" + "该物料号存在于物料号黑名单中");
 
         return vehicleInfo;
     }
