@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.ruoyi.vehicle.mapper.MaterialBlacklistMapper">
+
+    <resultMap id="MaterialBlacklistResult" type="MaterialBlacklist">
+        <id     property="id"         column="id"/>
+        <result property="materialNo" column="material_no"/>
+        <result property="brand"      column="brand"/>
+        <result property="status"     column="status"/>
+        <result property="createBy"   column="create_by"/>
+        <result property="createTime" column="create_time"/>
+        <result property="updateBy"   column="update_by"/>
+        <result property="updateTime" column="update_time"/>
+        <result property="remark"     column="remark"/>
+    </resultMap>
+
+    <sql id="selectMaterialBlacklistVo">
+        SELECT id, material_no, brand, status, create_by, create_time,
+               update_by, update_time, remark
+        FROM material_blacklist
+    </sql>
+
+    <!-- 列表查询 -->
+    <select id="selectMaterialBlacklistList" resultMap="MaterialBlacklistResult">
+        <include refid="selectMaterialBlacklistVo"/>
+        <where>
+            <if test="materialNo != null and materialNo != ''">
+                AND material_no LIKE CONCAT('%', #{materialNo}, '%')
+            </if>
+            <if test="brand != null and brand != ''">
+                AND brand LIKE CONCAT('%', #{brand}, '%')
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+        </where>
+        ORDER BY create_time DESC
+    </select>
+
+    <!-- 根据ID查询 -->
+    <select id="selectMaterialBlacklistById" resultMap="MaterialBlacklistResult">
+        <include refid="selectMaterialBlacklistVo"/>
+        WHERE id = #{id}
+    </select>
+
+    <!-- 新增 -->
+    <insert id="insertMaterialBlacklist" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO material_blacklist (
+            material_no, brand, status, create_by, create_time, remark
+        ) VALUES (
+                     #{materialNo}, #{brand}, #{status}, #{createBy}, SYSDATE(), #{remark}
+                 )
+    </insert>
+
+    <!-- 修改 -->
+    <update id="updateMaterialBlacklist">
+        UPDATE material_blacklist
+        <set>
+            <if test="materialNo != null and materialNo != ''">material_no = #{materialNo},</if>
+            <if test="brand != null and brand != ''">brand = #{brand},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            update_by   = #{updateBy},
+            update_time = SYSDATE()
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <!-- 批量删除 -->
+    <delete id="deleteMaterialBlacklistByIds">
+        DELETE FROM material_blacklist WHERE id IN
+        <foreach collection="array" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+
+</mapper>

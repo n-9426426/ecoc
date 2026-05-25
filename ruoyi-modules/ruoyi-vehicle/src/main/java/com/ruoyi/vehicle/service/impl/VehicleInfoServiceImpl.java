@@ -164,7 +164,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null
                 ? SecurityUtils.getUsername() : "MES To System");
 
-        int row = insert(vehicleInfo);
+        VehicleInfo row = jsonConvert(vehicleInfo);
 
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
         vehicleLifecycle.setEntryId(vehicleInfo.getVehicleId());
@@ -175,7 +175,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleLifecycleMapper.insert(vehicleLifecycle);
 
         validateVehicleInfo(Collections.singletonList(vehicleInfo.getVehicleId()));
-        return row;
+        return vehicleInfoMapper.insertVehicleInfo(row);
     }
 
     private VehicleInfo selectVehicleInfoByWvtaNo(String vin) {
@@ -214,6 +214,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             vehicleInfo.setWvtaNo(template.getWvtaCocNo());
             vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
             vehicleInfo.setJson(template.getJson());
+            jsonConvert(vehicleInfo);
         }
         // 去掉这里强制重置，交给调用方自己决定
         vehicleInfo.setVin(null);
@@ -508,7 +509,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null
                         ? SecurityUtils.getUsername() : "MES To System");
 
-                insert(vehicleInfo);
+                VehicleInfo waitInsertORow = jsonConvert(vehicleInfo);
+                vehicleInfoMapper.insertVehicleInfo(waitInsertORow);
 
                 // 写入生命周期
                 VehicleLifecycle lifecycle = new VehicleLifecycle();
@@ -756,7 +758,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         return vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
     }*/
 
-    private int insert(VehicleInfo vehicleInfo) {
+    private VehicleInfo jsonConvert(VehicleInfo vehicleInfo) {
         Map<String, Object> map = vehicleInfo.getJsonMap();
         if (map != null && !map.isEmpty()) {
             map = new LinkedHashMap<>(map);
@@ -917,7 +919,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new RuntimeException("无法格式化JSON数据");
         }
 
-        return vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+        return vehicleInfo;
     }
 
     /**
