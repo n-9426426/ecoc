@@ -107,8 +107,9 @@ public class FinalRuleParser {
                     Pattern.CASE_INSENSITIVE);
 
     // ===== 数值比较 =====
+    // compareValue 不能以 / 开头（正则）或 @ 开头（字段引用），这两种情况有专用 pattern 处理
     private static final Pattern VALUE_COMPARE_PATTERN =
-            Pattern.compile("VALUE\\s+(>=|<=|>|<|=|!=)\\s+([^\\s]+)",
+            Pattern.compile("VALUE\\s+(>=|<=|>|<|=|!=)\\s+([^/\\s@][^\\s]*)",
                     Pattern.CASE_INSENSITIVE);
 
     // ===== 存在性 =====
@@ -124,9 +125,34 @@ public class FinalRuleParser {
                     Pattern.CASE_INSENSITIVE);
 
     // ===== 跨字段值比较 =====
-    // 格式: VALUE >= @fieldName  /  VALUE != @fieldName  等
+    // 格式1: VALUE >= @fieldName  /  VALUE != @fieldName  等（标准带@前缀）
+    // 格式2: VALUE < FieldName?  （官方规则中无@前缀、末尾带?的可选字段引用写法）
     private static final Pattern VALUE_FIELD_COMPARE_PATTERN =
             Pattern.compile("VALUE\\s+(>=|<=|>|<|=|!=)\\s+@([\\w.]+)",
+                    Pattern.CASE_INSENSITIVE);
+
+    // 无 @ 前缀的跨字段比较（末尾可带 ?），必须在 VALUE_COMPARE 之前匹配
+    // 用途: ActualMass → VALUE < TechnicallyPermissibleMaximumLadenMass?
+    private static final Pattern VALUE_FIELD_COMPARE_NO_AT_PATTERN =
+            Pattern.compile("VALUE\\s+(>=|<=|>|<|=|!=)\\s+([A-Z][\\w.]*\\??)",
+                    Pattern.CASE_INSENSITIVE);
+
+    // ===== VALUE = COUNT(field WITHIN [vals])（带条件的列表计数赋值）=====
+    // 格式: VALUE = COUNT(FieldName WITHIN ['val1', 'val2'])
+    // 用途: NumberOfPoweredAxles → VALUE = COUNT(PoweredAxleIndicator WITHIN ['Y'])
+    // 注意: 必须在 VALUE_COUNT_SIMPLE 和 VALUE_COMPARE 之前匹配
+    private static final Pattern VALUE_COUNT_WITHIN_PATTERN =
+            Pattern.compile(
+                    "VALUE\\s*=\\s*COUNT\\s*\\(\\s*(\\w+)\\s+WITHIN\\s+\\[([^\\]]+)\\]\\s*\\)",
+                    Pattern.CASE_INSENSITIVE);
+
+    // ===== VALUE = COUNT(field)（简单列表计数赋值）=====
+    // 格式: VALUE = COUNT(FieldName)
+    // 用途: NumberOfAxles → VALUE = COUNT(AxleGroup)
+    // 注意: 必须在 VALUE_COMPARE 之前匹配
+    private static final Pattern VALUE_COUNT_SIMPLE_PATTERN =
+            Pattern.compile(
+                    "VALUE\\s*=\\s*COUNT\\s*\\(\\s*(\\w+)\\s*\\)",
                     Pattern.CASE_INSENSITIVE);
 
     // ===== COUNT = VALUE（列表字段计数赋值给当前字段）=====
@@ -390,7 +416,58 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 10. VALUE 比较运算
+            // 10-a. VALUE = COUNT(field WITHIN [vals])（带条件列表计数，必须在VALUE_COMPARE前）
+            //        用途: NumberOfPoweredAxles → VALUE = COUNT(PoweredAxleIndicator WITHIN ['Y'])
+            m = VALUE_COUNT_WITHIN_PATTERN.matcher(body);
+            if (m.matches()) {
+                String listField = m.group(1).trim();
+                List<String> withinVals = parseList(m.group(2));
+                AggregateFunction af = AggregateFunction.builder()
+                        .functionType(AggregateFunction.Type.COUNT)
+                        .listField(listField)
+                        .enumValues(withinVals)
+                        .operator(com.ruoyi.common.core.enums.CompareOperator.EQ)
+                        .threshold(null) // null 表示与当前字段 VALUE 比较
+                        .build();
+                return RuleItem.builder()
+                        .type(RuleItemType.COUNT_AS_VALUE)
+                        .aggregateFunction(af)
+                        .build();
+            }
+
+            // 10-b. VALUE = COUNT(field)（简单列表计数，必须在VALUE_COMPARE前）
+            //        用途: NumberOfAxles → VALUE = COUNT(AxleGroup)
+            m = VALUE_COUNT_SIMPLE_PATTERN.matcher(body);
+            if (m.matches()) {
+                String listField = m.group(1).trim();
+                AggregateFunction af = AggregateFunction.builder()
+                        .functionType(AggregateFunction.Type.COUNT)
+                        .listField(listField)
+                        .operator(com.ruoyi.common.core.enums.CompareOperator.EQ)
+                        .threshold(null)
+                        .build();
+                return RuleItem.builder()
+                        .type(RuleItemType.COUNT_AS_VALUE)
+                        .aggregateFunction(af)
+                        .build();
+            }
+
+            // 10-c. VALUE op FieldName?（无@前缀跨字段比较，必须在VALUE_COMPARE前）
+            //        用途: ActualMass → VALUE < TechnicallyPermissibleMaximumLadenMass?
+            m = VALUE_FIELD_COMPARE_NO_AT_PATTERN.matcher(body);
+            if (m.matches()) {
+                String refName = m.group(2).trim();
+                if (refName.endsWith("?")) {
+                    refName = refName.substring(0, refName.length() - 1);
+                }
+                return RuleItem.builder()
+                        .type(RuleItemType.VALUE_FIELD_COMPARE)
+                        .operator(m.group(1).trim())
+                        .refFieldName(refName)
+                        .build();
+            }
+
+            // 10. VALUE 比较运算（字面量比较，必须在所有字段引用/COUNT之后）
             m = VALUE_COMPARE_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -451,7 +528,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 14. VALUE op @fieldName（跨字段值比较）
+            // 14. VALUE op @fieldName（跨字段值比较，标准带 @ 前缀）
             m = VALUE_FIELD_COMPARE_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -612,6 +689,44 @@ public class FinalRuleParser {
         }
 
         return items;
+    }
+
+    /**
+     * 【F类修复】多值字段拆分工具
+     *
+     * <p>部分字段存储多个值，以 {@code |} 或 {@code ;} 分隔（如 GearRatio、RimOffSet）。
+     * 执行器在做 range_rule 数值校验（totalDigits / fractionDigits / minInclusive /
+     * maxInclusive / maxLength 等）时，必须先调用此方法将值拆分，再对每个子值单独校验。
+     *
+     * <p>使用示例（执行器伪代码）：
+     * <pre>
+     *   String[] parts = FinalRuleParser.splitMultiValue(rawValue);
+     *   for (String part : parts) {
+     *       validateRangeRule(part, constraint);
+     *   }
+     * </pre>
+     *
+     * @param value 原始字段值，可能含 {@code |} 或 {@code ;} 分隔的多个子值
+     * @return 拆分后的子值数组；若无分隔符则返回长度为 1 的数组
+     */
+    public static String[] splitMultiValue(String value) {
+        if (value == null || value.isEmpty()) {
+            return new String[]{value};
+        }
+        if (value.contains("|")) {
+            return value.split("\\|", -1);
+        }
+        if (value.contains(";")) {
+            return value.split(";", -1);
+        }
+        return new String[]{value};
+    }
+
+    /**
+     * 判断字段值是否为多值字段（含 | 或 ; 分隔符）
+     */
+    public static boolean isMultiValue(String value) {
+        return value != null && (value.contains("|") || value.contains(";"));
     }
 
     private static String unescapeHtml(String str) {

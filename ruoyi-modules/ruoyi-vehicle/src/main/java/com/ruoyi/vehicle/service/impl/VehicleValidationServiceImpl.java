@@ -164,6 +164,26 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
         context.put("vehicleCategory", vehicleCategory);
         context.put("stageOfCompletion", stageOfCompletion);
 
+        // 注入虚拟变量（@FullyElectricVehicle / @NotFullyElectricVehicle / @HybridVehicle）
+        Object energySourceVal = context.get("EnergySource");
+        String energySource = energySourceVal != null ? energySourceVal.toString().trim() : "";
+
+        Object pureElectricVal = context.get("PureElectricVehicleIndicator");
+        String pureElectric = pureElectricVal != null ? pureElectricVal.toString().trim() : "";
+
+// 纯电动：EnergySource=95 或 PureElectricVehicleIndicator=Y
+        boolean isFullyElectric = "95".equals(energySource) || "Y".equals(pureElectric);
+
+// 混动：ClassHybridVehicle 有值且非纯电
+        Object hybridVal = context.get("ClassHybridVehicle");
+        String hybridClass = hybridVal != null ? hybridVal.toString().trim() : "";
+        boolean isHybrid = !hybridClass.isEmpty() && !isFullyElectric;
+
+// null 表示条件不满足，executor 的 isAbsent 会判定为缺失
+        context.put("FullyElectricVehicle",    isFullyElectric ? "Y" : null);
+        context.put("NotFullyElectricVehicle", !isFullyElectric ? "Y" : null);
+        context.put("HybridVehicle",           isHybrid ? "Y" : null);
+
         return context;
     }
 
