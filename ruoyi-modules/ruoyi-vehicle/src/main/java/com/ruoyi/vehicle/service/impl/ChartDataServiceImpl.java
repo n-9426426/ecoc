@@ -4,10 +4,7 @@ import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.vehicle.domain.VehicleLifecycle;
 import com.ruoyi.vehicle.domain.dto.ChartDataStatisticsDto;
-import com.ruoyi.vehicle.domain.vo.AbnormalStatisticsVo;
-import com.ruoyi.vehicle.domain.vo.CalendarDayVo;
-import com.ruoyi.vehicle.domain.vo.ChartDataXmlTotalVo;
-import com.ruoyi.vehicle.domain.vo.VehicleModelVo;
+import com.ruoyi.vehicle.domain.vo.*;
 import com.ruoyi.vehicle.mapper.ChartDataMapper;
 import com.ruoyi.vehicle.mapper.VehicleLifecycleMapper;
 import com.ruoyi.vehicle.service.IChartDataService;
@@ -35,13 +32,39 @@ public class ChartDataServiceImpl implements IChartDataService {
     private RemoteDictService remoteDictService;
 
     @Override
-    public List<ChartDataXmlTotalVo> xmlTotal(Integer year) {
-        return chartDataMapper.selectXmlTotal(year);
-    }
+    public List<ChartDataXmlTotalAndValidateVo> xmlTotalAndValidate(Integer year) {
+        List<ChartDataXmlTotalVo> xmlTotalList = chartDataMapper.selectXmlTotal(year);
+        List<ChartDataXmlTotalVo> xmlValidateList = chartDataMapper.selectXmlValidateTotal(year);
 
-    @Override
-    public List<ChartDataXmlTotalVo> xmlValidate(Integer year) {
-        return chartDataMapper.selectXmlValidateTotal(year);
+        Map<String, ChartDataXmlTotalAndValidateVo> map = new LinkedHashMap<>();
+
+        for (ChartDataXmlTotalVo vo : xmlTotalList) {
+            String key = vo.getYear() + "-" + vo.getMonth();
+            ChartDataXmlTotalAndValidateVo mergedVo = new ChartDataXmlTotalAndValidateVo();
+            mergedVo.setYear(vo.getYear());
+            mergedVo.setMonth(vo.getMonth());
+            mergedVo.setXmlTotal(vo.getTotal());
+            mergedVo.setSubmitTotalNumber(vo.getSubmitNumber());
+            mergedVo.setFailTotalNumber(vo.getFailNumber());
+            mergedVo.setPassTotalNumber(vo.getPassNumber());
+            map.put(key, mergedVo);
+        }
+
+        for (ChartDataXmlTotalVo vo : xmlValidateList) {
+            String key = vo.getYear() + "-" + vo.getMonth();
+            ChartDataXmlTotalAndValidateVo mergedVo = map.getOrDefault(key, new ChartDataXmlTotalAndValidateVo());
+            if (!map.containsKey(key)) {
+                mergedVo.setYear(vo.getYear());
+                mergedVo.setMonth(vo.getMonth());
+            }
+            mergedVo.setValidateTotal(vo.getTotal());
+            mergedVo.setSubmitValidateNumber(vo.getSubmitNumber());
+            mergedVo.setFailValidateNumber(vo.getFailNumber());
+            mergedVo.setPassValidateNumber(vo.getPassNumber());
+            map.put(key, mergedVo);
+        }
+
+        return new ArrayList<>(map.values());
     }
 
     @Override

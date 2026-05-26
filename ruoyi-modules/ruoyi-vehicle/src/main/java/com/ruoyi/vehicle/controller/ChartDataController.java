@@ -20,16 +20,10 @@ public class ChartDataController extends BaseController {
     @Autowired
     private IChartDataService chartDataService;
 
-    @Operation(summary = "XML汇总")
-    @GetMapping("/xml/total/{year}")
-    public AjaxResult xmlTotal(@PathVariable Integer year) {
-        return AjaxResult.success(chartDataService.xmlTotal(year));
-    }
-
-    @Operation(summary = "XML文件校验")
-    @GetMapping("/xml/validate/{year}")
-    public AjaxResult xmlValidate(@PathVariable Integer year) {
-        return AjaxResult.success(chartDataService.xmlValidate(year));
+    @Operation(summary = "XML汇总与校验合并")
+    @GetMapping("/xml/total-and-validate/{year}")
+    public AjaxResult xmlTotalAndValidate(@PathVariable Integer year) {
+        return AjaxResult.success(chartDataService.xmlTotalAndValidate(year));
     }
 
     @Operation(summary = "车型分布")

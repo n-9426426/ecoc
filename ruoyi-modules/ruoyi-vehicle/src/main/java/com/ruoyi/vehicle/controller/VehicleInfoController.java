@@ -17,7 +17,6 @@ import com.ruoyi.system.api.RemoteLoginService;
 import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.LoginBody;
-import com.ruoyi.system.api.domain.SysNotice;
 import com.ruoyi.system.api.domain.SysUser;
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.VehicleInfo;
@@ -87,12 +86,8 @@ public class VehicleInfoController extends BaseController {
         // 用完整的 loginUser 往下传
         List<Map<String, Object>> result = new LinkedList<>();
         Date now = new Date();
-        Map<String, Date> hasBreakpointVin = new LinkedHashMap<>();
         for (VehicleDto.Vehicle vehicle : vehicleDto.getVehicles()) {
             Map<String, Object> resultItem = new LinkedHashMap<>();
-            if (vehicle.getBreakpoint() != null) {
-                hasBreakpointVin.put(vehicle.getVin(), vehicle.getBreakpoint());
-            }
             try {
                 resultItem = vehicleInfoService.getVehicleInfoFromMes(vehicle, now, fullLoginUser);
                 result.add(resultItem);
@@ -102,26 +97,6 @@ public class VehicleInfoController extends BaseController {
                 resultItem.put("receiveTime", DateUtils.format(now, "yyyy-MM-dd HH:mm:ss"));
                 resultItem.put("cause", e.getMessage());
             }
-        }
-        if (!hasBreakpointVin.isEmpty()) {
-            StringBuilder sb = new StringBuilder();
-            for (String key : hasBreakpointVin.keySet()) {
-                sb.append("车辆VIN ")
-                        .append(key)
-                        .append(" 存在断点: ")
-                        .append(DateUtils.format(now, "yyyy-MM-dd HH:mm:ss"))
-                        .append(System.lineSeparator());
-            }
-            SysNotice sysNotice = new SysNotice();
-            sysNotice.setIsRead(false);
-            sysNotice.setStatus("0");
-            sysNotice.setNoticeType("1");
-            sysNotice.setNoticeTitle("MES系统推送断点提醒");
-            sysNotice.setNoticeContent(sb.toString());
-            sysNotice.setCreateBy("自动提醒");
-            sysNotice.setCreateTime(new Date());
-            sysNotice.setSorts(Arrays.asList(16, 17));
-            remoteNoticeService.innerAdd(sysNotice);
         }
         return AjaxResult.success(result);
     }

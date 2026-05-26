@@ -2,6 +2,7 @@ package com.ruoyi.vehicle.service.impl;
 
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.TypeReference;
+import com.alibaba.fastjson2.JSON;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.core.enums.RuleItemType;
 import com.ruoyi.common.core.exception.ServiceException;
@@ -17,6 +18,7 @@ import com.ruoyi.system.api.RemoteFileService;
 import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.system.api.domain.SysNotice;
+import com.ruoyi.system.api.enums.SysNoticeModel;
 import com.ruoyi.vehicle.domain.AbnormalClassify;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.domain.VehicleTemplateMaterial;
@@ -243,12 +245,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             msg.append("不存在");
             throw new ServiceException(msg.toString());
         }
-
-        SysNotice sysNotice = new SysNotice();
-        sysNotice.setIsRead(false);
-        sysNotice.setNoticeType("1");
-        sysNotice.setNoticeTitle("车辆信息模版校验完成通知");
-        StringBuilder msg = new StringBuilder("车辆信息模版：");
         for (VehicleTemplate template : templates) {
             try {
                 // 执行校验
@@ -281,11 +277,32 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 }
                 updateList.add(update);
 
-                msg.append(System.lineSeparator());
-                msg.append("WVTA编号：");
-                msg.append(template.getWvtaCocNo());
-                msg.append("的校验结果为：");
-                msg.append(report.isAllValid() ? "通过" : "失败");
+                Map<String, String> params = new HashMap<>();
+                params.put("wvtaCocNo", template.getWvtaCocNo());
+                params.put("cocTemplateNo", template.getCocTemplateNo());
+                params.put("modelNo", template.getModelNo());
+                params.put("vehicleType", template.getVehicleType());
+                params.put("validationResult", report.isAllValid() ? "1" : "2");
+                SysNotice sysNotice = new SysNotice();
+                sysNotice.setModel(SysNoticeModel.VEHICLE_TEMPLATE.getModel());
+                sysNotice.setQueryParams(JSON.toJSONString(params));
+                sysNotice.setIsRead(false);
+                sysNotice.setNoticeType("1");
+                sysNotice.setNoticeTitle("车辆信息模版校验完成通知");
+                String msg =
+                        "WVTA编号 " +
+                        template.getWvtaCocNo() +
+                        " 、COC编号 "+
+                        template.getCocTemplateNo() +
+                        " 、版本 "+
+                        template.getVersion() +
+                        " 的校验结果为: " +
+                        (report.isAllValid() ? "通过" : "失败");
+                sysNotice.setNoticeContent(msg);
+                sysNotice.setCreateBy("自动提醒");
+                sysNotice.setCreateTime(new Date());
+                sysNotice.setSorts(Arrays.asList(8, 9));
+                remoteNoticeService.innerAdd(sysNotice);
             } catch (Exception e) {
                 log.error("校验异常, templateId={}", template.getTemplateId(), e);
                 reports.add(ValidationReport.builder()
@@ -298,13 +315,10 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             abnormalClassifyMapper.batchInsert(abnormalClassifies);
         }
 
-        // 批量回写校验结果,发送通知
+        // 批量回写校验结果
         if (!updateList.isEmpty()) {
             templateMapper.batchUpdateValidateResult(updateList);
         }
-        sysNotice.setNoticeContent(msg.toString());
-        sysNotice.setSorts(Arrays.asList(8, 9));
-        remoteNoticeService.innerAdd(sysNotice);
         return reports;
     }
 

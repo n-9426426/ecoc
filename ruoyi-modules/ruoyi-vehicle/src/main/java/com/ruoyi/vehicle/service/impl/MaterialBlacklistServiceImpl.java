@@ -8,9 +8,7 @@ import com.ruoyi.vehicle.service.IMaterialBlacklistService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 物料黑名单 Service 实现
@@ -64,18 +62,17 @@ public class MaterialBlacklistServiceImpl implements IMaterialBlacklistService {
     }
 
     @Override
-    public Map<String, Integer> updateMaterialBlacklistStatus(Long id) {
-        int status = 0;
-        MaterialBlacklist update = selectMaterialBlacklistById(id);
-        if (update == null) {
+    public MaterialBlacklist updateMaterialBlacklistStatus(Long id) {
+        MaterialBlacklist exist = selectMaterialBlacklistById(id);
+        if (exist == null) {
             throw new RuntimeException("该记录不存在");
         }
-        if (update.getStatus() == 0) {
-            status = 1;
-        }
-        Map<String, Integer> result = new HashMap<>();
-        result.put("status", status);
-        materialBlacklistMapper.updateMaterialBlacklistStatus(id, status, SecurityUtils.getUsername());
-        return result;
+        int status = exist.getStatus() == 0 ? 1 : 0;
+        MaterialBlacklist update = new MaterialBlacklist();
+        update.setId(id);
+        update.setStatus(status);
+        update.setUpdateBy(SecurityUtils.getUsername());
+        materialBlacklistMapper.updateMaterialBlacklistStatus(update);
+        return update;
     }
 }

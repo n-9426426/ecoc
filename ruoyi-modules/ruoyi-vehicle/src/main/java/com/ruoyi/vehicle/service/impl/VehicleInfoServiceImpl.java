@@ -1,5 +1,6 @@
 package com.ruoyi.vehicle.service.impl;
 
+import com.alibaba.fastjson2.JSON;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.core.enums.RuleItemType;
@@ -18,9 +19,11 @@ import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.system.api.domain.SysNotice;
+import com.ruoyi.system.api.enums.SysNoticeModel;
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.*;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
+import com.ruoyi.vehicle.enums.VehicleLifecycleOperation;
 import com.ruoyi.vehicle.mapper.*;
 import com.ruoyi.vehicle.service.IMaterialBlacklistService;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
@@ -174,12 +177,40 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleLifecycle.setEntryId(vehicleInfo.getVehicleId());
         vehicleLifecycle.setTime(new Date());
         vehicleLifecycle.setVin(vehicleInfo.getVin());
-        vehicleLifecycle.setOperate("0");
+        vehicleLifecycle.setOperate(VehicleLifecycleOperation.VEHICLE_INFO_CREATE.getOperation());
         vehicleLifecycle.setResult(0);
         vehicleLifecycleMapper.insert(vehicleLifecycle);
 
         validateVehicleInfo(Collections.singletonList(vehicleInfo.getVehicleId()));
-        return vehicleInfoMapper.insertVehicleInfo(row);
+        int insertRow = vehicleInfoMapper.insertVehicleInfo(row);
+        if (vehicleInfo.getBreakpointTime() != null) {
+            String sb =
+                    "车辆VIN " +
+                    vehicleInfo.getVin() +
+                    " 存在断点: " +
+                    DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getBreakpointTime()) +
+                    System.lineSeparator();
+            Map<String, String> params = new HashMap<>();
+            params.put("vin", vehicleInfo.getVin());
+            params.put("vehicleModel", vehicleInfo.getVehicleModel());
+            params.put("factoryCode", vehicleInfo.getFactoryCode());
+            params.put("country", vehicleInfo.getCountry());
+            params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            params.put("materialNo", vehicleInfo.getMaterialNo());
+            SysNotice sysNotice = new SysNotice();
+            sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
+            sysNotice.setQueryParams(JSON.toJSONString(params));
+            sysNotice.setIsRead(false);
+            sysNotice.setStatus("0");
+            sysNotice.setNoticeType("1");
+            sysNotice.setNoticeTitle("MES系统推送断点提醒");
+            sysNotice.setNoticeContent(sb);
+            sysNotice.setCreateBy("自动提醒");
+            sysNotice.setCreateTime(new Date());
+            sysNotice.setSorts(Arrays.asList(16, 17));
+            remoteNoticeService.innerAdd(sysNotice);
+        }
+        return insertRow;
     }
 
     private VehicleInfo selectVehicleInfoByWvtaNo(String vin) {
@@ -328,11 +359,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     public List<ValidationReport> validateVehicleInfo(List<Long> vehicleInfoIds) {
         List<ValidationReport> validationReports = new LinkedList<>();
         List<AbnormalClassify> abnormalClassifies = new ArrayList<>();
-        SysNotice sysNotice = new SysNotice();
-        sysNotice.setIsRead(false);
-        sysNotice.setNoticeType("1");
-        sysNotice.setNoticeTitle("车辆信息校验完成通知");
-        StringBuilder msg = new StringBuilder("车辆信息：");
         AbnormalClassify abnormalClassify;
         for (Long vehicleInfoId : vehicleInfoIds) {
             VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleInfoId);
@@ -354,7 +380,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             vehicleLifecycle.setEntryId(vehicleInfo.getVehicleId());
             vehicleLifecycle.setTime(new Date());
             vehicleLifecycle.setVin(vehicleInfo.getVin());
-            vehicleLifecycle.setOperate("1");
+            vehicleLifecycle.setOperate(VehicleLifecycleOperation.VEHICLE_INFO_VALIDATE.getOperation());
             vehicleLifecycle.setResult(validationReport.isAllValid() ? 0 : 1);
             vehicleLifecycleMapper.insert(vehicleLifecycle);
 
@@ -368,19 +394,34 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 }
             }
 
-            msg.append(System.lineSeparator());
-            msg.append("Vin：");
-            msg.append(vehicleInfo.getVin());
-            msg.append("的校验结果为：");
-            msg.append(validationReport.isAllValid() ? "通过" : "失败");
+            Map<String, String> params = new HashMap<>();
+            params.put("vin", vehicleInfo.getVin());
+            params.put("vehicleModel", vehicleInfo.getVehicleModel());
+            params.put("factoryCode", vehicleInfo.getFactoryCode());
+            params.put("country", vehicleInfo.getCountry());
+            params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            params.put("materialNo", vehicleInfo.getMaterialNo());
+            params.put("validationResult", validationReport.isAllValid() ? "1": "2");
+            SysNotice sysNotice = new SysNotice();
+            sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
+            sysNotice.setQueryParams(JSON.toJSONString(params));
+            sysNotice.setIsRead(false);
+            sysNotice.setNoticeType("1");
+            sysNotice.setNoticeTitle("车辆信息校验完成通知");
+            String msg =
+                    "车辆VIN " +
+                    vehicleInfo.getVin() +
+                    " 的校验结果为：" +
+                    (validationReport.isAllValid() ? "通过" : "失败");
+            sysNotice.setNoticeContent(msg);
+            sysNotice.setSorts(Arrays.asList(10, 11));
+            sysNotice.setCreateBy("自动提醒");
+            sysNotice.setCreateTime(new Date());
+            remoteNoticeService.innerAdd(sysNotice);
         }
-
         if (!abnormalClassifies.isEmpty()) {
             abnormalClassifyMapper.batchInsert(abnormalClassifies);
         }
-        sysNotice.setNoticeContent(msg.toString());
-        sysNotice.setSorts(Arrays.asList(10, 11));
-        remoteNoticeService.innerAdd(sysNotice);
         return validationReports;
     }
 
@@ -406,6 +447,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new RuntimeException("车型代码不存在");
         }
         insertVehicleInfo(vehicleInfo);
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("vin", vehicleInfo.getVin());
         result.put("recordId", vehicleInfo.getVehicleId());

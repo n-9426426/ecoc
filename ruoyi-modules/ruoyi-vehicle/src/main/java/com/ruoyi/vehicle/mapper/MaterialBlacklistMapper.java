@@ -1,7 +1,6 @@
 package com.ruoyi.vehicle.mapper;
 
 import com.ruoyi.vehicle.domain.MaterialBlacklist;
-import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
@@ -43,5 +42,5 @@ public interface MaterialBlacklistMapper {
     /**
      * 更新物料黑名单状态
      */
-    int updateMaterialBlacklistStatus(@Param("id") Long id, @Param("status") Integer status, @Param("updateBy") String updateBy);
+    int updateMaterialBlacklistStatus(MaterialBlacklist materialBlacklist);
 }

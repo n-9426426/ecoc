@@ -15,6 +15,8 @@
         <result property="updateBy"      column="update_by"      />
         <result property="updateTime"    column="update_time"    />
         <result property="remark"        column="remark"         />
+        <result property="model"         column="model"          />
+        <result property="queryParams"   column="params"         />
         <!-- 联查岗位ID列表 -->
         <collection property="postIds" ofType="java.lang.Long"
                     select="selectPostIdsByNoticeId" column="notice_id"/>
@@ -25,7 +27,7 @@
 
     <sql id="selectNoticeVo">
         select notice_id, notice_title, notice_type, cast(notice_content as char) as notice_content,
-               status, create_by, create_time, update_by, update_time, remark
+               status, create_by, create_time, update_by, update_time, remark, model, params
         from sys_notice
     </sql>
 
@@ -81,6 +83,8 @@
         <if test="status != null and status != ''">status, </if>
         <if test="remark != null and remark != ''">remark, </if>
         <if test="createBy != null and createBy != ''">create_by, </if>
+        <if test="model != null and model != ''">model, </if>
+        <if test="queryParams != null and queryParams != ''">params, </if>
         create_time
         ) values (
         <if test="noticeTitle != null and noticeTitle != ''">#{noticeTitle}, </if>
@@ -89,6 +93,8 @@
         <if test="status != null and status != ''">#{status}, </if>
         <if test="remark != null and remark != ''">#{remark}, </if>
         <if test="createBy != null and createBy != ''">#{createBy}, </if>
+        <if test="model != null and model != ''">#{model}, </if>
+        <if test="queryParams != null and queryParams != ''">#{queryParams}, </if>
         sysdate()
         )
     </insert>
@@ -117,6 +123,8 @@
             <if test="noticeContent != null">notice_content = #{noticeContent}, </if>
             <if test="status != null and status != ''">status = #{status}, </if>
             <if test="updateBy != null and updateBy != ''">update_by = #{updateBy}, </if>
+            <if test="model != null and model != ''">model = #{model}, </if>
+            <if test="queryParams != null and queryParams != ''">params = #{queryParams}, </if>
             update_time = sysdate()
         </set>
         where notice_id = #{noticeId}
