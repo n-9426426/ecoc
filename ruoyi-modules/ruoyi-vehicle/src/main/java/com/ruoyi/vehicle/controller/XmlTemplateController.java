@@ -90,4 +90,10 @@ public class XmlTemplateController extends BaseController {
     public AjaxResult historyVersion(@RequestBody XmlTemplate template) {
         return AjaxResult.success(xmlTemplateService.historyVersion(template));
     }
+
+    @RequiresPermissions("xml:template:edit")
+    @PostMapping("/changeStatus/{xmlIds}")
+    public AjaxResult changeStatus(@PathVariable Long... xmlIds) {
+        return AjaxResult.success(xmlTemplateService.changeStatus(xmlIds));
+    }
 }

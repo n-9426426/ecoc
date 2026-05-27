@@ -2,6 +2,7 @@ package com.ruoyi.vehicle.service.impl;
 
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.system.api.RemoteDictService;
+import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.vehicle.domain.VehicleLifecycle;
 import com.ruoyi.vehicle.domain.dto.ChartDataStatisticsDto;
 import com.ruoyi.vehicle.domain.vo.*;
@@ -268,6 +269,34 @@ public class ChartDataServiceImpl implements IChartDataService {
     public  List<AbnormalStatisticsVo> statisticsAbnormal(ChartDataStatisticsDto statisticsDto) {
         initChartDataStatisticsDtoDate(statisticsDto);
         return chartDataMapper.selectStatisticsAbnormal(statisticsDto);
+    }
+
+    @Override
+    public CalendarDayDetailVo getCalendarOfDay(LocalDate date) {
+        // 1. 计算当天起止时间
+        LocalDateTime dayStart = date.atStartOfDay();
+        LocalDateTime dayEnd   = date.atTime(23, 59, 59, 999_999_999);
+
+        // 2. 查询当天 vehicle_lifecycle 中去重的 operate 列表（不限 vin）
+        List<String> operates = chartDataMapper.selectDistinctOperateByDateRange(dayStart, dayEnd);
+
+        // 3. 从字典查 operate 名称
+        List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_lifecycle").getData();
+        Map<String, String> dictMap = dictDataList.stream()
+                .collect(Collectors.toMap(SysDictData::getDictValue, SysDictData::getDictLabel));
+
+        // 4. 组装结果
+        List<CalendarDayDetailVo.OperateItem> items = operates.stream()
+                .map(op -> CalendarDayDetailVo.OperateItem.builder()
+                        .operate(op)
+                        .operateName(dictMap.getOrDefault(op, op))   // 查不到则回退到原始值
+                        .build())
+                .collect(Collectors.toList());
+
+        return CalendarDayDetailVo.builder()
+                .date(date.toString())
+                .operates(items)
+                .build();
     }
 
     /**

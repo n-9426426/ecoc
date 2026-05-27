@@ -98,6 +98,8 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
     @Autowired
     private RemoteNoticeService remoteNoticeService;
+    @Autowired
+    private VehicleInfoServiceImpl vehicleInfoService;
 
     @Override
     public List<VehicleTemplate> selectVehicleTemplateList(VehicleTemplate template) {
@@ -192,8 +194,41 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int deleteVehicleTemplateByIds(Long[] templateIds) {
-        materialMapper.deleteByTemplateIds(templateIds);
-        return templateMapper.deleteVehicleTemplateByIds(templateIds);
+        List<Map<String, Object>> result = templateMapper.selectVehicleCountByTemplateIds(templateIds);
+
+        // 按 templateId 分组，过滤掉 vin 为 null 的行（无关联车辆的模板）
+        Map<Long, List<Map<String, Object>>> groupedByTemplate = result.stream()
+                .filter(map -> map.get("vin") != null)
+                .collect(Collectors.groupingBy(map -> ((Number) map.get("templateId")).longValue()));
+
+        // 有关联车辆的 templateId 集合
+        Set<Long> templateIdsWithVehicle = groupedByTemplate.keySet();
+
+        // 拼接有关联车辆的提示信息
+        if (!templateIdsWithVehicle.isEmpty()) {
+            String messages = groupedByTemplate.values().stream()
+                    .map(rows -> {
+                        Map<String, Object> first = rows.get(0);
+                        String wvtaCocNo     = String.valueOf(first.get("wvtaCocNo"));
+                        String cocTemplateNo = String.valueOf(first.get("cocTemplateNo"));
+                        String version       = String.valueOf(first.get("version"));
+                        String vins          = rows.stream()
+                                .map(r -> String.valueOf(r.get("vin")))
+                                .collect(Collectors.joining("、"));
+                        return String.format("wvtaCocNo为%s，COCNo为%s，版本号为%s的模版存在关联车辆，VIN为%s，删除失败",
+                                wvtaCocNo, cocTemplateNo, version, vins);
+                    })
+                    .collect(Collectors.joining("\n"));
+            throw new ServiceException(messages);
+        }
+
+        // 过滤出没有关联车辆的 templateId，只删除这部分
+        Long[] deletableIds = Arrays.stream(templateIds)
+                .filter(id -> !templateIdsWithVehicle.contains(id))
+                .toArray(Long[]::new);
+
+        materialMapper.deleteByTemplateIds(deletableIds);
+        return templateMapper.deleteVehicleTemplateByIds(deletableIds);
     }
 
     @Override
@@ -420,7 +455,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         sinks.put(taskId, sink);
 
         try {
-            List<VehicleTemplate> vehicleTemplates = excelUtil.importExcel(file.getInputStream(), "vehicle_template", VehicleTemplate.class);
+            List<VehicleTemplate> vehicleTemplates = excelUtil.importExcel(file.getInputStream(), "vehicle_template", VehicleTemplate.class, 3);
             List<SysDictData> vehicleModels = remoteDictService.getDictDataByType("vehicle_model").getData();
             // 建立 label -> dictCode 映射，避免双重循环
             Map<String, String> labelToCodeMap = vehicleModels.stream()

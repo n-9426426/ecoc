@@ -4,6 +4,7 @@ import com.ruoyi.vehicle.domain.VehicleTemplate;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
+import java.util.Map;
 
 public interface VehicleTemplateMapper {
 
@@ -55,4 +56,12 @@ public interface VehicleTemplateMapper {
     int updateVehicleTemplateExpired(@Param("vehicleTemplateIds") List<Long> vehicleTemplateIds, @Param("status") Integer status);
 
     int updateVehicleTemplateId(@Param("vin") String vin, @Param("templateId") Long templateId);
+
+    /**
+     * 根据模板ID列表，查询每个模板下关联的 vehicle_info 数量
+     *
+     * @param templateIds 模板ID数组
+     * @return 每个模板ID及其对应的车辆数量
+     */
+    List<Map<String, Object>> selectVehicleCountByTemplateIds(@Param("templateIds") Long[] templateIds);
 }

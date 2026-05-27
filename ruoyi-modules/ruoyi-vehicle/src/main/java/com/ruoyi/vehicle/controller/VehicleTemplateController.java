@@ -14,9 +14,11 @@ import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.domain.VehicleTemplateMaterial;
 import com.ruoyi.vehicle.service.IVehicleTemplateService;
 import com.ruoyi.vehicle.utils.ExcelUtil;
+import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -24,6 +26,8 @@ import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
 
 import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.net.URLEncoder;
 import java.util.List;
 import java.util.Map;
 
@@ -219,6 +223,17 @@ public class VehicleTemplateController extends BaseController {
             vehicleTemplateService.sendError(taskId, data);
         }
         return AjaxResult.success();
+    }
+
+    @GetMapping("/download")
+    public void downloadTemplate(HttpServletResponse response) throws IOException {
+        String fileName = "COC模版.xlsx";
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition", "attachment; filename=" + URLEncoder.encode(fileName, "UTF-8"));
+
+        ClassPathResource resource = new ClassPathResource("assets/" + fileName);
+        IOUtils.copy(resource.getInputStream(), response.getOutputStream());
+        response.flushBuffer();
     }
 
     private FileTypeEnum validateFile(MultipartFile file) {

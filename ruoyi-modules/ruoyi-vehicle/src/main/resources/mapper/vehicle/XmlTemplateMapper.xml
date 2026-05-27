@@ -44,6 +44,12 @@
             <if test="isLast != null">
                 and is_last = #{isLast}
             </if>
+            <if test="energyType != null">
+                and energy_type in (#{energyType})
+            </if>
+            <if test="country != null and country != ''">
+                AND FIND_IN_SET(#{country}, country) > 0
+            </if>
         </where>
         ORDER BY create_time DESC
     </select>
@@ -51,7 +57,7 @@
     <!-- 根据ID查询 -->
     <select id="selectById" resultMap="XmlTemplateResult">
         SELECT * FROM xml_template
-        WHERE template_id = #{templateId} AND deleted = 0
+        WHERE template_id = #{templateId} AND deleted = 0 and status = 0
     </select>
 
     <!-- 插入 -->
@@ -102,5 +108,17 @@
         update xml_template
         SET is_last = 0
         where uuid = #{uuid}
+    </update>
+
+    <!-- 状态互转：0改为1，1改为0 -->
+    <update id="toggleStatusByIds">
+        UPDATE xml_template
+        SET status = CASE WHEN status = 0 THEN 1 ELSE 0 END,
+        update_time = SYSDATE()
+        WHERE deleted = 0
+        AND template_id IN
+        <foreach collection="xmlIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
     </update>
 </mapper>

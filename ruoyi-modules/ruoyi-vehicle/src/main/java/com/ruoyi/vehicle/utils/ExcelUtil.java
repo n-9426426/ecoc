@@ -201,11 +201,26 @@ public class ExcelUtil {
 
     // ==================== 导入 ====================
 
+    /**
+     * 通用动态导入
+     *
+     * @param inputStream Excel 输入流
+     * @param tableName   数据库中配置的 table_name
+     * @param clazz       目标实体类
+     * @param skipRows    可选参数，表示在固定表头行（第1行）之后额外跳过的行数，默认为 0。
+     *                    例如传入 2，则第2、3行数据跳过不导入，从第4行开始读取。
+     */
     public <T> List<T> importExcel(InputStream inputStream,
                                    String tableName,
-                                   Class<T> clazz) throws Exception {
+                                   Class<T> clazz,
+                                   Integer... skipRows) throws Exception {
+        // 解析跳过行数，默认 0
+        int skipCount = (skipRows != null && skipRows.length > 0 && skipRows[0] != null)
+                ? Math.max(skipRows[0], 0)
+                : 0;
+
         String lang = resolveCurrentLang();
-        log.info("导入 Excel，tableName={}，lang={}", tableName, lang);
+        log.info("导入 Excel，tableName={}，lang={}，跳过数据行数={}", tableName, lang, skipCount);
 
         List<ExcelColumnConfig> configs = getConfigs(tableName);
         if (configs.isEmpty()) {
@@ -250,7 +265,9 @@ public class ExcelUtil {
                 }
             }
 
-            for (int rowIdx = 1; rowIdx <= sheet.getLastRowNum(); rowIdx++) {
+            // 数据起始行：第0行为固定表头，第1~skipCount行为跳过行，从 1+skipCount 开始读取
+            int dataStartRow = 1 + skipCount;
+            for (int rowIdx = dataStartRow; rowIdx <= sheet.getLastRowNum(); rowIdx++) {
                 Row row = sheet.getRow(rowIdx);
                 if (isEmptyRow(row)) continue;
 
