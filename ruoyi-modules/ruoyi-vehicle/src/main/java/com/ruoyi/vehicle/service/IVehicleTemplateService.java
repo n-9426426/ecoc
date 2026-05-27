@@ -49,4 +49,6 @@ public interface IVehicleTemplateService {
     List<VehicleTemplate> selectVehicleTemplateExpiringList();
 
     List<VehicleTemplate> selectVehicleTemplateEffectingList();
+
+    void evictDictCache(String dictType);
 }

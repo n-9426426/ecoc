@@ -92,8 +92,8 @@ public class XmlTemplateController extends BaseController {
     }
 
     @RequiresPermissions("xml:template:edit")
-    @PostMapping("/changeStatus/{xmlIds}")
-    public AjaxResult changeStatus(@PathVariable Long... xmlIds) {
+    @PostMapping("/changeStatus")
+    public AjaxResult changeStatus(@RequestBody Long[] xmlIds) {
         return AjaxResult.success(xmlTemplateService.changeStatus(xmlIds));
     }
 }

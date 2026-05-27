@@ -8,7 +8,6 @@ import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.model.FieldValidationResult;
 import com.ruoyi.common.core.model.RuleViolation;
 import com.ruoyi.common.core.model.ValidationReport;
-import com.ruoyi.common.core.parser.ValueMappingParser;
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.utils.bean.BeanUtils;
@@ -171,8 +170,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null
                 ? SecurityUtils.getUsername() : "MES To System");
 
-        VehicleInfo row = jsonConvert(vehicleInfo);
-
+        // VehicleTemplate.json 已在模板导入阶段完成字段映射，直接使用
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
         vehicleLifecycle.setEntryId(vehicleInfo.getVehicleId());
         vehicleLifecycle.setTime(new Date());
@@ -182,14 +180,14 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleLifecycleMapper.insert(vehicleLifecycle);
 
         validateVehicleInfo(Collections.singletonList(vehicleInfo.getVehicleId()));
-        int insertRow = vehicleInfoMapper.insertVehicleInfo(row);
+        int insertRow = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
         if (vehicleInfo.getBreakpointTime() != null) {
             String sb =
                     "车辆VIN " +
-                    vehicleInfo.getVin() +
-                    " 存在断点: " +
-                    DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getBreakpointTime()) +
-                    System.lineSeparator();
+                            vehicleInfo.getVin() +
+                            " 存在断点: " +
+                            DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getBreakpointTime()) +
+                            System.lineSeparator();
             Map<String, String> params = new HashMap<>();
             params.put("vin", vehicleInfo.getVin());
             params.put("vehicleModel", vehicleInfo.getVehicleModel());
@@ -248,8 +246,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
             vehicleInfo.setWvtaNo(template.getWvtaCocNo());
             vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
+            // VehicleTemplate.json 已在导入阶段完成字段映射，直接使用，无需再次转换
             vehicleInfo.setJson(template.getJson());
-            jsonConvert(vehicleInfo);
         }
         // 去掉这里强制重置，交给调用方自己决定
         vehicleInfo.setVin(null);
@@ -410,9 +408,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             sysNotice.setNoticeTitle("车辆信息校验完成通知");
             String msg =
                     "车辆VIN " +
-                    vehicleInfo.getVin() +
-                    " 的校验结果为：" +
-                    (validationReport.isAllValid() ? "通过" : "失败");
+                            vehicleInfo.getVin() +
+                            " 的校验结果为：" +
+                            (validationReport.isAllValid() ? "通过" : "失败");
             sysNotice.setNoticeContent(msg);
             sysNotice.setSorts(Arrays.asList(10, 11));
             sysNotice.setCreateBy("自动提醒");
@@ -555,8 +553,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null
                         ? SecurityUtils.getUsername() : "MES To System");
 
-                VehicleInfo waitInsertORow = jsonConvert(vehicleInfo);
-                vehicleInfoMapper.insertVehicleInfo(waitInsertORow);
+                // VehicleTemplate.json 已在导入阶段完成字段映射，直接使用，无需再次转换
+                vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
 
                 // 写入生命周期
                 VehicleLifecycle lifecycle = new VehicleLifecycle();
@@ -651,364 +649,4 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         return null;
     }
 
-/*    private int insert(VehicleInfo vehicleInfo) {
-        Map<String, Object> map = vehicleInfo.getJsonMap();
-        if (map != null && !map.isEmpty()) {
-            map = new LinkedHashMap<>(map);
-        }
-        Map<String, Object> finalMap = map;
-        if (map != null && !map.isEmpty()) {
-            List<SysDictData> dictDataList = remoteDictService
-                    .getDictDataByType("vehicle_attribute").getData();
-
-            if (dictDataList != null && !dictDataList.isEmpty()) {
-
-                // ── 第一步：按 uuid 分组，无 uuid 的每条独立 ──────────────────
-                Map<String, List<SysDictData>> uuidGroups = new LinkedHashMap<>();
-                for (SysDictData rule : dictDataList) {
-                    String groupKey = StringUtils.isNotBlank(rule.getUuid())
-                            ? rule.getUuid()
-                            : "$$solo$$" + rule.getDictCode();
-                    uuidGroups.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(rule);
-                }
-
-                // ── 第二步：识别单 key_map 链 vs 多 key_map 链 ────────────────
-                Map<String, List<List<SysDictData>>> keyToChains = new LinkedHashMap<>();
-                Map<String, List<SysDictData>> multiKeyChainMap = new LinkedHashMap<>();
-
-                for (Map.Entry<String, List<SysDictData>> groupEntry : uuidGroups.entrySet()) {
-                    List<SysDictData> chain = groupEntry.getValue();
-                    chain.sort(Comparator.comparingLong(SysDictData::getDictCode));
-
-                    long distinctKeyMapCount = chain.stream()
-                            .map(SysDictData::getKeyMap)
-                            .filter(StringUtils::isNotBlank)
-                            .distinct()
-                            .count();
-
-                    if (distinctKeyMapCount > 1) {
-                        multiKeyChainMap.put(groupEntry.getKey(), chain);
-                    } else {
-                        String keyMap = chain.stream()
-                                .map(SysDictData::getKeyMap)
-                                .filter(StringUtils::isNotBlank)
-                                .findFirst()
-                                .orElse(null);
-                        if (keyMap == null) continue;
-                        keyToChains.computeIfAbsent(keyMap, k -> new ArrayList<>()).add(chain);
-                    }
-                }
-
-                Map<String, Object> result = new LinkedHashMap<>();
-
-                // ── 第三步：执行单 key_map 链式规则 ──────────────────────────
-                for (Map.Entry<String, Object> entry : map.entrySet()) {
-                    String fieldName = entry.getKey();
-                    List<List<SysDictData>> chains = keyToChains.get(fieldName);
-
-                    // 无规则：原样保留
-                    if (chains == null || chains.isEmpty()) {
-                        result.put(fieldName, entry.getValue());
-                        continue;
-                    }
-
-                    String rawValue = entry.getValue() == null
-                            ? null : String.valueOf(entry.getValue());
-                    for (List<SysDictData> singleChain : chains) {
-                        String converted = rawValue;
-                        boolean forceEmpty = false; // 是否命中了 NULL 规则
-
-                        for (SysDictData rule : singleChain) {
-                            if (StringUtils.isBlank(rule.getValueMap())) {
-                                converted = "";
-                                break;
-                            }
-                            String stepped = ValueMappingParser.convert(converted, rule.getValueMap());
-                            if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
-                                // NULL 规则：强制置空，终止链式
-                                forceEmpty = true;
-                                break;
-                            }
-                            if (stepped == null) {
-                                log.warn("[insert] value_map 链式第 {} 步返回 null，终止。" +
-                                                "dict_code={}, fieldName={}",
-                                        rule.getDictSort(), rule.getDictCode(), fieldName);
-                                break;
-                            }
-                            converted = stepped;
-                        }
-
-                        if (forceEmpty) {
-                            converted = "";
-                        } else {
-                            converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
-                            converted = "N/A".equals(converted) ? "" : converted;
-                        }
-
-                        String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                        result.put(targetLabel, converted);
-                    }
-                }
-
-                // ── 第四步：执行多 key_map 链 ────────────────────────────────
-                for (List<SysDictData> multiChain : multiKeyChainMap.values()) {
-                    List<String> parts = new ArrayList<>();
-                    SysDictData lastRule = null;
-
-                    for (SysDictData rule : multiChain) {
-                        if (StringUtils.isBlank(rule.getKeyMap())) continue;
-
-                        Object rawObj = map.get(rule.getKeyMap());
-                        String rawValue = rawObj == null ? null : String.valueOf(rawObj);
-
-                        String converted = rawValue;
-                        if (StringUtils.isNotBlank(rule.getValueMap())) {
-                            String stepped = ValueMappingParser.convert(rawValue, rule.getValueMap());
-                            if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
-                                // NULL 规则：本段强制为空，不计入拼接
-                                lastRule = rule;
-                                continue;
-                            }
-                            if (stepped != null) {
-                                converted = stepped;
-                            } else {
-                                log.warn("[insert] 多key_map链转换返回 null，dict_code={}, keyMap={}",
-                                        rule.getDictCode(), rule.getKeyMap());
-                            }
-                        }
-                        converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
-                        converted = "N/A".equals(converted) ? "" : converted;
-
-                        if (StringUtils.isNotBlank(converted)) {
-                            parts.add(converted);
-                        }
-                        lastRule = rule;
-                    }
-
-                    if (lastRule != null && !parts.isEmpty()) {
-                        String targetLabel = lastRule.getDictLabel();
-                        result.put(targetLabel, String.join("/", parts));
-                    }
-                }
-
-                finalMap = result;
-            }
-        }
-
-        try {
-            vehicleInfo.setJson(objectMapper.writeValueAsString(finalMap));
-        } catch (Exception e) {
-            throw new RuntimeException("无法格式化JSON数据");
-        }
-
-        return vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
-    }*/
-
-    private VehicleInfo jsonConvert(VehicleInfo vehicleInfo) {
-        Map<String, Object> map = vehicleInfo.getJsonMap();
-        if (map != null && !map.isEmpty()) {
-            map = new LinkedHashMap<>(map);
-        }
-        Map<String, Object> finalMap = map;
-
-        if (map != null && !map.isEmpty()) {
-            List<SysDictData> dictDataList = remoteDictService
-                    .getDictDataByType("vehicle_attribute").getData();
-
-            if (dictDataList != null && !dictDataList.isEmpty()) {
-
-                // ── 第一步：按 uuid 分组，无 uuid 的每条独立 ──────────────────
-                Map<String, List<SysDictData>> uuidGroups = new LinkedHashMap<>();
-                for (SysDictData rule : dictDataList) {
-                    String groupKey = StringUtils.isNotBlank(rule.getUuid())
-                            ? rule.getUuid()
-                            : "$$solo$$" + rule.getDictCode();
-                    uuidGroups.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(rule);
-                }
-
-                // ── 第二步：识别单 key_map 链 vs 多 key_map 链 ────────────────
-                // keyToChains：keyMap → List<链>（一个keyMap可能对应多条uuid链）
-                Map<String, List<List<SysDictData>>> keyToChains = new LinkedHashMap<>();
-                // multiKeyChainMap：一条链里有多个 keyMap（如 49.1. 拆成多个字段）
-                Map<String, List<SysDictData>> multiKeyChainMap = new LinkedHashMap<>();
-
-                for (Map.Entry<String, List<SysDictData>> groupEntry : uuidGroups.entrySet()) {
-                    List<SysDictData> chain = groupEntry.getValue();
-                    chain.sort(Comparator.comparingLong(SysDictData::getDictCode));
-
-                    long distinctKeyMapCount = chain.stream()
-                            .map(SysDictData::getKeyMap)
-                            .filter(StringUtils::isNotBlank)
-                            .distinct()
-                            .count();
-
-                    if (distinctKeyMapCount > 1) {
-                        multiKeyChainMap.put(groupEntry.getKey(), chain);
-                    } else {
-                        String keyMap = chain.stream()
-                                .map(SysDictData::getKeyMap)
-                                .filter(StringUtils::isNotBlank)
-                                .findFirst()
-                                .orElse(null);
-                        if (keyMap == null) continue;
-                        keyToChains.computeIfAbsent(keyMap, k -> new ArrayList<>()).add(chain);
-                    }
-                }
-
-                Map<String, Object> result = new LinkedHashMap<>();
-
-                // ── 第三步：执行单 key_map 链式规则 ──────────────────────────
-                for (Map.Entry<String, Object> entry : map.entrySet()) {
-                    String fieldName = entry.getKey();
-                    List<List<SysDictData>> chains = keyToChains.get(fieldName);
-
-                    // 无规则：原样保留
-                    if (chains == null || chains.isEmpty()) {
-                        result.put(fieldName, entry.getValue());
-                        continue;
-                    }
-
-                    String rawValue = entry.getValue() == null
-                            ? null : String.valueOf(entry.getValue());
-
-                    // ★ 关键修复：含 \n 的值按行拆分，每行分别匹配链中对应 dictLabel
-                    // 判断：当这个 key 对应多条链（chains.size() > 1）或值含 \n 时，
-                    // 视为多行多值，按行索引分配到各链
-                    boolean isMultiLine = rawValue != null && rawValue.contains("\n");
-
-                    if (isMultiLine && chains.size() > 1) {
-                        // 多行多链：按行顺序依次对应每条链
-                        String[] lines = rawValue.split("\n", -1);
-                        for (int lineIdx = 0; lineIdx < chains.size(); lineIdx++) {
-                            List<SysDictData> singleChain = chains.get(lineIdx);
-                            String lineValue = lineIdx < lines.length
-                                    ? lines[lineIdx].trim() : "";
-
-                            String converted = applyChain(lineValue, singleChain, fieldName);
-                            String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                            if (StringUtils.isNotBlank(converted)) {
-                                result.put(targetLabel, converted);
-                            }
-                        }
-                    } else if (isMultiLine && chains.size() == 1) {
-                        // ★ 单链但多行：说明这个 key 下的值本身就是多行，
-                        // 整体传入链处理（例如 valueMap 用 SPLIT_MULTIROW），
-                        // 或者直接原样保留各行（链不知道怎么拆就原样存）
-                        List<SysDictData> singleChain = chains.get(0);
-                        String converted = applyChain(rawValue, singleChain, fieldName);
-                        String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                        // 如果转换结果还是含 \n（链没有拆分），
-                        // 把 \n 替换成 | 以匹配 eCoC 多值格式
-                        if (converted != null && converted.contains("\n")) {
-                            converted = converted.replace("\n", "|");
-                        }
-                        if (StringUtils.isNotBlank(converted)) {
-                            result.put(targetLabel, converted);
-                        }
-                    } else {
-                        // 单行单链（原有逻辑）
-                        for (List<SysDictData> singleChain : chains) {
-                            String converted = applyChain(rawValue, singleChain, fieldName);
-                            String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                            if (StringUtils.isNotBlank(converted)) {
-                                result.put(targetLabel, converted);
-                            }
-                        }
-                    }
-                }
-
-                // ── 第四步：执行多 key_map 链 ────────────────────────────────
-                // ★ 修复：多 key_map 链里每一段都独立写到自己的 dictLabel，
-                //    不再用 "/" 拼接成一个字符串（否则 INTPI/EL 会写进 WorkingPrinciple）
-                for (List<SysDictData> multiChain : multiKeyChainMap.values()) {
-                    multiChain.sort(Comparator.comparingLong(SysDictData::getDictCode));
-
-                    for (SysDictData rule : multiChain) {
-                        if (StringUtils.isBlank(rule.getKeyMap())) continue;
-                        if (StringUtils.isBlank(rule.getDictLabel())) continue;
-
-                        Object rawObj = map.get(rule.getKeyMap());
-                        String rawValue = rawObj == null ? null : String.valueOf(rawObj);
-
-                        String converted = rawValue;
-                        if (StringUtils.isNotBlank(rule.getValueMap())) {
-                            String stepped = ValueMappingParser.convert(rawValue, rule.getValueMap());
-                            if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
-                                // NULL 规则：本段强制为空，跳过
-                                continue;
-                            }
-                            if (stepped != null) {
-                                converted = stepped;
-                            } else {
-                                log.warn("[insert] 多key_map链转换返回 null，dict_code={}, keyMap={}",
-                                        rule.getDictCode(), rule.getKeyMap());
-                            }
-                        }
-
-                        converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
-                        converted = "N/A".equals(converted) ? "" : converted;
-
-                        // ★ 每一段独立写到自己的 dictLabel
-                        if (StringUtils.isNotBlank(converted)) {
-                            result.put(rule.getDictLabel(), converted);
-                        }
-                    }
-                }
-
-                finalMap = result;
-            }
-        }
-
-        try {
-            vehicleInfo.setJson(objectMapper.writeValueAsString(finalMap));
-        } catch (Exception e) {
-            throw new RuntimeException("无法格式化JSON数据");
-        }
-
-        MaterialBlacklist materialBlacklist = materialBlacklistService.selectMaterialBlacklistByMaterialNo(vehicleInfo.getMaterialNo());
-        if (materialBlacklist == null) {
-            return vehicleInfo;
-        }
-        vehicleInfo.setRemark(StringUtils.isBlank(vehicleInfo.getRemark())
-                ?
-                "该物料号存在于物料号黑名单中"
-                :
-                vehicleInfo.getRemark() + ";" + "该物料号存在于物料号黑名单中");
-
-        return vehicleInfo;
-    }
-
-    /**
-     * ★ 新增辅助方法：对单条链执行链式转换，返回最终值。
-     * 抽取复用，避免在第三步/第四步重复写相同逻辑。
-     */
-    private String applyChain(String rawValue, List<SysDictData> chain, String fieldName) {
-        String converted = rawValue;
-        boolean forceEmpty = false;
-
-        for (SysDictData rule : chain) {
-            if (StringUtils.isBlank(rule.getValueMap())) {
-                converted = "";
-                break;
-            }
-            String stepped = ValueMappingParser.convert(converted, rule.getValueMap());
-            if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
-                forceEmpty = true;
-                break;
-            }
-            if (stepped == null) {
-                log.warn("[insert] value_map 链式第 {} 步返回 null，终止。dict_code={}, fieldName={}",
-                        rule.getDictSort(), rule.getDictCode(), fieldName);
-                break;
-            }
-            converted = stepped;
-        }
-
-        if (forceEmpty) {
-            return "";
-        }
-        converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
-        converted = "N/A".equals(converted) ? "" : converted;
-        return converted;
-    }
 }

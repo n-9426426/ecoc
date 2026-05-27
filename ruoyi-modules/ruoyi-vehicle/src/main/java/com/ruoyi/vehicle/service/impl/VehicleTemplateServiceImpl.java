@@ -9,6 +9,7 @@ import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.model.FieldValidationResult;
 import com.ruoyi.common.core.model.RuleViolation;
 import com.ruoyi.common.core.model.ValidationReport;
+import com.ruoyi.common.core.parser.ValueMappingParser;
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.utils.uuid.UUID;
@@ -47,6 +48,7 @@ import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
+import javax.annotation.PostConstruct;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.*;
@@ -98,8 +100,60 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
     @Autowired
     private RemoteNoticeService remoteNoticeService;
-    @Autowired
-    private VehicleInfoServiceImpl vehicleInfoService;
+
+    /**
+     * 字典缓存：dictType → (dictLabel → dictValue)
+     * 按 dictType 懒加载，首次使用时通过 remoteDictService 拉取并缓存，
+     * 避免 DICT_MAP 规则每次转换都发起远程调用。
+     */
+    private final Map<String, Map<String, String>> dictCache = new ConcurrentHashMap<>();
+
+    /**
+     * Spring 容器初始化完成后，将带缓存的字典查找逻辑注入到 ValueMappingParser。
+     * DICT_MAP 规则（如 value_map = "DICT_MAP:color"）执行时会回调此处，
+     * 以 rawValue 作为 dict_label，在指定 dictType 中查找对应 dict_value。
+     */
+    @PostConstruct
+    public void initDictProvider() {
+        ValueMappingParser.setDictProvider((dictType, dictLabel) -> {
+            Map<String, String> labelToValue = dictCache.computeIfAbsent(dictType, type -> {
+                try {
+                    List<SysDictData> list = remoteDictService.getDictDataByType(type).getData();
+                    Map<String, String> map = new LinkedHashMap<>();
+                    if (list != null) {
+                        for (SysDictData d : list) {
+                            if (StringUtils.isNotBlank(d.getDictLabel())) {
+                                map.put(d.getDictLabel(), d.getDictValue());
+                            }
+                        }
+                    }
+                    return map;
+                } catch (Exception e) {
+                    log.error("[DictProvider] 加载字典失败 dictType={}: {}", type, e.getMessage());
+                    return Collections.emptyMap();
+                }
+            });
+            return labelToValue.get(dictLabel);
+        });
+        log.info("[DictProvider] ValueMappingParser 字典提供者已注入（带缓存）");
+    }
+
+    /**
+     * 清除字典缓存。
+     * 在字典数据变更后可主动调用，使下次 DICT_MAP 转换重新从 remoteDictService 拉取最新数据。
+     *
+     * @param dictType 指定类型清除；传 null 则清除全部缓存
+     */
+    @Override
+    public void evictDictCache(String dictType) {
+        if (dictType == null) {
+            dictCache.clear();
+            log.info("[DictProvider] 已清除全部字典缓存");
+        } else {
+            dictCache.remove(dictType);
+            log.info("[DictProvider] 已清除字典缓存 dictType={}", dictType);
+        }
+    }
 
     @Override
     public List<VehicleTemplate> selectVehicleTemplateList(VehicleTemplate template) {
@@ -455,7 +509,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         sinks.put(taskId, sink);
 
         try {
-            List<VehicleTemplate> vehicleTemplates = excelUtil.importExcel(file.getInputStream(), "vehicle_template", VehicleTemplate.class, 3);
+            List<VehicleTemplate> vehicleTemplates = excelUtil.importExcel(file.getInputStream(), "vehicle_template", VehicleTemplate.class, 1);
             List<SysDictData> vehicleModels = remoteDictService.getDictDataByType("vehicle_model").getData();
             // 建立 label -> dictCode 映射，避免双重循环
             Map<String, String> labelToCodeMap = vehicleModels.stream()
@@ -487,8 +541,12 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 template.setValidateResult("1");
                 template.setCreateBy(SecurityUtils.getUsername());
                 template.setCreateTime(DateUtils.getNowDate());
-                Map<String, String> jsonMap = JSONObject.parseObject(template.getJson(), new TypeReference<Map<String, String>>() {});
-                template.setTvv(jsonMap.get(keyMap.get("Type")).replace(" ", ","));
+                // Excel 解析后立即对 json 做字段映射，模板保存映射后的值
+                // VehicleInfo 后续直接复用此 json，无需再次转换
+                String mappedJson = jsonConvertFromTemplateJson(template.getJson());
+                template.setJson(mappedJson);
+                Map<String, String> jsonMap = JSONObject.parseObject(mappedJson, new TypeReference<Map<String, String>>() {});
+                template.setTvv(jsonMap.get("Type") + "," + jsonMap.get("Variant") + "," + jsonMap.get("Version"));
                 templateMapper.insertVehicleTemplate(template);
             });
         } catch (Exception e) {
@@ -601,5 +659,199 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         query.setIsLast(0);
         query.setUuid(vehicleTemplate.getUuid());
         return templateMapper.selectVehicleTemplateList(query);
+    }
+
+    /**
+     * 将模板原始 JSON 字符串按 vehicle_attribute 字典规则做字段映射，返回映射后的 JSON 字符串。
+     * 在 Excel 导入解析完成后立即调用，使模板保存的就是映射后的值；
+     * VehicleInfo 后续直接复用此 json，无需再次转换。
+     *
+     * @param templateJson 原始 JSON 字符串（映射前）
+     * @return 映射后的 JSON 字符串
+     */
+    public String jsonConvertFromTemplateJson(String templateJson) {
+        Map<String, Object> map = null;
+        if (StringUtils.isNotBlank(templateJson)) {
+            try {
+                map = objectMapper.readValue(templateJson,
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+            } catch (Exception e) {
+                throw new RuntimeException("模板 JSON 解析失败: " + e.getMessage());
+            }
+        }
+        if (map != null && !map.isEmpty()) {
+            map = new LinkedHashMap<>(map);
+        }
+        Map<String, Object> finalMap = map;
+
+        if (map != null && !map.isEmpty()) {
+            List<SysDictData> dictDataList = remoteDictService
+                    .getDictDataByType("vehicle_attribute").getData();
+
+            if (dictDataList != null && !dictDataList.isEmpty()) {
+
+                // ── 第一步：按 uuid 分组，无 uuid 的每条独立 ──────────────────
+                Map<String, List<SysDictData>> uuidGroups = new LinkedHashMap<>();
+                for (SysDictData rule : dictDataList) {
+                    String groupKey = StringUtils.isNotBlank(rule.getUuid())
+                            ? rule.getUuid()
+                            : "$$solo$$" + rule.getDictCode();
+                    uuidGroups.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(rule);
+                }
+
+                // ── 第二步：识别单 key_map 链 vs 多 key_map 链 ────────────────
+                Map<String, List<List<SysDictData>>> keyToChains = new LinkedHashMap<>();
+                Map<String, List<SysDictData>> multiKeyChainMap = new LinkedHashMap<>();
+
+                for (Map.Entry<String, List<SysDictData>> groupEntry : uuidGroups.entrySet()) {
+                    List<SysDictData> chain = groupEntry.getValue();
+                    chain.sort(Comparator.comparingLong(SysDictData::getDictCode));
+
+                    long distinctKeyMapCount = chain.stream()
+                            .map(SysDictData::getKeyMap)
+                            .filter(StringUtils::isNotBlank)
+                            .distinct()
+                            .count();
+
+                    if (distinctKeyMapCount > 1) {
+                        multiKeyChainMap.put(groupEntry.getKey(), chain);
+                    } else {
+                        String keyMap = chain.stream()
+                                .map(SysDictData::getKeyMap)
+                                .filter(StringUtils::isNotBlank)
+                                .findFirst()
+                                .orElse(null);
+                        if (keyMap == null) continue;
+                        keyToChains.computeIfAbsent(keyMap, k -> new ArrayList<>()).add(chain);
+                    }
+                }
+
+                Map<String, Object> result = new LinkedHashMap<>();
+
+                // ── 第三步：执行单 key_map 链式规则 ──────────────────────────
+                for (Map.Entry<String, Object> entry : map.entrySet()) {
+                    String fieldName = entry.getKey();
+                    List<List<SysDictData>> chains = keyToChains.get(fieldName);
+
+                    // 无规则：原样保留
+                    if (chains == null || chains.isEmpty()) {
+                        result.put(fieldName, entry.getValue());
+                        continue;
+                    }
+
+                    String rawValue = entry.getValue() == null
+                            ? null : String.valueOf(entry.getValue());
+
+                    // 含 \n 的值按行拆分，每行分别匹配链中对应 dictLabel
+                    boolean isMultiLine = rawValue != null && rawValue.contains("\n");
+
+                    if (isMultiLine && chains.size() > 1) {
+                        // 多行多链：按行顺序依次对应每条链
+                        String[] lines = rawValue.split("\n", -1);
+                        for (int lineIdx = 0; lineIdx < chains.size(); lineIdx++) {
+                            List<SysDictData> singleChain = chains.get(lineIdx);
+                            String lineValue = lineIdx < lines.length
+                                    ? lines[lineIdx].trim() : "";
+                            String converted = applyChain(lineValue, singleChain, fieldName);
+                            String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
+                            if (StringUtils.isNotBlank(converted)) {
+                                result.put(targetLabel, converted);
+                            }
+                        }
+                    } else if (isMultiLine && chains.size() == 1) {
+                        // 单链但多行：整体传入链处理，\n 替换成 | 以匹配 eCoC 多值格式
+                        List<SysDictData> singleChain = chains.get(0);
+                        String converted = applyChain(rawValue, singleChain, fieldName);
+                        String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
+                        if (converted != null && converted.contains("\n")) {
+                            converted = converted.replace("\n", "|");
+                        }
+                        if (StringUtils.isNotBlank(converted)) {
+                            result.put(targetLabel, converted);
+                        }
+                    } else {
+                        // 单行单链
+                        for (List<SysDictData> singleChain : chains) {
+                            String converted = applyChain(rawValue, singleChain, fieldName);
+                            String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
+                            if (StringUtils.isNotBlank(converted)) {
+                                result.put(targetLabel, converted);
+                            }
+                        }
+                    }
+                }
+
+                // ── 第四步：执行多 key_map 链 ────────────────────────────────
+                // 多 key_map 链里每一段都独立写到自己的 dictLabel
+                for (List<SysDictData> multiChain : multiKeyChainMap.values()) {
+                    multiChain.sort(Comparator.comparingLong(SysDictData::getDictCode));
+                    for (SysDictData rule : multiChain) {
+                        if (StringUtils.isBlank(rule.getKeyMap())) continue;
+                        if (StringUtils.isBlank(rule.getDictLabel())) continue;
+                        Object rawObj = map.get(rule.getKeyMap());
+                        String rawValue = rawObj == null ? null : String.valueOf(rawObj);
+                        String converted = rawValue;
+                        if (StringUtils.isNotBlank(rule.getValueMap())) {
+                            String stepped = ValueMappingParser.convert(rawValue, rule.getValueMap());
+                            if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
+                                continue;
+                            }
+                            if (stepped != null) {
+                                converted = stepped;
+                            } else {
+                                log.warn("[jsonConvertFromTemplateJson] 多key_map链转换返回 null，dict_code={}, keyMap={}",
+                                        rule.getDictCode(), rule.getKeyMap());
+                            }
+                        }
+                        converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
+                        converted = "N/A".equals(converted) ? "" : converted;
+                        if (StringUtils.isNotBlank(converted)) {
+                            result.put(rule.getDictLabel(), converted);
+                        }
+                    }
+                }
+
+                finalMap = result;
+            }
+        }
+
+        try {
+            return objectMapper.writeValueAsString(finalMap != null ? finalMap : new LinkedHashMap<>());
+        } catch (Exception e) {
+            throw new RuntimeException("模板 JSON 映射后序列化失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 对单条链执行链式转换，返回最终值。
+     */
+    private String applyChain(String rawValue, List<SysDictData> chain, String fieldName) {
+        String converted = rawValue;
+        boolean forceEmpty = false;
+
+        for (SysDictData rule : chain) {
+            if (StringUtils.isBlank(rule.getValueMap())) {
+                converted = "";
+                break;
+            }
+            String stepped = ValueMappingParser.convert(converted, rule.getValueMap());
+            if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
+                forceEmpty = true;
+                break;
+            }
+            if (stepped == null) {
+                log.warn("[applyChain] value_map 链式第 {} 步返回 null，终止。dict_code={}, fieldName={}",
+                        rule.getDictSort(), rule.getDictCode(), fieldName);
+                break;
+            }
+            converted = stepped;
+        }
+
+        if (forceEmpty) {
+            return "";
+        }
+        converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
+        converted = "N/A".equals(converted) ? "" : converted;
+        return converted;
     }
 }
