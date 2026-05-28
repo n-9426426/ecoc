@@ -92,13 +92,46 @@ public class ExcelUtil {
             CellStyle headerStyle = createHeaderStyle(workbook);
             CellStyle dateStyle   = createDateStyle(workbook);
 
+            // 收集 configs 中已配置的 json 叶子 key 集合（fieldName 为 "json.xxx" 格式）
+            Set<String> configuredJsonKeys = configs.stream()
+                    .map(ExcelColumnConfig::getFieldName)
+                    .filter(f -> f.startsWith("json."))
+                    .map(f -> f.substring("json.".length()))
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+
+            // 扫描所有数据行的 json 字段，收集未在 configs 中配置的额外 key（保持首次出现顺序）
+            List<Map<String, String>> allFlatJsonMaps = new ArrayList<>();
+            List<String> extraJsonKeys = new ArrayList<>();
+            Set<String> extraJsonKeySet = new LinkedHashSet<>();
+            for (T entity : dataList) {
+                Map<String, String> flatJsonMap = resolveFlatJsonMap(entity);
+                allFlatJsonMaps.add(flatJsonMap);
+                for (String key : flatJsonMap.keySet()) {
+                    if (!configuredJsonKeys.contains(key) && extraJsonKeySet.add(key)) {
+                        extraJsonKeys.add(key);
+                    }
+                }
+            }
+            log.info("json 中未配置的额外列：{}", extraJsonKeys);
+
+            // 最终列顺序 = configs 配置列 + 额外 json 键列
+            int configColCount = configs.size();
+            int totalColCount  = configColCount + extraJsonKeys.size();
+
             // 写列头
             Row headerRow = sheet.createRow(0);
-            for (int i = 0; i < configs.size(); i++) {
+            for (int i = 0; i < configColCount; i++) {
                 Cell cell = headerRow.createCell(i);
                 cell.setCellValue(configs.get(i).getColumnName(lang));
                 cell.setCellStyle(headerStyle);
                 sheet.setColumnWidth(i, 20 * 256);
+            }
+            for (int i = 0; i < extraJsonKeys.size(); i++) {
+                Cell cell = headerRow.createCell(configColCount + i);
+                // 未配置的 json key 直接作为列头
+                cell.setCellValue(extraJsonKeys.get(i));
+                cell.setCellStyle(headerStyle);
+                sheet.setColumnWidth(configColCount + i, 20 * 256);
             }
 
             // 写数据行
@@ -106,10 +139,11 @@ public class ExcelUtil {
                 Row row    = sheet.createRow(rowIdx + 1);
                 T   entity = dataList.get(rowIdx);
 
-                // 预解析 json 字段为扁平 Map，key=最终叶子key，value=分号拼接的所有匹配值
-                Map<String, String> flatJsonMap = resolveFlatJsonMap(entity);
+                // 直接取预先解析好的扁平 Map
+                Map<String, String> flatJsonMap = allFlatJsonMaps.get(rowIdx);
 
-                for (int colIdx = 0; colIdx < configs.size(); colIdx++) {
+                // 写 configs 配置列
+                for (int colIdx = 0; colIdx < configColCount; colIdx++) {
                     Cell   cell      = row.createCell(colIdx);
                     String fieldName = configs.get(colIdx).getFieldName();
                     Object value;
@@ -132,6 +166,13 @@ public class ExcelUtil {
                         }
                     }
 
+                    setCellValue(cell, value, dateStyle);
+                }
+
+                // 写额外 json 键列（key 直接作为列头，值从 flatJsonMap 取）
+                for (int i = 0; i < extraJsonKeys.size(); i++) {
+                    Cell cell = row.createCell(configColCount + i);
+                    String value = flatJsonMap.getOrDefault(extraJsonKeys.get(i), null);
                     setCellValue(cell, value, dateStyle);
                 }
             }
@@ -201,11 +242,26 @@ public class ExcelUtil {
 
     // ==================== 导入 ====================
 
+    /**
+     * 通用动态导入
+     *
+     * @param inputStream Excel 输入流
+     * @param tableName   数据库中配置的 table_name
+     * @param clazz       目标实体类
+     * @param skipRows    可选参数，表示在固定表头行（第1行）之后额外跳过的行数，默认为 0。
+     *                    例如传入 2，则第2、3行数据跳过不导入，从第4行开始读取。
+     */
     public <T> List<T> importExcel(InputStream inputStream,
                                    String tableName,
-                                   Class<T> clazz) throws Exception {
+                                   Class<T> clazz,
+                                   Integer... skipRows) throws Exception {
+        // 解析跳过行数，默认 0
+        int skipCount = (skipRows != null && skipRows.length > 0 && skipRows[0] != null)
+                ? Math.max(skipRows[0], 0)
+                : 0;
+
         String lang = resolveCurrentLang();
-        log.info("导入 Excel，tableName={}，lang={}", tableName, lang);
+        log.info("导入 Excel，tableName={}，lang={}，跳过数据行数={}", tableName, lang, skipCount);
 
         List<ExcelColumnConfig> configs = getConfigs(tableName);
         if (configs.isEmpty()) {
@@ -250,7 +306,9 @@ public class ExcelUtil {
                 }
             }
 
-            for (int rowIdx = 1; rowIdx <= sheet.getLastRowNum(); rowIdx++) {
+            // 数据起始行：第0行为固定表头，第1~skipCount行为跳过行，从 1+skipCount 开始读取
+            int dataStartRow = 1 + skipCount;
+            for (int rowIdx = dataStartRow; rowIdx <= sheet.getLastRowNum(); rowIdx++) {
                 Row row = sheet.getRow(rowIdx);
                 if (isEmptyRow(row)) continue;
 

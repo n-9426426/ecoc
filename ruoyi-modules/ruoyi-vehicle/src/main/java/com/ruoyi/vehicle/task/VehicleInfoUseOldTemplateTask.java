@@ -1,8 +1,11 @@
 package com.ruoyi.vehicle.task;
 
+import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.core.domain.R;
+import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.domain.SysNotice;
+import com.ruoyi.system.api.enums.SysNoticeModel;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -10,10 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.util.Arrays;
-import java.util.Date;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.util.*;
 
 @Slf4j
 @Component
@@ -32,26 +32,27 @@ public class VehicleInfoUseOldTemplateTask {
         if (vehicleInfoList.isEmpty()) {
             return;
         }
-        StringBuilder msg = new StringBuilder("以下车辆信息:");
-        msg.append(System.lineSeparator());
         for (VehicleInfo vehicleInfo : vehicleInfoList) {
-            msg.append(vehicleInfo.getVin())
-                    .append(System.lineSeparator());
-        }
-        msg.append("生成时使用的车辆模版不是最新版本的车辆模版");
-        if(sentNotice(msg).getCode() == 200) {
-            List<Long> vehicleInfoIds = vehicleInfoList.stream()
-                    .map(VehicleInfo::getVehicleId)
-                    .collect(Collectors.toList());
-            if (vehicleInfoIds.isEmpty()){
-                return;
-            }
-            vehicleInfoMapper.updateVehicleInfoOldTemplate(vehicleInfoIds, 1);
+            vehicleInfoMapper.updateVehicleInfoOldTemplate(Collections.singletonList(vehicleInfo.getVehicleId()), 1);
+            StringBuilder msg = new StringBuilder();
+            msg.append("车辆vin ").append(vehicleInfo.getVin())
+                    .append(" 生成车辆信息时使用的车辆模版不是最新版本的车辆模版");
+            vehicleInfoMapper.updateVehicleInfoOldTemplate(Collections.singletonList(vehicleInfo.getVehicleId()), 1);
+            Map<String, String> params = new HashMap<>();
+            params.put("vin", vehicleInfo.getVin());
+            params.put("vehicleModel", vehicleInfo.getVehicleModel());
+            params.put("factoryCode", vehicleInfo.getFactoryCode());
+            params.put("country", vehicleInfo.getCountry());
+            params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            params.put("materialNo", vehicleInfo.getMaterialNo());
+            sentNotice(msg, params);
         }
     }
 
-    private R<?> sentNotice(StringBuilder msg){
+    private R<?> sentNotice(StringBuilder msg, Map<String, String> params) {
         SysNotice sysNotice = new SysNotice();
+        sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
+        sysNotice.setQueryParams(JSON.toJSONString(params));
         sysNotice.setIsRead(false);
         sysNotice.setStatus("0");
         sysNotice.setNoticeType("1");

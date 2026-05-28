@@ -17,7 +17,6 @@ import com.ruoyi.system.api.RemoteLoginService;
 import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.LoginBody;
-import com.ruoyi.system.api.domain.SysNotice;
 import com.ruoyi.system.api.domain.SysUser;
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.VehicleInfo;
@@ -25,13 +24,17 @@ import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.utils.ExcelUtil;
 import io.swagger.v3.oas.annotations.Operation;
+import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.net.URLEncoder;
 import java.util.*;
 import java.util.stream.Collectors;
 @RestController
@@ -87,12 +90,8 @@ public class VehicleInfoController extends BaseController {
         // 用完整的 loginUser 往下传
         List<Map<String, Object>> result = new LinkedList<>();
         Date now = new Date();
-        Map<String, Date> hasBreakpointVin = new LinkedHashMap<>();
         for (VehicleDto.Vehicle vehicle : vehicleDto.getVehicles()) {
             Map<String, Object> resultItem = new LinkedHashMap<>();
-            if (vehicle.getBreakpoint() != null) {
-                hasBreakpointVin.put(vehicle.getVin(), vehicle.getBreakpoint());
-            }
             try {
                 resultItem = vehicleInfoService.getVehicleInfoFromMes(vehicle, now, fullLoginUser);
                 result.add(resultItem);
@@ -102,26 +101,6 @@ public class VehicleInfoController extends BaseController {
                 resultItem.put("receiveTime", DateUtils.format(now, "yyyy-MM-dd HH:mm:ss"));
                 resultItem.put("cause", e.getMessage());
             }
-        }
-        if (!hasBreakpointVin.isEmpty()) {
-            StringBuilder sb = new StringBuilder();
-            for (String key : hasBreakpointVin.keySet()) {
-                sb.append("车辆VIN ")
-                        .append(key)
-                        .append(" 存在断点: ")
-                        .append(DateUtils.format(now, "yyyy-MM-dd HH:mm:ss"))
-                        .append(System.lineSeparator());
-            }
-            SysNotice sysNotice = new SysNotice();
-            sysNotice.setIsRead(false);
-            sysNotice.setStatus("0");
-            sysNotice.setNoticeType("1");
-            sysNotice.setNoticeTitle("MES系统推送断点提醒");
-            sysNotice.setNoticeContent(sb.toString());
-            sysNotice.setCreateBy("自动提醒");
-            sysNotice.setCreateTime(new Date());
-            sysNotice.setSorts(Arrays.asList(16, 17));
-            remoteNoticeService.innerAdd(sysNotice);
         }
         return AjaxResult.success(result);
     }
@@ -263,5 +242,29 @@ public class VehicleInfoController extends BaseController {
     public AjaxResult selectVehicleTemplateIdByCondition(@RequestBody VehicleInfo vehicleInfo) {
         return AjaxResult.success(vehicleInfoService.selectVehicleTemplateIdByCondition(
                 vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(), vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getTvv()));
+    }
+
+    @GetMapping("/download/vin")
+    public void downloadVinTemplate(HttpServletResponse response) throws IOException {
+        download("车辆信息VIN查询模版.xlsx", response);
+    }
+
+    @GetMapping("/download/materialNo")
+    public void downloadMaterialNoTemplate(HttpServletResponse response) throws IOException {
+        download("车辆信息物料号查询模版.xlsx", response);
+    }
+
+    @GetMapping("/download/template")
+    public void downloadTemplate(HttpServletResponse response) throws IOException {
+        download("车辆信息模版.xlsx", response);
+    }
+
+    private void download(String fileName, HttpServletResponse response) throws IOException {
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition", "attachment; filename=" + URLEncoder.encode(fileName, "UTF-8"));
+
+        ClassPathResource resource = new ClassPathResource("assets/" + fileName);
+        IOUtils.copy(resource.getInputStream(), response.getOutputStream());
+        response.flushBuffer();
     }
 }

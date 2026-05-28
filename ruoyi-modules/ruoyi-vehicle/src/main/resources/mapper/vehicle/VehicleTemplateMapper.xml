@@ -331,4 +331,15 @@
         SET vehicle_template_id = #{templateId}
         WHERE vin = #{vin}
     </update>
+
+    <!-- ==================== 查询模板关联的车辆数量及VIN ==================== -->
+    <select id="selectVehicleCountByTemplateIds" resultType="java.util.HashMap">
+        SELECT vt.template_id AS templateId, vt.wvta_coc_no AS wvtaCocNo, vt.coc_template_no  AS cocTemplateNo, vt.version AS version, vi.vin AS vin
+        FROM vehicle_template vt
+        LEFT JOIN vehicle_info vi ON vi.vehicle_template_id = vt.template_id
+        WHERE vt.del_flag = '0' AND vt.template_id IN
+        <foreach collection="templateIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
 </mapper>

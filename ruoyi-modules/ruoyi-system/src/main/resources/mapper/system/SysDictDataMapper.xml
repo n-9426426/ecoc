@@ -5,38 +5,41 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 <mapper namespace="com.ruoyi.system.mapper.SysDictDataMapper">
 	
 	<resultMap type="SysDictData" id="SysDictDataResult">
-		<id     property="dictCode"    column="dict_code"   />
-		<result property="dictSort"    column="dict_sort"   />
-		<result property="dictLabel"   column="dict_label"  />
-		<result property="dictValue"   column="dict_value"  />
-		<result property="dictType"    column="dict_type"   />
-		<result property="cssClass"    column="css_class"   />
-		<result property="rule"        column="rule"        />
-		<result property="rangeRule"   column="range_rule"  />
-		<result property="keyMap"      column="key_map"     />
-		<result property="valueMap"    column="value_map"     />
-		<result property="isDefault"   column="is_default"  />
-		<result property="status"      column="status"      />
-		<result property="createBy"    column="create_by"   />
-		<result property="createTime"  column="create_time" />
-		<result property="updateBy"    column="update_by"   />
-		<result property="updateTime"  column="update_time" />
-		<result property="dictTypeStr" column="dict_type_str"/>
-		<result property="dictTypeAffiliation" column="dict_type_affiliation"/>
+		<id     property="dictCode"    			  column="dict_code"   />
+		<result property="dictSort"    			  column="dict_sort"   />
+		<result property="dictLabel"   			  column="dict_label"  />
+		<result property="dictValue"   			  column="dict_value"  />
+		<result property="dictType"    			  column="dict_type"   />
+		<result property="cssClass"    			  column="css_class"   />
+		<result property="rule"        			  column="rule"        />
+		<result property="rangeRule"   			  column="range_rule"  />
+		<result property="keyMap"      			  column="key_map"     />
+		<result property="valueMap"    			  column="value_map"     />
+		<result property="isDefault"   			  column="is_default"  />
+		<result property="status"      			  column="status"      />
+		<result property="createBy"    			  column="create_by"   />
+		<result property="createTime"  			  column="create_time" />
+		<result property="updateBy"      		  column="update_by"   />
+		<result property="updateTime"  			  column="update_time" />
+		<result property="dictTypeStr" 			  column="dict_type_str"/>
+		<result property="dictTypeAffiliation" 	  column="dict_type_affiliation"/>
 		<result property="dictTypeAffiliationStr" column="dict_type_affiliation_str"/>
-		<result property="ruleType" column="rule_type"/>
-		<result property="originalSystem" column="original_system"/>
-		<result property="uuid" column="uuid"/>
+		<result property="ruleType"	   			  column="rule_type"/>
+		<result property="originalSystem" 		  column="original_system"/>
+		<result property="uuid"		   			  column="uuid"/>
+		<result property="otherLabel"  			  column="other_label"/>
+		<result property="otherLabelSystem"  	  column="other_label_system"/>
 	</resultMap>
-	
+
 	<sql id="selectDictDataVo">
-        select sdd.dict_code, sdd.dict_sort, sdd.dict_label, sdd.dict_value, sdd.dict_type, sdd.css_class, sdd.rule, sdd.range_rule,
-               sdd.key_map, sdd.value_map, sdd.is_default, sdd.status, sdd.create_by, sdd.create_time, sdd.remark, sdd.dict_type_affiliation,
-               sdd.original_system, sdt.dict_name as dict_type_str, sdd2.dict_label as dict_type_affiliation_str, sdd.rule_type, sdd.uuid
+		select sdd.dict_code, sdd.dict_sort, sdd.dict_label, sdd.dict_value, sdd.dict_type, sdd.css_class, sdd.rule, sdd.range_rule,
+			   sdd.key_map, sdd.value_map, sdd.is_default, sdd.status, sdd.create_by, sdd.create_time, sdd.remark, sdd.dict_type_affiliation,
+			   sdd.original_system, sdt.dict_name as dict_type_str, sdd2.dict_label as dict_type_affiliation_str, sdd.rule_type, sdd.uuid,
+			   sdd.other_label, sdd.other_label_system
 		from sys_dict_data sdd
 		left join sys_dict_type sdt on sdd.dict_type = sdt.dict_type
-        left join sys_dict_data sdd2 on sdd.dict_type_affiliation = sdd2.dict_code
-    </sql>
+		left join sys_dict_data sdd2 on sdd.dict_type_affiliation = sdd2.dict_code
+	</sql>
 
 	<select id="selectDictDataList" parameterType="SysDictData" resultMap="SysDictDataResult">
 	    <include refid="selectDictDataVo"/>
@@ -120,6 +123,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 			<if test="ruleType != null and ruleType != ''">rule_type = #{ruleType},</if>
  		    <if test="originalSystem != null and originalSystem != ''">original_system = #{originalSystem},</if>
 			<if test="uuid != null and uuid != ''">uuid = #{uuid},</if>
+			<if test="otherLabel != null and otherLabel != ''">other_label = #{otherLabel},</if>
+			<if test="otherLabelSystem != null and otherLabelSystem != ''">other_label_system = #{otherLabelSystem},</if>
  			update_time = sysdate()
  		</set>
  		where dict_code = #{dictCode}
@@ -128,47 +133,51 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 	<update id="updateDictDataType" parameterType="String">
  		update sys_dict_data set dict_type = #{newDictType} where dict_type = #{oldDictType}
 	</update>
- 	
- 	<insert id="insertDictData" parameterType="SysDictData">
- 		insert into sys_dict_data(
- 			<if test="dictSort != null">dict_sort,</if>
- 			<if test="dictLabel != null and dictLabel != ''">dict_label,</if>
- 			<if test="dictValue != null and dictValue != ''">dict_value,</if>
- 			<if test="dictType != null and dictType != ''">dict_type,</if>
- 			<if test="cssClass != null and cssClass != ''">css_class,</if>
- 			<if test="rule != null and rule != ''">rule,</if>
+
+	<insert id="insertDictData" parameterType="SysDictData">
+		insert into sys_dict_data(
+			<if test="dictSort != null">dict_sort,</if>
+			<if test="dictLabel != null and dictLabel != ''">dict_label,</if>
+			<if test="dictValue != null and dictValue != ''">dict_value,</if>
+			<if test="dictType != null and dictType != ''">dict_type,</if>
+			<if test="cssClass != null and cssClass != ''">css_class,</if>
+			<if test="rule != null and rule != ''">rule,</if>
 			<if test="rangeRule != null">range_rule,</if>
 			<if test="keyMap != null">key_map,</if>
 			<if test="valueMap != null">value_map,</if>
- 			<if test="isDefault != null and isDefault != ''">is_default,</if>
- 			<if test="status != null">status,</if>
- 			<if test="remark != null and remark != ''">remark,</if>
+			<if test="isDefault != null and isDefault != ''">is_default,</if>
+			<if test="status != null">status,</if>
+			<if test="remark != null and remark != ''">remark,</if>
 			<if test="dictTypeAffiliation != null">dict_type_affiliation,</if>
- 			<if test="createBy != null and createBy != ''">create_by,</if>
+			<if test="createBy != null and createBy != ''">create_by,</if>
 			<if test="ruleType != null and ruleType != ''">rule_type,</if>
 			<if test="originalSystem != null and originalSystem != ''">original_system,</if>
 			<if test="uuid != null and uuid != ''">uuid,</if>
- 			create_time
- 		)values(
- 		    <if test="dictSort != null">#{dictSort},</if>
- 		    <if test="dictLabel != null and dictLabel != ''">#{dictLabel},</if>
- 			<if test="dictValue != null and dictValue != ''">#{dictValue},</if>
- 			<if test="dictType != null and dictType != ''">#{dictType},</if>
- 			<if test="cssClass != null and cssClass != ''">#{cssClass},</if>
- 			<if test="rule != null and rule != ''">#{rule},</if>
+			<if test="otherLabel != null and otherLabel != ''">other_label,</if>
+			<if test="otherLabelSystem != null and otherLabelSystem != ''">other_label_system,</if>
+			create_time
+		)values(
+			<if test="dictSort != null">#{dictSort},</if>
+			<if test="dictLabel != null and dictLabel != ''">#{dictLabel},</if>
+			<if test="dictValue != null and dictValue != ''">#{dictValue},</if>
+			<if test="dictType != null and dictType != ''">#{dictType},</if>
+			<if test="cssClass != null and cssClass != ''">#{cssClass},</if>
+			<if test="rule != null and rule != ''">#{rule},</if>
 			<if test="rangeRule != null">#{rangeRule},</if>
 			<if test="keyMap != null">#{keyMap},</if>
 			<if test="valueMap != null">#{valueMap},</if>
- 			<if test="isDefault != null and isDefault != ''">#{isDefault},</if>
- 			<if test="status != null">#{status},</if>
- 			<if test="remark != null and remark != ''">#{remark},</if>
+			<if test="isDefault != null and isDefault != ''">#{isDefault},</if>
+			<if test="status != null">#{status},</if>
+			<if test="remark != null and remark != ''">#{remark},</if>
 			<if test="dictTypeAffiliation != null">#{dictTypeAffiliation},</if>
- 			<if test="createBy != null and createBy != ''">#{createBy},</if>
+			<if test="createBy != null and createBy != ''">#{createBy},</if>
 			<if test="ruleType != null and ruleType != ''">#{ruleType},</if>
 			<if test="originalSystem != null and originalSystem != ''">#{originalSystem},</if>
 			<if test="uuid != null and uuid != ''">#{uuid},</if>
- 			sysdate()
- 		)
+			<if test="otherLabel != null and otherLabel != ''">#{otherLabel},</if>
+			<if test="otherLabelSystem != null and otherLabelSystem != ''">#{otherLabelSystem},</if>
+			sysdate()
+		)
 	</insert>
 
 	<select id="countVehicleTemplateAttributeByUuid" resultType="int">

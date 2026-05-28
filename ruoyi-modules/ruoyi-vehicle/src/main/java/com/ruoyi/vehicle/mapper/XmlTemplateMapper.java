@@ -24,4 +24,6 @@ public interface XmlTemplateMapper {
     List<XmlTemplate> selectTemplateAll();
 
     int updateAllIsLast(String uuid);
+
+    int toggleStatusByIds(@Param("xmlIds") Long[] xmlIds);
 }

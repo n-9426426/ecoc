@@ -1,8 +1,10 @@
 package com.ruoyi.vehicle.task;
 
+import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.core.domain.R;
 import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.domain.SysNotice;
+import com.ruoyi.system.api.enums.SysNoticeModel;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMapper;
 import com.ruoyi.vehicle.utils.TimeUtils;
@@ -11,10 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.util.Arrays;
-import java.util.Date;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.util.*;
 
 @Component
 @Slf4j
@@ -33,32 +32,31 @@ public class VehicleTemplateExpiredTask {
         if (vehicleTemplateList.isEmpty()) {
             return;
         }
-        StringBuilder msg = new StringBuilder();
         for (VehicleTemplate vehicleTemplate : vehicleTemplateList) {
-            msg.append("WVTA-COC编号为: ")
+            vehicleTemplateMapper.updateVehicleTemplateExpired(Collections.singletonList(vehicleTemplate.getTemplateId()), 1);
+            StringBuilder msg = new StringBuilder();
+            msg.append("WVTA-COC编号 ")
                     .append(vehicleTemplate.getWvtaCocNo())
-                    .append(", COC模板号为: ")
+                    .append(" 、COC模板号为 ")
                     .append(vehicleTemplate.getCocTemplateNo())
-                    .append(", 版本号为: ")
+                    .append(" 、版本号为 ")
                     .append(vehicleTemplate.getVersion())
-                    .append("的车辆模版还有")
+                    .append(" 的车辆模版还有")
                     .append(TimeUtils.getDateDiffDesc(new Date(), vehicleTemplate.getOverdueDate()))
-                    .append("到期")
-                    .append(System.lineSeparator());
-        }
-        if(sentNotice(msg).getCode() == 200) {
-            List<Long> vehicleTemplateIds = vehicleTemplateList.stream()
-                    .map(VehicleTemplate::getTemplateId)
-                    .collect(Collectors.toList());
-            if (vehicleTemplateIds.isEmpty()){
-                return;
-            }
-            vehicleTemplateMapper.updateVehicleTemplateExpired(vehicleTemplateIds, 1);
+                    .append("到期");
+            Map<String, String> params = new HashMap<>();
+            params.put("wvtaCocNo", vehicleTemplate.getWvtaCocNo());
+            params.put("cocTemplateNo", vehicleTemplate.getCocTemplateNo());
+            params.put("modelNo", vehicleTemplate.getModelNo());
+            params.put("vehicleType", vehicleTemplate.getVehicleType());
+            sentNotice(msg, params);
         }
     }
 
-    private R<?> sentNotice(StringBuilder msg){
+    private R<?> sentNotice(StringBuilder msg, Map<String, String> params){
         SysNotice sysNotice = new SysNotice();
+        sysNotice.setModel(SysNoticeModel.VEHICLE_TEMPLATE.getModel());
+        sysNotice.setQueryParams(JSON.toJSONString(params));
         sysNotice.setIsRead(false);
         sysNotice.setStatus("0");
         sysNotice.setNoticeType("1");

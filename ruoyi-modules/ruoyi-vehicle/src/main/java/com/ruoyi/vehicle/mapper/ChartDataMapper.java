@@ -34,4 +34,6 @@ public interface ChartDataMapper {
     List<ChartDataXmlTotalVo> selectStatisticsTrend(ChartDataStatisticsDto statisticsDto);
 
     List<AbnormalStatisticsVo> selectStatisticsAbnormal(ChartDataStatisticsDto statisticsDto);
+
+    List<String> selectDistinctOperateByDateRange(@Param("startTime") LocalDateTime startTime, @Param("endTime")   LocalDateTime endTime);
 }

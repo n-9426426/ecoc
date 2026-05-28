@@ -1,5 +1,6 @@
 package com.ruoyi.system.controller;
 
+import com.ruoyi.common.core.constant.SecurityConstants;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.core.web.page.TableDataInfo;
@@ -7,6 +8,7 @@ import com.ruoyi.common.log.annotation.Log;
 import com.ruoyi.common.log.enums.BusinessType;
 import com.ruoyi.common.security.annotation.RequiresPermissions;
 import com.ruoyi.common.security.utils.SecurityUtils;
+import com.ruoyi.system.api.RemoteVehicleDictCacheService;
 import com.ruoyi.system.api.domain.SysDictType;
 import com.ruoyi.system.service.ISysDictTypeService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,7 +19,7 @@ import java.util.List;
 
 /**
  * 数据字典信息
- * 
+ *
  * @author ruoyi
  */
 @RestController
@@ -26,6 +28,9 @@ public class SysDictTypeController extends BaseController
 {
     @Autowired
     private ISysDictTypeService dictTypeService;
+
+    @Autowired
+    private RemoteVehicleDictCacheService remoteVehicleDictCacheService;
 
     @RequiresPermissions("system:dict:list")
     @GetMapping("/list")
@@ -98,7 +103,11 @@ public class SysDictTypeController extends BaseController
     @DeleteMapping("/refreshCache")
     public AjaxResult refreshCache()
     {
+        // 1. 刷新 system 模块自身的字典缓存
         dictTypeService.resetDictCache();
+        // 2. 通知 vehicle 服务清除 ValueMappingParser 字典缓存（DICT_MAP 规则用）
+        //    降级时仅打印 warn 日志，不影响本接口返回
+        remoteVehicleDictCacheService.evictDictCache(null, SecurityConstants.INNER);
         return success();
     }
 

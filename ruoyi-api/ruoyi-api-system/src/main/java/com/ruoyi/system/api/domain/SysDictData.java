@@ -2,8 +2,9 @@ package com.ruoyi.system.api.domain;
 
 import com.ruoyi.common.core.constant.UserConstants;
 import com.ruoyi.common.core.web.domain.BaseEntity;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Size;
@@ -13,6 +14,9 @@ import javax.validation.constraints.Size;
  * 
  * @author ruoyi
  */
+@Data
+@ToString
+@EqualsAndHashCode(callSuper = true)
 public class SysDictData extends BaseEntity
 {
     private static final long serialVersionUID = 1L;
@@ -66,6 +70,10 @@ public class SysDictData extends BaseEntity
 
     private String uuid;
 
+    private String otherLabel;
+
+    private String otherLabelSystem;
+
     private String tableName;
 
     private String excelColumnNameEnUs;
@@ -74,36 +82,11 @@ public class SysDictData extends BaseEntity
 
     private Long excelColumnSort;
 
-    public Long getDictCode()
-    {
-        return dictCode;
-    }
-
-    public void setDictCode(Long dictCode)
-    {
-        this.dictCode = dictCode;
-    }
-
-    public Long getDictSort()
-    {
-        return dictSort;
-    }
-
-    public void setDictSort(Long dictSort)
-    {
-        this.dictSort = dictSort;
-    }
-
     @NotBlank(message = "字典标签不能为空")
     @Size(min = 0, max = 100, message = "字典标签长度不能超过100个字符")
     public String getDictLabel()
     {
         return dictLabel;
-    }
-
-    public void setDictLabel(String dictLabel)
-    {
-        this.dictLabel = dictLabel;
     }
 
     @NotBlank(message = "字典键值不能为空")
@@ -113,21 +96,11 @@ public class SysDictData extends BaseEntity
         return dictValue;
     }
 
-    public void setDictValue(String dictValue)
-    {
-        this.dictValue = dictValue;
-    }
-
     @NotBlank(message = "字典类型不能为空")
     @Size(min = 0, max = 100, message = "字典类型长度不能超过100个字符")
     public String getDictType()
     {
         return dictType;
-    }
-
-    public void setDictType(String dictType)
-    {
-        this.dictType = dictType;
     }
 
     @Size(min = 0, max = 100, message = "样式属性长度不能超过100个字符")
@@ -136,185 +109,12 @@ public class SysDictData extends BaseEntity
         return cssClass;
     }
 
-    public void setCssClass(String cssClass)
-    {
-        this.cssClass = cssClass;
-    }
-
     public boolean getDefault()
     {
         return UserConstants.YES.equals(this.isDefault);
     }
 
-    public String getIsDefault()
-    {
-        return isDefault;
-    }
-
-    public void setIsDefault(String isDefault)
-    {
-        this.isDefault = isDefault;
-    }
-
-    public String getStatus()
-    {
-        return status;
-    }
-
-    public void setStatus(String status)
-    {
-        this.status = status;
-    }
-
-    public String getRule() {
-        return rule;
-    }
-
-    public void setRule(String rule) {
-        this.rule = rule;
-    }
-    
-    @Override
-    public String toString() {
-        return new ToStringBuilder(this,ToStringStyle.MULTI_LINE_STYLE)
-            .append("dictCode", getDictCode())
-            .append("dictSort", getDictSort())
-            .append("dictLabel", getDictLabel())
-            .append("dictValue", getDictValue())
-            .append("dictType", getDictType())
-            .append("cssClass", getCssClass())
-            .append("rule", getRule())
-            .append("rangeRule", getRangeRule())
-            .append("isDefault", getIsDefault())
-            .append("status", getStatus())
-            .append("createBy", getCreateBy())
-            .append("createTime", getCreateTime())
-            .append("updateBy", getUpdateBy())
-            .append("updateTime", getUpdateTime())
-            .append("remark", getRemark())
-            .append("dictTypeStr", getDictTypeStr())
-            .append("dictTypeAffiliation", getDictTypeAffiliation())
-            .append("dictTypeAffiliationStr", getDictTypeAffiliationStr())
-            .toString();
-    }
-
-    public String getDictTypeStr() {
-        return dictTypeStr;
-    }
-
-    public void setDictTypeStr(String dictTypeStr) {
-        this.dictTypeStr = dictTypeStr;
-    }
-
-    public String getRangeRule() {
-        return rangeRule;
-    }
-
-    public void setRangeRule(String rangeRule) {
-        this.rangeRule = rangeRule;
-    }
-
-    public String getKeyMap() {
-        return keyMap;
-    }
-
-    public void setKeyMap(String keyMap) {
-        this.keyMap = keyMap;
-    }
-
-    public String getValueMap() {
-        return valueMap;
-    }
-
-    public void setValueMap(String valueMap) {
-        this.valueMap = valueMap;
-    }
-
-    public Long getDictTypeAffiliation() {
-        return dictTypeAffiliation;
-    }
-
-    public void setDictTypeAffiliation(Long dictTypeAffiliation) {
-        this.dictTypeAffiliation = dictTypeAffiliation;
-    }
-
-    public String getDictTypeAffiliationStr() {
-        return dictTypeAffiliationStr;
-    }
-
-    public void setDictTypeAffiliationStr(String dictTypeAffiliationStr) {
-        this.dictTypeAffiliationStr = dictTypeAffiliationStr;
-    }
-
-    public String getRuleType() {
-        return ruleType;
-    }
-
-    public void setRuleType(String ruleType) {
-        this.ruleType = ruleType;
-    }
-
     public Boolean getVehicle() {
         return isVehicle;
-    }
-
-    public void setIsVehicle(Boolean isVehicle) {
-        this.isVehicle = isVehicle;
-    }
-
-    public String getKeyMapJson() {
-        return keyMapJson;
-    }
-
-    public void setKeyMapJson(String keyMapJson) {
-        this.keyMapJson = keyMapJson;
-    }
-
-    public String getOriginalSystem() {
-        return originalSystem;
-    }
-
-    public void setOriginalSystem(String originalSystem) {
-        this.originalSystem = originalSystem;
-    }
-
-    public String getUuid() {
-        return uuid;
-    }
-
-    public void setUuid(String uuid) {
-        this.uuid = uuid;
-    }
-
-    public String getExcelColumnNameEnUs() {
-        return excelColumnNameEnUs;
-    }
-
-    public void setExcelColumnNameEnUs(String excelColumnNameEnUs) {
-        this.excelColumnNameEnUs = excelColumnNameEnUs;
-    }
-
-    public String getExcelColumnNameZhCn() {
-        return excelColumnNameZhCn;
-    }
-
-    public void setExcelColumnNameZhCn(String excelColumnNameZhCn) {
-        this.excelColumnNameZhCn = excelColumnNameZhCn;
-    }
-
-    public String getTableName() {
-        return tableName;
-    }
-
-    public void setTableName(String tableName) {
-        this.tableName = tableName;
-    }
-
-    public Long getExcelColumnSort() {
-        return excelColumnSort;
-    }
-
-    public void setExcelColumnSort(Long excelColumnSort) {
-        this.excelColumnSort = excelColumnSort;
     }
 }

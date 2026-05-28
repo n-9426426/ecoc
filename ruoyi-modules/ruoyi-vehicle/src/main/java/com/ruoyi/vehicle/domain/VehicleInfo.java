@@ -120,6 +120,21 @@ public class VehicleInfo extends BaseEntity {
 
     private String tire;
 
+    /** 生成确认 */
+    private Integer generateAffirm;
+
+    /** 上传确认 */
+    private Integer uploadAffirm;
+
+    /** 项目名称 */
+    private String projectName;
+
+    /** 顾客编号 */
+    private String customerNo;
+
+    /** 轮胎滚阻 */
+    private String tireResistanceGrade;
+
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date breakpointTime;
 
@@ -132,6 +147,8 @@ public class VehicleInfo extends BaseEntity {
     private String version;
 
     private String tempVersion;
+
+    private Map<String, Map<String, String>> otherSystem;
 
     public Map<String, Object> getJsonMap() {
         if (jsonMap != null) {

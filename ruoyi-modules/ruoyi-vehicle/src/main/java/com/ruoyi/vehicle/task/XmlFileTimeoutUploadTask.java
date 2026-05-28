@@ -1,8 +1,10 @@
 package com.ruoyi.vehicle.task;
 
+import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.core.domain.R;
 import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.domain.SysNotice;
+import com.ruoyi.system.api.enums.SysNoticeModel;
 import com.ruoyi.vehicle.domain.XmlFile;
 import com.ruoyi.vehicle.mapper.XmlFileMapper;
 import com.ruoyi.vehicle.utils.TimeUtils;
@@ -13,10 +15,7 @@ import org.springframework.stereotype.Component;
 
 import java.text.SimpleDateFormat;
 import java.time.temporal.ChronoUnit;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.util.*;
 
 @Slf4j
 @Component
@@ -35,8 +34,9 @@ public class XmlFileTimeoutUploadTask {
         if (xmlFileList.isEmpty()) {
             return;
         }
-        StringBuilder msg = new StringBuilder();
         for (XmlFile xmlFile : xmlFileList) {
+            xmlFileMapper.updateXmlFileTimeoutUpload(Collections.singletonList(xmlFile.getId()), 1);
+            StringBuilder msg = new StringBuilder();
             StringBuilder overdueTime = new StringBuilder();
             Object[][] parts = TimeUtils.getDateDiffParts(xmlFile.getCreateTime(), xmlFile.getUpdateTime());
             for (Object[] part : parts) {
@@ -44,28 +44,27 @@ public class XmlFileTimeoutUploadTask {
                 ChronoUnit unit = (ChronoUnit) part[1];
                 overdueTime.append(value).append(unit.name());
             }
-            msg.append("VIN: ")
+            msg.append("VIN ")
                     .append(xmlFile.getVin())
-                    .append(" ")
-                    .append("于")
+                    .append(" 于")
                     .append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(xmlFile.getCreateTime()))
-                    .append("生成，已超时")
+                    .append("生成XML文件，已超时")
                     .append(overdueTime)
-                    .append(System.lineSeparator());
-        }
-        if(sentNotice(msg).getCode() == 200) {
-            List<Long> xmlFileIds = xmlFileList.stream()
-                    .map(XmlFile::getId)
-                    .collect(Collectors.toList());
-            if (xmlFileIds.isEmpty()) {
-                return;
-            }
-            xmlFileMapper.updateXmlFileTimeoutUpload(xmlFileIds, 1);
+                    .append("未上传");
+            Map<String, String> params = new HashMap<>();
+            params.put("vin", xmlFile.getVin());
+            params.put("modelCode", xmlFile.getModelCode());
+            params.put("factoryCode", xmlFile.getFactoryCode());
+            params.put("country", xmlFile.getCountry());
+            params.put("issueDate", com.ruoyi.common.core.utils.DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", xmlFile.getIssueDate()));
+            sentNotice(msg, params);
         }
     }
 
-    private R<?> sentNotice(StringBuilder msg){
+    private R<?> sentNotice(StringBuilder msg, Map<String, String> params){
         SysNotice sysNotice = new SysNotice();
+        sysNotice.setModel(SysNoticeModel.XML_FILE.getModel());
+        sysNotice.setQueryParams(JSON.toJSONString(params));
         sysNotice.setIsRead(false);
         sysNotice.setStatus("0");
         sysNotice.setNoticeType("1");

@@ -1,5 +1,6 @@
 package com.ruoyi.vehicle.service.impl;
 
+import com.alibaba.fastjson2.JSON;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.core.enums.RuleItemType;
@@ -7,7 +8,6 @@ import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.model.FieldValidationResult;
 import com.ruoyi.common.core.model.RuleViolation;
 import com.ruoyi.common.core.model.ValidationReport;
-import com.ruoyi.common.core.parser.ValueMappingParser;
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.utils.bean.BeanUtils;
@@ -18,9 +18,11 @@ import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.system.api.domain.SysNotice;
+import com.ruoyi.system.api.enums.SysNoticeModel;
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.*;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
+import com.ruoyi.vehicle.enums.VehicleLifecycleOperation;
 import com.ruoyi.vehicle.mapper.*;
 import com.ruoyi.vehicle.service.IMaterialBlacklistService;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
@@ -95,6 +97,41 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             // 转换 JSON key 为 dict_label
             Map<String, Object> convertedMap = jsonDictConverter.convertJsonKeysToDictLabel(vehicle.getJson());
             vehicle.setJsonMap(convertedMap);
+
+            // 解析 json 的每个 key，关联 vehicle_attribute 字典，
+            // 查出对应的 otherLabel 和 otherLabelSystem 并挂载到实体
+            try {
+                Map<String, Object> jsonMap = objectMapper.readValue(
+                        vehicle.getJson(),
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+
+                if (!jsonMap.isEmpty()) {
+                    com.ruoyi.common.core.domain.R<List<SysDictData>> dictResult =
+                            remoteDictService.getDictDataByType("vehicle_attribute");
+
+                    if (dictResult != null && dictResult.getData() != null) {
+                        Map<String, SysDictData> dictLabelMap = dictResult.getData().stream()
+                                .filter(d -> StringUtils.isNotBlank(d.getDictLabel()))
+                                .collect(java.util.stream.Collectors.toMap(
+                                        SysDictData::getDictLabel,
+                                        d -> d,
+                                        (existing, replacement) -> existing
+                                ));
+
+                        Map<String, Map<String, String>> jsonDictMap = new LinkedHashMap<>();
+                        for (String key : jsonMap.keySet()) {
+                            SysDictData dictData = dictLabelMap.get(key);
+                            Map<String, String> labels = new HashMap<>();
+                            labels.put("otherLabel",       dictData != null ? dictData.getOtherLabel()       : null);
+                            labels.put("otherLabelSystem", dictData != null ? dictData.getOtherLabelSystem() : null);
+                            jsonDictMap.put(key, labels);
+                        }
+                        vehicle.setOtherSystem(jsonDictMap);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("VehicleInfo json 字典匹配失败, vehicleId={}", vehicleId, e);
+            }
         }
         return vehicle;
     }
@@ -168,18 +205,45 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null
                 ? SecurityUtils.getUsername() : "MES To System");
 
-        VehicleInfo row = jsonConvert(vehicleInfo);
-
+        // VehicleTemplate.json 已在模板导入阶段完成字段映射，直接使用
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
         vehicleLifecycle.setEntryId(vehicleInfo.getVehicleId());
         vehicleLifecycle.setTime(new Date());
         vehicleLifecycle.setVin(vehicleInfo.getVin());
-        vehicleLifecycle.setOperate("0");
+        vehicleLifecycle.setOperate(VehicleLifecycleOperation.VEHICLE_INFO_CREATE.getOperation());
         vehicleLifecycle.setResult(0);
         vehicleLifecycleMapper.insert(vehicleLifecycle);
 
         validateVehicleInfo(Collections.singletonList(vehicleInfo.getVehicleId()));
-        return vehicleInfoMapper.insertVehicleInfo(row);
+        int insertRow = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+        if (vehicleInfo.getBreakpointTime() != null) {
+            String sb =
+                    "车辆VIN " +
+                            vehicleInfo.getVin() +
+                            " 存在断点: " +
+                            DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getBreakpointTime()) +
+                            System.lineSeparator();
+            Map<String, String> params = new HashMap<>();
+            params.put("vin", vehicleInfo.getVin());
+            params.put("vehicleModel", vehicleInfo.getVehicleModel());
+            params.put("factoryCode", vehicleInfo.getFactoryCode());
+            params.put("country", vehicleInfo.getCountry());
+            params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            params.put("materialNo", vehicleInfo.getMaterialNo());
+            SysNotice sysNotice = new SysNotice();
+            sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
+            sysNotice.setQueryParams(JSON.toJSONString(params));
+            sysNotice.setIsRead(false);
+            sysNotice.setStatus("0");
+            sysNotice.setNoticeType("1");
+            sysNotice.setNoticeTitle("MES系统推送断点提醒");
+            sysNotice.setNoticeContent(sb);
+            sysNotice.setCreateBy("自动提醒");
+            sysNotice.setCreateTime(new Date());
+            sysNotice.setSorts(Arrays.asList(16, 17));
+            remoteNoticeService.innerAdd(sysNotice);
+        }
+        return insertRow;
     }
 
     private VehicleInfo selectVehicleInfoByWvtaNo(String vin) {
@@ -217,8 +281,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
             vehicleInfo.setWvtaNo(template.getWvtaCocNo());
             vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
+            // VehicleTemplate.json 已在导入阶段完成字段映射，直接使用，无需再次转换
             vehicleInfo.setJson(template.getJson());
-            jsonConvert(vehicleInfo);
         }
         // 去掉这里强制重置，交给调用方自己决定
         vehicleInfo.setVin(null);
@@ -328,11 +392,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     public List<ValidationReport> validateVehicleInfo(List<Long> vehicleInfoIds) {
         List<ValidationReport> validationReports = new LinkedList<>();
         List<AbnormalClassify> abnormalClassifies = new ArrayList<>();
-        SysNotice sysNotice = new SysNotice();
-        sysNotice.setIsRead(false);
-        sysNotice.setNoticeType("1");
-        sysNotice.setNoticeTitle("车辆信息校验完成通知");
-        StringBuilder msg = new StringBuilder("车辆信息：");
         AbnormalClassify abnormalClassify;
         for (Long vehicleInfoId : vehicleInfoIds) {
             VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleInfoId);
@@ -354,7 +413,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             vehicleLifecycle.setEntryId(vehicleInfo.getVehicleId());
             vehicleLifecycle.setTime(new Date());
             vehicleLifecycle.setVin(vehicleInfo.getVin());
-            vehicleLifecycle.setOperate("1");
+            vehicleLifecycle.setOperate(VehicleLifecycleOperation.VEHICLE_INFO_VALIDATE.getOperation());
             vehicleLifecycle.setResult(validationReport.isAllValid() ? 0 : 1);
             vehicleLifecycleMapper.insert(vehicleLifecycle);
 
@@ -368,19 +427,34 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 }
             }
 
-            msg.append(System.lineSeparator());
-            msg.append("Vin：");
-            msg.append(vehicleInfo.getVin());
-            msg.append("的校验结果为：");
-            msg.append(validationReport.isAllValid() ? "通过" : "失败");
+            Map<String, String> params = new HashMap<>();
+            params.put("vin", vehicleInfo.getVin());
+            params.put("vehicleModel", vehicleInfo.getVehicleModel());
+            params.put("factoryCode", vehicleInfo.getFactoryCode());
+            params.put("country", vehicleInfo.getCountry());
+            params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            params.put("materialNo", vehicleInfo.getMaterialNo());
+            params.put("validationResult", validationReport.isAllValid() ? "1": "2");
+            SysNotice sysNotice = new SysNotice();
+            sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
+            sysNotice.setQueryParams(JSON.toJSONString(params));
+            sysNotice.setIsRead(false);
+            sysNotice.setNoticeType("1");
+            sysNotice.setNoticeTitle("车辆信息校验完成通知");
+            String msg =
+                    "车辆VIN " +
+                            vehicleInfo.getVin() +
+                            " 的校验结果为：" +
+                            (validationReport.isAllValid() ? "通过" : "失败");
+            sysNotice.setNoticeContent(msg);
+            sysNotice.setSorts(Arrays.asList(10, 11));
+            sysNotice.setCreateBy("自动提醒");
+            sysNotice.setCreateTime(new Date());
+            remoteNoticeService.innerAdd(sysNotice);
         }
-
         if (!abnormalClassifies.isEmpty()) {
             abnormalClassifyMapper.batchInsert(abnormalClassifies);
         }
-        sysNotice.setNoticeContent(msg.toString());
-        sysNotice.setSorts(Arrays.asList(10, 11));
-        remoteNoticeService.innerAdd(sysNotice);
         return validationReports;
     }
 
@@ -406,6 +480,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new RuntimeException("车型代码不存在");
         }
         insertVehicleInfo(vehicleInfo);
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("vin", vehicleInfo.getVin());
         result.put("recordId", vehicleInfo.getVehicleId());
@@ -431,33 +506,36 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new RuntimeException("Excel中没有数据行");
         }
 
-        // 预加载字典，避免每行都调用远程接口
-        List<SysDictData> vehicleModelDicts = remoteDictService
-                .getDictDataByType("vehicle_model").getData();
-        List<SysDictData> countryDicts = remoteDictService
-                .getDictDataByType("country").getData();
-
         List<String> errorMsgs = new ArrayList<>();
 
         for (int rowIndex = 1; rowIndex <= lastRowNum; rowIndex++) {
             Row row = sheet.getRow(rowIndex);
             if (row == null) continue;
 
-            // 读取各列：VIN、车型代码、工厂代码、整车物料号、颜色、双色的次色、出口国家、发证日期
-            String vin           = getCellStringValue(row.getCell(0));
-            String vehicleModel  = getCellStringValue(row.getCell(1)); // dictValue，如"E03"
-            String factoryCode   = getCellStringValue(row.getCell(2));
-            String materialNo    = getCellStringValue(row.getCell(3));
-            String color         = getCellStringValue(row.getCell(4));
-            String secondaryColor= getCellStringValue(row.getCell(5));
-            String country       = getCellStringValue(row.getCell(6)); // dictValue，如"西班牙"
-            Date issueDate       = getCellDateValue(row.getCell(7));
-            String brand         = getCellStringValue(row.getCell(8));
-            String weight        = getCellStringValue(row.getCell(9));
-            String saleName      = getCellStringValue(row.getCell(10));
-            String tire          = getCellStringValue(row.getCell(11));
-            String tvv           = getCellStringValue(row.getCell(12));;
-            Date breakpointTime  = getCellDateValue(row.getCell(13));
+            // 读取各列
+            String vin                 = getCellStringValue(row.getCell(0));
+            String vehicleModel        = getCellStringValue(row.getCell(1));
+            String materialNo          = getCellStringValue(row.getCell(2));
+            String brand               = getCellStringValue(row.getCell(3));
+            String weight              = getCellStringValue(row.getCell(4));
+            String saleName            = getCellStringValue(row.getCell(5));
+            String tire                = getCellStringValue(row.getCell(6));
+            String projectName         = getCellStringValue(row.getCell(7));
+            String customerNo          = getCellStringValue(row.getCell(8));
+            String tireResistanceGrade = getCellStringValue(row.getCell(9));
+            String factoryCode         = getCellStringValue(row.getCell(10));
+            String factoryName         = getCellStringValue(row.getCell(11));
+            String country             = getCellStringValue(row.getCell(12));
+            String color               = getCellStringValue(row.getCell(13));
+            String secondaryColor      = getCellStringValue(row.getCell(14));
+            Date issueDate             = getCellDateValue(row.getCell(15));
+            String certificateVersion  = getCellStringValue(row.getCell(16));
+            String tvv                 = getCellStringValue(row.getCell(17));
+            Date manufactureDate       = getCellDateValue(row.getCell(18));
+            String engineNumber        = getCellStringValue(row.getCell(19));
+            String batteryNumber       = getCellStringValue(row.getCell(20));
+            String motorNumber         = getCellStringValue(row.getCell(21));
+            Date breakpointTime        = getCellDateValue(row.getCell(22));
 
             // 跳过空行
             if (StringUtils.isBlank(vin)) continue;
@@ -488,16 +566,28 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 VehicleInfo vehicleInfo = new VehicleInfo();
                 vehicleInfo.setVin(vin);
                 vehicleInfo.setVehicleModel(vehicleModel);
-                vehicleInfo.setFactoryCode(factoryCode);
                 vehicleInfo.setMaterialNo(materialNo);
-                vehicleInfo.setColor(color);
-                vehicleInfo.setSecondaryColor(secondaryColor);
-                vehicleInfo.setCountry(country);
-                vehicleInfo.setIssueDate(issueDate);
                 vehicleInfo.setBrand(brand);
                 vehicleInfo.setWeight(weight);
                 vehicleInfo.setSaleName(saleName);
                 vehicleInfo.setTire(tire);
+                vehicleInfo.setProjectName(projectName);
+                vehicleInfo.setCustomerNo(customerNo);
+                vehicleInfo.setTireResistanceGrade(tireResistanceGrade);
+                vehicleInfo.setFactoryCode(factoryCode);
+                vehicleInfo.setFactoryName(factoryName);
+                vehicleInfo.setCountry(country);
+                vehicleInfo.setColor(color);
+                vehicleInfo.setSecondaryColor(secondaryColor);
+                vehicleInfo.setIssueDate(issueDate);
+                vehicleInfo.setCertificateVersion(certificateVersion);
+                vehicleInfo.setTvv(tvv);
+                vehicleInfo.setManufactureDate(manufactureDate);
+                vehicleInfo.setEngineNumber(engineNumber);
+                vehicleInfo.setBatteryNumber(batteryNumber);
+                vehicleInfo.setMotorNumber(motorNumber);
+                vehicleInfo.setBreakpointTime(breakpointTime);
+
 
                 // 从模板自动获取
                 vehicleInfo.setWvtaNo(template.getWvtaCocNo());
@@ -509,12 +599,13 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 vehicleInfo.setUploadStatus(0);
                 vehicleInfo.setValidationResult(0);
                 vehicleInfo.setDeleted(0);
+                vehicleInfo.setGenerateAffirm(0);
+                vehicleInfo.setUploadAffirm(0);
+                vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null ? SecurityUtils.getUsername() : "MES To System");
                 vehicleInfo.setCreateTime(DateUtils.getNowDate());
-                vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null
-                        ? SecurityUtils.getUsername() : "MES To System");
 
-                VehicleInfo waitInsertORow = jsonConvert(vehicleInfo);
-                vehicleInfoMapper.insertVehicleInfo(waitInsertORow);
+                // VehicleTemplate.json 已在导入阶段完成字段映射，直接使用，无需再次转换
+                vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
 
                 // 写入生命周期
                 VehicleLifecycle lifecycle = new VehicleLifecycle();
@@ -609,364 +700,4 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         return null;
     }
 
-/*    private int insert(VehicleInfo vehicleInfo) {
-        Map<String, Object> map = vehicleInfo.getJsonMap();
-        if (map != null && !map.isEmpty()) {
-            map = new LinkedHashMap<>(map);
-        }
-        Map<String, Object> finalMap = map;
-        if (map != null && !map.isEmpty()) {
-            List<SysDictData> dictDataList = remoteDictService
-                    .getDictDataByType("vehicle_attribute").getData();
-
-            if (dictDataList != null && !dictDataList.isEmpty()) {
-
-                // ── 第一步：按 uuid 分组，无 uuid 的每条独立 ──────────────────
-                Map<String, List<SysDictData>> uuidGroups = new LinkedHashMap<>();
-                for (SysDictData rule : dictDataList) {
-                    String groupKey = StringUtils.isNotBlank(rule.getUuid())
-                            ? rule.getUuid()
-                            : "$$solo$$" + rule.getDictCode();
-                    uuidGroups.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(rule);
-                }
-
-                // ── 第二步：识别单 key_map 链 vs 多 key_map 链 ────────────────
-                Map<String, List<List<SysDictData>>> keyToChains = new LinkedHashMap<>();
-                Map<String, List<SysDictData>> multiKeyChainMap = new LinkedHashMap<>();
-
-                for (Map.Entry<String, List<SysDictData>> groupEntry : uuidGroups.entrySet()) {
-                    List<SysDictData> chain = groupEntry.getValue();
-                    chain.sort(Comparator.comparingLong(SysDictData::getDictCode));
-
-                    long distinctKeyMapCount = chain.stream()
-                            .map(SysDictData::getKeyMap)
-                            .filter(StringUtils::isNotBlank)
-                            .distinct()
-                            .count();
-
-                    if (distinctKeyMapCount > 1) {
-                        multiKeyChainMap.put(groupEntry.getKey(), chain);
-                    } else {
-                        String keyMap = chain.stream()
-                                .map(SysDictData::getKeyMap)
-                                .filter(StringUtils::isNotBlank)
-                                .findFirst()
-                                .orElse(null);
-                        if (keyMap == null) continue;
-                        keyToChains.computeIfAbsent(keyMap, k -> new ArrayList<>()).add(chain);
-                    }
-                }
-
-                Map<String, Object> result = new LinkedHashMap<>();
-
-                // ── 第三步：执行单 key_map 链式规则 ──────────────────────────
-                for (Map.Entry<String, Object> entry : map.entrySet()) {
-                    String fieldName = entry.getKey();
-                    List<List<SysDictData>> chains = keyToChains.get(fieldName);
-
-                    // 无规则：原样保留
-                    if (chains == null || chains.isEmpty()) {
-                        result.put(fieldName, entry.getValue());
-                        continue;
-                    }
-
-                    String rawValue = entry.getValue() == null
-                            ? null : String.valueOf(entry.getValue());
-                    for (List<SysDictData> singleChain : chains) {
-                        String converted = rawValue;
-                        boolean forceEmpty = false; // 是否命中了 NULL 规则
-
-                        for (SysDictData rule : singleChain) {
-                            if (StringUtils.isBlank(rule.getValueMap())) {
-                                converted = "";
-                                break;
-                            }
-                            String stepped = ValueMappingParser.convert(converted, rule.getValueMap());
-                            if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
-                                // NULL 规则：强制置空，终止链式
-                                forceEmpty = true;
-                                break;
-                            }
-                            if (stepped == null) {
-                                log.warn("[insert] value_map 链式第 {} 步返回 null，终止。" +
-                                                "dict_code={}, fieldName={}",
-                                        rule.getDictSort(), rule.getDictCode(), fieldName);
-                                break;
-                            }
-                            converted = stepped;
-                        }
-
-                        if (forceEmpty) {
-                            converted = "";
-                        } else {
-                            converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
-                            converted = "N/A".equals(converted) ? "" : converted;
-                        }
-
-                        String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                        result.put(targetLabel, converted);
-                    }
-                }
-
-                // ── 第四步：执行多 key_map 链 ────────────────────────────────
-                for (List<SysDictData> multiChain : multiKeyChainMap.values()) {
-                    List<String> parts = new ArrayList<>();
-                    SysDictData lastRule = null;
-
-                    for (SysDictData rule : multiChain) {
-                        if (StringUtils.isBlank(rule.getKeyMap())) continue;
-
-                        Object rawObj = map.get(rule.getKeyMap());
-                        String rawValue = rawObj == null ? null : String.valueOf(rawObj);
-
-                        String converted = rawValue;
-                        if (StringUtils.isNotBlank(rule.getValueMap())) {
-                            String stepped = ValueMappingParser.convert(rawValue, rule.getValueMap());
-                            if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
-                                // NULL 规则：本段强制为空，不计入拼接
-                                lastRule = rule;
-                                continue;
-                            }
-                            if (stepped != null) {
-                                converted = stepped;
-                            } else {
-                                log.warn("[insert] 多key_map链转换返回 null，dict_code={}, keyMap={}",
-                                        rule.getDictCode(), rule.getKeyMap());
-                            }
-                        }
-                        converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
-                        converted = "N/A".equals(converted) ? "" : converted;
-
-                        if (StringUtils.isNotBlank(converted)) {
-                            parts.add(converted);
-                        }
-                        lastRule = rule;
-                    }
-
-                    if (lastRule != null && !parts.isEmpty()) {
-                        String targetLabel = lastRule.getDictLabel();
-                        result.put(targetLabel, String.join("/", parts));
-                    }
-                }
-
-                finalMap = result;
-            }
-        }
-
-        try {
-            vehicleInfo.setJson(objectMapper.writeValueAsString(finalMap));
-        } catch (Exception e) {
-            throw new RuntimeException("无法格式化JSON数据");
-        }
-
-        return vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
-    }*/
-
-    private VehicleInfo jsonConvert(VehicleInfo vehicleInfo) {
-        Map<String, Object> map = vehicleInfo.getJsonMap();
-        if (map != null && !map.isEmpty()) {
-            map = new LinkedHashMap<>(map);
-        }
-        Map<String, Object> finalMap = map;
-
-        if (map != null && !map.isEmpty()) {
-            List<SysDictData> dictDataList = remoteDictService
-                    .getDictDataByType("vehicle_attribute").getData();
-
-            if (dictDataList != null && !dictDataList.isEmpty()) {
-
-                // ── 第一步：按 uuid 分组，无 uuid 的每条独立 ──────────────────
-                Map<String, List<SysDictData>> uuidGroups = new LinkedHashMap<>();
-                for (SysDictData rule : dictDataList) {
-                    String groupKey = StringUtils.isNotBlank(rule.getUuid())
-                            ? rule.getUuid()
-                            : "$$solo$$" + rule.getDictCode();
-                    uuidGroups.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(rule);
-                }
-
-                // ── 第二步：识别单 key_map 链 vs 多 key_map 链 ────────────────
-                // keyToChains：keyMap → List<链>（一个keyMap可能对应多条uuid链）
-                Map<String, List<List<SysDictData>>> keyToChains = new LinkedHashMap<>();
-                // multiKeyChainMap：一条链里有多个 keyMap（如 49.1. 拆成多个字段）
-                Map<String, List<SysDictData>> multiKeyChainMap = new LinkedHashMap<>();
-
-                for (Map.Entry<String, List<SysDictData>> groupEntry : uuidGroups.entrySet()) {
-                    List<SysDictData> chain = groupEntry.getValue();
-                    chain.sort(Comparator.comparingLong(SysDictData::getDictCode));
-
-                    long distinctKeyMapCount = chain.stream()
-                            .map(SysDictData::getKeyMap)
-                            .filter(StringUtils::isNotBlank)
-                            .distinct()
-                            .count();
-
-                    if (distinctKeyMapCount > 1) {
-                        multiKeyChainMap.put(groupEntry.getKey(), chain);
-                    } else {
-                        String keyMap = chain.stream()
-                                .map(SysDictData::getKeyMap)
-                                .filter(StringUtils::isNotBlank)
-                                .findFirst()
-                                .orElse(null);
-                        if (keyMap == null) continue;
-                        keyToChains.computeIfAbsent(keyMap, k -> new ArrayList<>()).add(chain);
-                    }
-                }
-
-                Map<String, Object> result = new LinkedHashMap<>();
-
-                // ── 第三步：执行单 key_map 链式规则 ──────────────────────────
-                for (Map.Entry<String, Object> entry : map.entrySet()) {
-                    String fieldName = entry.getKey();
-                    List<List<SysDictData>> chains = keyToChains.get(fieldName);
-
-                    // 无规则：原样保留
-                    if (chains == null || chains.isEmpty()) {
-                        result.put(fieldName, entry.getValue());
-                        continue;
-                    }
-
-                    String rawValue = entry.getValue() == null
-                            ? null : String.valueOf(entry.getValue());
-
-                    // ★ 关键修复：含 \n 的值按行拆分，每行分别匹配链中对应 dictLabel
-                    // 判断：当这个 key 对应多条链（chains.size() > 1）或值含 \n 时，
-                    // 视为多行多值，按行索引分配到各链
-                    boolean isMultiLine = rawValue != null && rawValue.contains("\n");
-
-                    if (isMultiLine && chains.size() > 1) {
-                        // 多行多链：按行顺序依次对应每条链
-                        String[] lines = rawValue.split("\n", -1);
-                        for (int lineIdx = 0; lineIdx < chains.size(); lineIdx++) {
-                            List<SysDictData> singleChain = chains.get(lineIdx);
-                            String lineValue = lineIdx < lines.length
-                                    ? lines[lineIdx].trim() : "";
-
-                            String converted = applyChain(lineValue, singleChain, fieldName);
-                            String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                            if (StringUtils.isNotBlank(converted)) {
-                                result.put(targetLabel, converted);
-                            }
-                        }
-                    } else if (isMultiLine && chains.size() == 1) {
-                        // ★ 单链但多行：说明这个 key 下的值本身就是多行，
-                        // 整体传入链处理（例如 valueMap 用 SPLIT_MULTIROW），
-                        // 或者直接原样保留各行（链不知道怎么拆就原样存）
-                        List<SysDictData> singleChain = chains.get(0);
-                        String converted = applyChain(rawValue, singleChain, fieldName);
-                        String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                        // 如果转换结果还是含 \n（链没有拆分），
-                        // 把 \n 替换成 | 以匹配 eCoC 多值格式
-                        if (converted != null && converted.contains("\n")) {
-                            converted = converted.replace("\n", "|");
-                        }
-                        if (StringUtils.isNotBlank(converted)) {
-                            result.put(targetLabel, converted);
-                        }
-                    } else {
-                        // 单行单链（原有逻辑）
-                        for (List<SysDictData> singleChain : chains) {
-                            String converted = applyChain(rawValue, singleChain, fieldName);
-                            String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                            if (StringUtils.isNotBlank(converted)) {
-                                result.put(targetLabel, converted);
-                            }
-                        }
-                    }
-                }
-
-                // ── 第四步：执行多 key_map 链 ────────────────────────────────
-                // ★ 修复：多 key_map 链里每一段都独立写到自己的 dictLabel，
-                //    不再用 "/" 拼接成一个字符串（否则 INTPI/EL 会写进 WorkingPrinciple）
-                for (List<SysDictData> multiChain : multiKeyChainMap.values()) {
-                    multiChain.sort(Comparator.comparingLong(SysDictData::getDictCode));
-
-                    for (SysDictData rule : multiChain) {
-                        if (StringUtils.isBlank(rule.getKeyMap())) continue;
-                        if (StringUtils.isBlank(rule.getDictLabel())) continue;
-
-                        Object rawObj = map.get(rule.getKeyMap());
-                        String rawValue = rawObj == null ? null : String.valueOf(rawObj);
-
-                        String converted = rawValue;
-                        if (StringUtils.isNotBlank(rule.getValueMap())) {
-                            String stepped = ValueMappingParser.convert(rawValue, rule.getValueMap());
-                            if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
-                                // NULL 规则：本段强制为空，跳过
-                                continue;
-                            }
-                            if (stepped != null) {
-                                converted = stepped;
-                            } else {
-                                log.warn("[insert] 多key_map链转换返回 null，dict_code={}, keyMap={}",
-                                        rule.getDictCode(), rule.getKeyMap());
-                            }
-                        }
-
-                        converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
-                        converted = "N/A".equals(converted) ? "" : converted;
-
-                        // ★ 每一段独立写到自己的 dictLabel
-                        if (StringUtils.isNotBlank(converted)) {
-                            result.put(rule.getDictLabel(), converted);
-                        }
-                    }
-                }
-
-                finalMap = result;
-            }
-        }
-
-        try {
-            vehicleInfo.setJson(objectMapper.writeValueAsString(finalMap));
-        } catch (Exception e) {
-            throw new RuntimeException("无法格式化JSON数据");
-        }
-
-        MaterialBlacklist materialBlacklist = materialBlacklistService.selectMaterialBlacklistByMaterialNo(vehicleInfo.getMaterialNo());
-        if (materialBlacklist == null) {
-            return vehicleInfo;
-        }
-        vehicleInfo.setRemark(StringUtils.isBlank(vehicleInfo.getRemark())
-                ?
-                "该物料号存在于物料号黑名单中"
-                :
-                vehicleInfo.getRemark() + ";" + "该物料号存在于物料号黑名单中");
-
-        return vehicleInfo;
-    }
-
-    /**
-     * ★ 新增辅助方法：对单条链执行链式转换，返回最终值。
-     * 抽取复用，避免在第三步/第四步重复写相同逻辑。
-     */
-    private String applyChain(String rawValue, List<SysDictData> chain, String fieldName) {
-        String converted = rawValue;
-        boolean forceEmpty = false;
-
-        for (SysDictData rule : chain) {
-            if (StringUtils.isBlank(rule.getValueMap())) {
-                converted = "";
-                break;
-            }
-            String stepped = ValueMappingParser.convert(converted, rule.getValueMap());
-            if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
-                forceEmpty = true;
-                break;
-            }
-            if (stepped == null) {
-                log.warn("[insert] value_map 链式第 {} 步返回 null，终止。dict_code={}, fieldName={}",
-                        rule.getDictSort(), rule.getDictCode(), fieldName);
-                break;
-            }
-            converted = stepped;
-        }
-
-        if (forceEmpty) {
-            return "";
-        }
-        converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
-        converted = "N/A".equals(converted) ? "" : converted;
-        return converted;
-    }
 }

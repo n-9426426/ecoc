@@ -1,5 +1,6 @@
 package com.ruoyi.vehicle.service.impl;
 
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.util.DateUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.core.enums.RuleItemType;
@@ -16,9 +17,11 @@ import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.system.api.domain.SysNotice;
+import com.ruoyi.system.api.enums.SysNoticeModel;
 import com.ruoyi.vehicle.domain.*;
 import com.ruoyi.vehicle.domain.vo.DiffLineVO;
 import com.ruoyi.vehicle.domain.vo.DiffResultVO;
+import com.ruoyi.vehicle.enums.VehicleLifecycleOperation;
 import com.ruoyi.vehicle.mapper.*;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.service.IVehicleValidationService;
@@ -591,11 +594,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
         // 前置：结构校验错误列表（校验1、2）
         List<FieldValidationResult> structureResults = new ArrayList<>();
         List<AbnormalClassify> abnormalClassifies = new ArrayList<>();
-        SysNotice sysNotice = new SysNotice();
-        sysNotice.setIsRead(false);
-        sysNotice.setNoticeType("1");
-        sysNotice.setNoticeTitle("XML文件校验完成通知");
-        StringBuilder msg = new StringBuilder("XML文件：");
         AbnormalClassify abnormalClassify;
         try {
             // 1. 查询文件记录
@@ -695,15 +693,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             vehicleLifecycle.setEntryId(xmlFile.getId());
             vehicleLifecycle.setTime(new Date());
             vehicleLifecycle.setVin(xmlFile.getVin());
-            vehicleLifecycle.setOperate("3");
+            vehicleLifecycle.setOperate(VehicleLifecycleOperation.XML_VALIDATE.getOperation());
             vehicleLifecycle.setResult(validateResult ? 0 : 1);
             vehicleLifecycleMapper.insert(vehicleLifecycle);
-
-            msg.append(System.lineSeparator());
-            msg.append("Vin：");
-            msg.append(xmlFile.getVin());
-            msg.append("的校验结果为：");
-            msg.append(finalReport.isAllValid() ? "通过" : "失败");
 
             for (FieldValidationResult fieldValidationResult: finalReport.getFieldResults()) {
                 for (RuleViolation ruleViolation: fieldValidationResult.getViolations()) {
@@ -718,9 +710,31 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (!abnormalClassifies.isEmpty()) {
                 abnormalClassifyMapper.batchInsert(abnormalClassifies);
             }
-            sysNotice.setNoticeContent(msg.toString());
+
+            Map<String, String> params = new HashMap<>();
+            params.put("vin", xmlFile.getVin());
+            params.put("modelCode", xmlFile.getModelCode());
+            params.put("factoryCode", xmlFile.getFactoryCode());
+            params.put("country", xmlFile.getCountry());
+            params.put("validationResult", validateResult ? "1" : "2");
+            params.put("issueDate", com.ruoyi.common.core.utils.DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", xmlFile.getIssueDate()));
+            SysNotice sysNotice = new SysNotice();
+            sysNotice.setModel(SysNoticeModel.XML_FILE.getModel());
+            sysNotice.setQueryParams(JSON.toJSONString(params));
+            sysNotice.setIsRead(false);
+            sysNotice.setNoticeType("1");
+            sysNotice.setNoticeTitle("XML文件校验完成通知");
+            String msg =
+                    "由车辆VIN " +
+                    xmlFile.getVin() +
+                    "生成的XML文件的校验结果为: " +
+                    (finalReport.isAllValid() ? "通过" : "失败");
+            sysNotice.setNoticeContent(msg);
+            sysNotice.setCreateBy("自动提醒");
+            sysNotice.setCreateTime(new Date());
             sysNotice.setSorts(Arrays.asList(12, 13));
             remoteNoticeService.innerAdd(sysNotice);
+
             return finalReport;
         } catch (Exception e) {
             log.error("校验XML文件失败", e);
@@ -1320,24 +1334,31 @@ public class XmlFileServiceImpl implements IXmlFileService {
         if (vehicle.getStatus().equals(1)) {
             throw new RuntimeException("车辆信息已停用");
         }
+        if (vehicle.getGenerateAffirm().equals(0)) {
+            throw new RuntimeException("车辆信息未确认，无法生成XML文件");
+        }
+
         SysNotice sysNotice = new SysNotice();
         sysNotice.setIsRead(false);
         sysNotice.setNoticeType("1");
         sysNotice.setNoticeTitle("XML文件生成通知");
-        StringBuilder msg = new StringBuilder("XML文件");
+        sysNotice.setCreateBy("自动提醒");
+        sysNotice.setCreateTime(new Date());
+        StringBuilder msg = new StringBuilder();
         msg.append(System.lineSeparator());
-        msg.append("Vin");
+        msg.append("车辆vin ");
         msg.append(vehicle.getVin());
-        msg.append("的生成结果为: ");
+        msg.append("生成XML文件的结果为: ");
+        Map<String, String> vehicleParams = getVehicleParams(vehicle);
+
         try {
             Map<String, Object> jsonMap = vehicle.getJsonMap();
             jsonMap.put("IntendedCountryRegistration", vehicle.getCountry());
             jsonMap.put("IviReferenceId", UUID.randomUUID().toString());
-            // ✅ 修改后
-// IviVersionDateTime 是 DateTime 类型，需要带时区的完整格式
+            // IviVersionDateTime 是 DateTime 类型，需要带时区的完整格式
             jsonMap.put("IviVersionDateTime", DateUtils.format(new Date(), "yyyy-MM-dd'T'HH:mm:ss'Z'"));
 
-// DateManufactureVehicle 和 SignatureDate 是 Date 类型，只需年月日
+            // DateManufactureVehicle 和 SignatureDate 是 Date 类型，只需年月日
             if (vehicle.getManufactureDate() != null) {
                 jsonMap.put("DateManufactureVehicle", DateUtils.format(vehicle.getManufactureDate(), "yyyy-MM-dd"));
             }
@@ -1353,6 +1374,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
             XmlTemplate xmlTemplate = matchTemplate(vehicle);
             if (xmlTemplate == null) {
                 msg.append("失败");
+                sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
+                sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
                 sysNotice.setNoticeContent(msg.toString());
                 sysNotice.setSorts(Arrays.asList(14, 15));
                 remoteNoticeService.innerAdd(sysNotice);
@@ -1372,6 +1395,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
             List<XmlTemplateAttribute> attrList = xmlTemplateAttributeMapper.selectByTemplateId(xmlTemplate.getTemplateId());
             if (attrList == null || attrList.isEmpty()) {
                 msg.append("失败");
+                sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
+                sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
                 sysNotice.setNoticeContent(msg.toString());
                 sysNotice.setSorts(Arrays.asList(14, 15));
                 remoteNoticeService.innerAdd(sysNotice);
@@ -1384,6 +1409,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     .collect(Collectors.toList());
             if (topLevelAttrs.isEmpty()) {
                 msg.append("失败");
+                sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
+                sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
                 sysNotice.setNoticeContent(msg.toString());
                 sysNotice.setSorts(Arrays.asList(14, 15));
                 remoteNoticeService.innerAdd(sysNotice);
@@ -1391,6 +1418,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
             if (topLevelAttrs.size() > 1) {
                 msg.append("失败");
+                sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
+                sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
                 sysNotice.setNoticeContent(msg.toString());
                 sysNotice.setSorts(Arrays.asList(14, 15));
                 remoteNoticeService.innerAdd(sysNotice);
@@ -1553,12 +1582,20 @@ public class XmlFileServiceImpl implements IXmlFileService {
             vehicleLifecycle.setEntryId(vehicle.getVehicleId());
             vehicleLifecycle.setTime(new Date());
             vehicleLifecycle.setVin(vehicle.getVin());
-            vehicleLifecycle.setOperate("2");
+            vehicleLifecycle.setOperate(VehicleLifecycleOperation.VEHICLE_BUILD_XML.getOperation());
             vehicleLifecycle.setResult(0);
             vehicleInfoService.updateVehicleInfo(updateObj, false);
             vehicleLifecycleMapper.insert(vehicleLifecycle);
 
             msg.append("成功");
+            Map<String, String> params = new HashMap<>();
+            params.put("vin", xmlFile.getVin());
+            params.put("modelCode", xmlFile.getModelCode());
+            params.put("factoryCode", xmlFile.getFactoryCode());
+            params.put("country", xmlFile.getCountry());
+            params.put("issueDate", com.ruoyi.common.core.utils.DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", xmlFile.getIssueDate()));
+            sysNotice.setModel(SysNoticeModel.XML_FILE.getModel());
+            sysNotice.setQueryParams(JSON.toJSONString(params));
             sysNotice.setNoticeContent(msg.toString());
             sysNotice.setSorts(Arrays.asList(14, 15));
             remoteNoticeService.innerAdd(sysNotice);
@@ -1569,11 +1606,13 @@ public class XmlFileServiceImpl implements IXmlFileService {
             vehicleLifecycle.setEntryId(vehicleId);
             vehicleLifecycle.setTime(new Date());
             vehicleLifecycle.setVin(vehicle.getVin() == null ? "" : vehicle.getVin());
-            vehicleLifecycle.setOperate("2");
+            vehicleLifecycle.setOperate(VehicleLifecycleOperation.VEHICLE_BUILD_XML.getOperation());
             vehicleLifecycle.setResult(1);
             vehicleLifecycleMapper.insert(vehicleLifecycle);
 
             msg.append("失败");
+            sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
+            sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
             sysNotice.setNoticeContent(msg.toString());
             sysNotice.setSorts(Arrays.asList(14, 15));
             remoteNoticeService.innerAdd(sysNotice);
@@ -3076,5 +3115,16 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (hasRule)             return " (rule: " + rule + ")";
             return                          " (rangeRule: " + range + ")";
         }
+    }
+
+    private Map<String, String> getVehicleParams(VehicleInfo vehicle) {
+        Map<String, String> params = new HashMap<>();
+        params.put("vin", vehicle.getVin());
+        params.put("vehicleModel", vehicle.getVehicleModel());
+        params.put("factoryCode", vehicle.getFactoryCode());
+        params.put("country", vehicle.getCountry());
+        params.put("issueDate", com.ruoyi.common.core.utils.DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicle.getIssueDate()));
+        params.put("materialNo", vehicle.getMaterialNo());
+        return params;
     }
 }

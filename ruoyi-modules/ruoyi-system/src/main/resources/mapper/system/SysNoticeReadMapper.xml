@@ -37,6 +37,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             n.status,
             n.create_by    as createBy,
             n.create_time  as createTime,
+            n.model        as model,
+            n.params       as queryParams,
             case when r.notice_id is not null then true else false end as isRead
         from sys_notice n
         left join sys_notice_read r

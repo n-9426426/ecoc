@@ -39,6 +39,11 @@ import java.util.regex.Pattern;
  *   PREFIX_STRIP:{prefix}           去掉固定前缀后取剩余
  *   SUFFIX_STRIP:{suffix}           去掉固定后缀后取剩余
  *   SUBSTRING:{start}:{end}         字符串截取（end=-1 表示到末尾）
+ *   DICT_MAP:{dictType}             从外部字典查找：以 rawValue 作为 dict_label，
+ *                                     在 dictType 对应的字典中查找并返回 dict_value。
+ *                                     调用前须通过 {@link #setDictProvider} 注入字典提供者。
+ *                                     示例：value_map = "DICT_MAP:color"，rawValue = "BW"
+ *                                           → 查 dict_type=color & dict_label=BW 返回对应 dict_value
  * </pre>
  *
  * <h2>数据库存储约定（value_map 列 ≤ 100 字符）</h2>
@@ -49,6 +54,42 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 public class ValueMappingParser {
+
+
+    // =====================================================
+    //  字典查找支持（DICT_MAP 规则）
+    // =====================================================
+
+    /**
+     * 字典提供者接口。
+     * 调用方在应用启动时通过 {@link #setDictProvider} 注入实现，
+     * 使 {@code DICT_MAP} 规则能从业务字典数据源中查值。
+     */
+    @FunctionalInterface
+    public interface DictProvider {
+        /**
+         * 根据字典类型和标签查找对应的字典值。
+         *
+         * @param dictType  字典类型（对应 sys_dict_type.dict_type）
+         * @param dictLabel 字典标签（对应 sys_dict_data.dict_label），即上游原始值
+         * @return 对应的 dict_value；未命中时返回 {@code null}
+         */
+        String lookupByLabel(String dictType, String dictLabel);
+    }
+
+    /** 当前注入的字典提供者，默认为空（不支持 DICT_MAP） */
+    private static volatile DictProvider dictProvider = null;
+
+    /**
+     * 注入字典提供者。通常在 Spring 容器启动后调用一次，例如：
+     * <pre>
+     *   ValueMappingParser.setDictProvider(
+     *       (type, label) -> sysDictDataService.getDictValue(type, label));
+     * </pre>
+     */
+    public static void setDictProvider(DictProvider provider) {
+        dictProvider = provider;
+    }
 
     // 哨兵值,区分“转换返回null（出错/未命中）"和"规则就是要置空"
     public static final String EMPTY_SENTINEL = "\u0000__NULL__\u0000";
@@ -311,6 +352,27 @@ public class ValueMappingParser {
                     return part1 + sep + part2;
                 }
 
+                // ── 字典查找 ──────────────────────────────────────
+                case "DICT_MAP": {
+                    // value_map = DICT_MAP:{dictType}
+                    // rawValue 作为 dict_label，查找对应 dict_value
+                    if (parts.length < 2 || StringUtils.isBlank(parts[1])) {
+                        log.warn("[ValueMappingParser] DICT_MAP 缺少 dictType 参数: {}", descriptor);
+                        return null;
+                    }
+                    if (dictProvider == null) {
+                        log.error("[ValueMappingParser] DICT_MAP 未注入 DictProvider，请先调用 setDictProvider()");
+                        return null;
+                    }
+                    if (raw.isEmpty()) return null;
+                    String dictType = parts[1].trim();
+                    String dictValue = dictProvider.lookupByLabel(dictType, raw);
+                    if (dictValue == null) {
+                        log.warn("[ValueMappingParser] DICT_MAP 未命中: dictType={} dictLabel={}", dictType, raw);
+                    }
+                    return dictValue;
+                }
+
                 default:
                     log.warn("[ValueMappingParser] 未知映射类型: {}", type);
                     return raw;
@@ -555,6 +617,12 @@ public class ValueMappingParser {
     public static String splitMultirow(String sep) {
         return "SPLIT_MULTIROW:" + escapeSepAlias(sep);
     }
+
+    /** 生成 DICT_MAP 描述符 */
+    public static String dictMap(String dictType) {
+        return "DICT_MAP:" + dictType;
+    }
+
 
     private static String escapeSepAlias(String sep) {
         switch (sep) {

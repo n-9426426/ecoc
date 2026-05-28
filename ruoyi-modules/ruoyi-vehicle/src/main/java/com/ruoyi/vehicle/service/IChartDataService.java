@@ -1,19 +1,15 @@
 package com.ruoyi.vehicle.service;
 
 import com.ruoyi.vehicle.domain.dto.ChartDataStatisticsDto;
-import com.ruoyi.vehicle.domain.vo.AbnormalStatisticsVo;
-import com.ruoyi.vehicle.domain.vo.CalendarDayVo;
-import com.ruoyi.vehicle.domain.vo.ChartDataXmlTotalVo;
-import com.ruoyi.vehicle.domain.vo.VehicleModelVo;
+import com.ruoyi.vehicle.domain.vo.*;
 
+import java.time.LocalDate;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
 public interface IChartDataService {
-    List<ChartDataXmlTotalVo> xmlTotal(Integer year);
-
-    List<ChartDataXmlTotalVo> xmlValidate(Integer year);
+    List<ChartDataXmlTotalAndValidateVo> xmlTotalAndValidate(Integer year);
 
     List<VehicleModelVo> vehicleModel(Integer year, Integer month);
 
@@ -28,4 +24,6 @@ public interface IChartDataService {
     List<CalendarDayVo> getCalendarByMonth(String vin, int year, int month);
 
     List<AbnormalStatisticsVo> statisticsAbnormal(ChartDataStatisticsDto statisticsDto);
+
+    CalendarDayDetailVo getCalendarOfDay(LocalDate date);
 }

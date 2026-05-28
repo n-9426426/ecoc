@@ -26,4 +26,6 @@ public interface IXmlTemplateService {
     List<XmlTemplateVo> selectTemplateAll();
 
     List<XmlTemplate> historyVersion(XmlTemplate template);
+
+    int changeStatus(Long[] xmlIds);
 }

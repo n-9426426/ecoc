@@ -8,8 +8,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.Date;
 
 @RestController
@@ -20,16 +22,10 @@ public class ChartDataController extends BaseController {
     @Autowired
     private IChartDataService chartDataService;
 
-    @Operation(summary = "XML汇总")
-    @GetMapping("/xml/total/{year}")
-    public AjaxResult xmlTotal(@PathVariable Integer year) {
-        return AjaxResult.success(chartDataService.xmlTotal(year));
-    }
-
-    @Operation(summary = "XML文件校验")
-    @GetMapping("/xml/validate/{year}")
-    public AjaxResult xmlValidate(@PathVariable Integer year) {
-        return AjaxResult.success(chartDataService.xmlValidate(year));
+    @Operation(summary = "XML汇总与校验合并")
+    @GetMapping("/xml/total-and-validate/{year}")
+    public AjaxResult xmlTotalAndValidate(@PathVariable Integer year) {
+        return AjaxResult.success(chartDataService.xmlTotalAndValidate(year));
     }
 
     @Operation(summary = "车型分布")
@@ -75,5 +71,11 @@ public class ChartDataController extends BaseController {
     @Operation(summary = "根据vin获取当天操作历史")
     public AjaxResult getCalendar(@RequestParam String vin, @RequestParam int year, @RequestParam int month) {
         return AjaxResult.success(chartDataService.getCalendarByMonth(vin, year, month));
+    }
+
+    @GetMapping("/calendar/day")
+    @Operation(summary = "悬浮到带红点的日期会提示有哪些问题")
+    public AjaxResult getCalendarOfDay(@RequestParam @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate date) {
+        return AjaxResult.success(chartDataService.getCalendarOfDay(date));
     }
 }

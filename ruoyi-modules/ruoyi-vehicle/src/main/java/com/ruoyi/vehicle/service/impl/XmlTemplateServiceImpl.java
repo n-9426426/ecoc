@@ -81,7 +81,7 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
             template.setUuid(template.getTemplateCode());
         }
         if (StringUtils.isBlank(template.getTemplateCode())) {
-            template.setTemplateCode(UUID.randomUUID().toString());
+            template.setTemplateCode(UUID.randomUUID().toString().replace("-", "").substring(0, 18));
         }
         template.setVersion(StringUtils.isBlank(template.getVersion()) ? "1.0" : template.getVersion());
         template.setDeleted(0);
@@ -272,6 +272,10 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
         return rootNodes;
     }
 
+    @Override
+    public int changeStatus(Long[] xmlIds) {
+        return templateMapper.toggleStatusByIds(xmlIds);
+    }
 
     // ==================== 保存属性树（递归） ====================
 
