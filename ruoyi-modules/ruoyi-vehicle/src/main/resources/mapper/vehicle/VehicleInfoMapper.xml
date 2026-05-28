@@ -43,6 +43,11 @@
 		<result property="breakpointTime" column="breakpoint_time"/>
 		<result property="version" column="version"/>
 		<result property="tempVersion" column="temp_version"/>
+		<result property="generateAffirm"       column="generate_affirm"        />
+		<result property="uploadAffirm"         column="upload_affirm"          />
+		<result property="projectName"          column="project_name"           />
+		<result property="customerNo"           column="customer_no"            />
+		<result property="tireResistanceGrade"  column="tire_resistance_grade"  />
 	</resultMap>
 
 	<sql id="selectVehicleInfoVo">
@@ -51,7 +56,8 @@
 			   certificate_version, wvta_no, manufacture_date, issue_date, json, xml_template_id, vehicle_template_id,
 			   deleted, create_by, create_time, update_by, update_time, remark, validation_report_json, vt.version as version,
 			   engine_number, motor_number, brand, weight, sale_name, tire, battery_number, tvv, breakpoint_time,
-			   sdd.dict_label as vehicle_model_str, vt.filepath as vehicle_template_filepath, vt.coc_template_no as coc_template_no
+			   sdd.dict_label as vehicle_model_str, vt.filepath as vehicle_template_filepath, vt.coc_template_no as coc_template_no,
+			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade
 		from vehicle_info vi
 		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
 		left join (select template_id, filepath, coc_template_no, is_last, version from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
@@ -177,22 +183,27 @@
 		<if test="secondaryColor != null and secondaryColor != ''">secondary_color, </if>
 		<if test="certificateVersion != null and certificateVersion != ''">certificate_version, </if>
 		<if test="wvtaNo != null and wvtaNo != ''">wvta_no, </if>
-	    <if test="manufactureDate != null">manufacture_date,</if>
+		<if test="manufactureDate != null">manufacture_date,</if>
 		<if test="issueDate != null">issue_date, </if>
 		<if test="json != null and json != ''">json, </if>
 		<if test="xmlTemplateId != null">xml_template_id, </if>
 		<if test="vehicleTemplateId != null and vehicleTemplateId != ''">vehicle_template_id, </if>
 		<if test="remark != null and remark != ''">remark, </if>
 		<if test="validationReportJson != null and validationReportJson != ''">validation_report_json,</if>
-	    <if test="engineNumber != null and engineNumber != ''">engine_number,</if>
+		<if test="engineNumber != null and engineNumber != ''">engine_number,</if>
 		<if test="batteryNumber != null and batteryNumber != ''">battery_number,</if>
-	    <if test="motorNumber != null and motorNumber != ''">motor_number,</if>
-	    <if test="brand != null and brand != ''">brand,</if>
+		<if test="motorNumber != null and motorNumber != ''">motor_number,</if>
+		<if test="brand != null and brand != ''">brand,</if>
 		<if test="weight != null and weight != ''">weight,</if>
 		<if test="saleName != null and saleName != ''">sale_name,</if>
 		<if test="tire != null and tire != ''">tire,</if>
 		<if test="tvv != null and tvv != ''">tvv,</if>
 		<if test="breakpointTime != null">breakpoint_time,</if>
+		<if test="generateAffirm != null">generate_affirm,</if>
+		<if test="uploadAffirm != null">upload_affirm,</if>
+		<if test="projectName != null and projectName != ''">project_name,</if>
+		<if test="customerNo != null and customerNo != ''">customer_no,</if>
+		<if test="tireResistanceGrade != null and tireResistanceGrade != ''">tire_resistance_grade,</if>
 		<if test="createBy != null and createBy != ''">create_by, </if>
 		create_time
 		) values (
@@ -225,6 +236,11 @@
 		<if test="tire != null and tire != ''">#{tire},</if>
 		<if test="tvv != null and tvv != ''">#{tvv},</if>
 		<if test="breakpointTime != null">#{breakpointTime},</if>
+		<if test="generateAffirm != null">#{generateAffirm},</if>
+		<if test="uploadAffirm != null">#{uploadAffirm},</if>
+		<if test="projectName != null and projectName != ''">#{projectName},</if>
+		<if test="customerNo != null and customerNo != ''">#{customerNo},</if>
+		<if test="tireResistanceGrade != null and tireResistanceGrade != ''">#{tireResistanceGrade},</if>
 		<if test="createBy != null and createBy != ''">#{createBy}, </if>
 		sysdate()
 		)
@@ -246,7 +262,7 @@
 			<if test="secondaryColor != null and secondaryColor != ''">secondary_color = #{secondaryColor}, </if>
 			<if test="certificateVersion != null and certificateVersion != ''">certificate_version = #{certificateVersion}, </if>
 			<if test="wvtaNo != null and wvtaNo != ''">wvta_no = #{wvtaNo}, </if>
-		    <if test="manufactureDate != null">manufacture_date = #{manufactureDate},</if>
+			<if test="manufactureDate != null">manufacture_date = #{manufactureDate},</if>
 			<if test="issueDate != null">issue_date = #{issueDate}, </if>
 			<if test="json != null">json = #{json}, </if>
 			<if test="xmlTemplateId != null">xml_template_id = #{xmlTemplateId}, </if>
@@ -254,7 +270,7 @@
 			<if test="remark != null">remark = #{remark}, </if>
 			<if test="validationReportJson != null and validationReportJson != ''">validation_report_json = #{validationReportJson},</if>
 			<if test="engineNumber != null and engineNumber != ''">engine_number = #{engineNumber},</if>
-		    <if test="batteryNumber != null and batteryNumber != ''">battery_number = #{batteryNumber},</if>
+			<if test="batteryNumber != null and batteryNumber != ''">battery_number = #{batteryNumber},</if>
 			<if test="motorNumber != null and motorNumber != ''">motor_number = #{motorNumber},</if>
 			<if test="updateBy != null and updateBy != ''">update_by = #{updateBy}, </if>
 			<if test="deleted != null">deleted = #{deleted}, </if>
@@ -263,7 +279,12 @@
 			<if test="saleName != null and saleName != ''">sale_name = #{saleName},</if>
 			<if test="tire != null and tire != ''">tire = #{tire},</if>
 			<if test="tvv != null and tvv != ''">tvv = #{tvv},</if>
-		    <if test="breakpointTime != null">breakpoint_time = #{breakpointTime},</if>
+			<if test="breakpointTime != null">breakpoint_time = #{breakpointTime},</if>
+			<if test="generateAffirm != null">generate_affirm = #{generateAffirm},</if>
+			<if test="uploadAffirm != null">upload_affirm = #{uploadAffirm},</if>
+			<if test="projectName != null and projectName != ''">project_name = #{projectName},</if>
+			<if test="customerNo != null and customerNo != ''">customer_no = #{customerNo},</if>
+			<if test="tireResistanceGrade != null and tireResistanceGrade != ''">tire_resistance_grade = #{tireResistanceGrade},</if>
 			update_time = sysdate()
 		</set>
 		where vehicle_id = #{vehicleId}

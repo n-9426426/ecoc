@@ -97,6 +97,41 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             // 转换 JSON key 为 dict_label
             Map<String, Object> convertedMap = jsonDictConverter.convertJsonKeysToDictLabel(vehicle.getJson());
             vehicle.setJsonMap(convertedMap);
+
+            // 解析 json 的每个 key，关联 vehicle_attribute 字典，
+            // 查出对应的 otherLabel 和 otherLabelSystem 并挂载到实体
+            try {
+                Map<String, Object> jsonMap = objectMapper.readValue(
+                        vehicle.getJson(),
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+
+                if (!jsonMap.isEmpty()) {
+                    com.ruoyi.common.core.domain.R<List<SysDictData>> dictResult =
+                            remoteDictService.getDictDataByType("vehicle_attribute");
+
+                    if (dictResult != null && dictResult.getData() != null) {
+                        Map<String, SysDictData> dictLabelMap = dictResult.getData().stream()
+                                .filter(d -> StringUtils.isNotBlank(d.getDictLabel()))
+                                .collect(java.util.stream.Collectors.toMap(
+                                        SysDictData::getDictLabel,
+                                        d -> d,
+                                        (existing, replacement) -> existing
+                                ));
+
+                        Map<String, Map<String, String>> jsonDictMap = new LinkedHashMap<>();
+                        for (String key : jsonMap.keySet()) {
+                            SysDictData dictData = dictLabelMap.get(key);
+                            Map<String, String> labels = new HashMap<>();
+                            labels.put("otherLabel",       dictData != null ? dictData.getOtherLabel()       : null);
+                            labels.put("otherLabelSystem", dictData != null ? dictData.getOtherLabelSystem() : null);
+                            jsonDictMap.put(key, labels);
+                        }
+                        vehicle.setOtherSystem(jsonDictMap);
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("VehicleInfo json 字典匹配失败, vehicleId={}", vehicleId, e);
+            }
         }
         return vehicle;
     }
@@ -471,33 +506,36 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new RuntimeException("Excel中没有数据行");
         }
 
-        // 预加载字典，避免每行都调用远程接口
-        List<SysDictData> vehicleModelDicts = remoteDictService
-                .getDictDataByType("vehicle_model").getData();
-        List<SysDictData> countryDicts = remoteDictService
-                .getDictDataByType("country").getData();
-
         List<String> errorMsgs = new ArrayList<>();
 
         for (int rowIndex = 1; rowIndex <= lastRowNum; rowIndex++) {
             Row row = sheet.getRow(rowIndex);
             if (row == null) continue;
 
-            // 读取各列：VIN、车型代码、工厂代码、整车物料号、颜色、双色的次色、出口国家、发证日期
-            String vin           = getCellStringValue(row.getCell(0));
-            String vehicleModel  = getCellStringValue(row.getCell(1)); // dictValue，如"E03"
-            String factoryCode   = getCellStringValue(row.getCell(2));
-            String materialNo    = getCellStringValue(row.getCell(3));
-            String color         = getCellStringValue(row.getCell(4));
-            String secondaryColor= getCellStringValue(row.getCell(5));
-            String country       = getCellStringValue(row.getCell(6)); // dictValue，如"西班牙"
-            Date issueDate       = getCellDateValue(row.getCell(7));
-            String brand         = getCellStringValue(row.getCell(8));
-            String weight        = getCellStringValue(row.getCell(9));
-            String saleName      = getCellStringValue(row.getCell(10));
-            String tire          = getCellStringValue(row.getCell(11));
-            String tvv           = getCellStringValue(row.getCell(12));;
-            Date breakpointTime  = getCellDateValue(row.getCell(13));
+            // 读取各列
+            String vin                 = getCellStringValue(row.getCell(0));
+            String vehicleModel        = getCellStringValue(row.getCell(1));
+            String materialNo          = getCellStringValue(row.getCell(2));
+            String brand               = getCellStringValue(row.getCell(3));
+            String weight              = getCellStringValue(row.getCell(4));
+            String saleName            = getCellStringValue(row.getCell(5));
+            String tire                = getCellStringValue(row.getCell(6));
+            String projectName         = getCellStringValue(row.getCell(7));
+            String customerNo          = getCellStringValue(row.getCell(8));
+            String tireResistanceGrade = getCellStringValue(row.getCell(9));
+            String factoryCode         = getCellStringValue(row.getCell(10));
+            String factoryName         = getCellStringValue(row.getCell(11));
+            String country             = getCellStringValue(row.getCell(12));
+            String color               = getCellStringValue(row.getCell(13));
+            String secondaryColor      = getCellStringValue(row.getCell(14));
+            Date issueDate             = getCellDateValue(row.getCell(15));
+            String certificateVersion  = getCellStringValue(row.getCell(16));
+            String tvv                 = getCellStringValue(row.getCell(17));
+            Date manufactureDate       = getCellDateValue(row.getCell(18));
+            String engineNumber        = getCellStringValue(row.getCell(19));
+            String batteryNumber       = getCellStringValue(row.getCell(20));
+            String motorNumber         = getCellStringValue(row.getCell(21));
+            Date breakpointTime        = getCellDateValue(row.getCell(22));
 
             // 跳过空行
             if (StringUtils.isBlank(vin)) continue;
@@ -528,16 +566,28 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 VehicleInfo vehicleInfo = new VehicleInfo();
                 vehicleInfo.setVin(vin);
                 vehicleInfo.setVehicleModel(vehicleModel);
-                vehicleInfo.setFactoryCode(factoryCode);
                 vehicleInfo.setMaterialNo(materialNo);
-                vehicleInfo.setColor(color);
-                vehicleInfo.setSecondaryColor(secondaryColor);
-                vehicleInfo.setCountry(country);
-                vehicleInfo.setIssueDate(issueDate);
                 vehicleInfo.setBrand(brand);
                 vehicleInfo.setWeight(weight);
                 vehicleInfo.setSaleName(saleName);
                 vehicleInfo.setTire(tire);
+                vehicleInfo.setProjectName(projectName);
+                vehicleInfo.setCustomerNo(customerNo);
+                vehicleInfo.setTireResistanceGrade(tireResistanceGrade);
+                vehicleInfo.setFactoryCode(factoryCode);
+                vehicleInfo.setFactoryName(factoryName);
+                vehicleInfo.setCountry(country);
+                vehicleInfo.setColor(color);
+                vehicleInfo.setSecondaryColor(secondaryColor);
+                vehicleInfo.setIssueDate(issueDate);
+                vehicleInfo.setCertificateVersion(certificateVersion);
+                vehicleInfo.setTvv(tvv);
+                vehicleInfo.setManufactureDate(manufactureDate);
+                vehicleInfo.setEngineNumber(engineNumber);
+                vehicleInfo.setBatteryNumber(batteryNumber);
+                vehicleInfo.setMotorNumber(motorNumber);
+                vehicleInfo.setBreakpointTime(breakpointTime);
+
 
                 // 从模板自动获取
                 vehicleInfo.setWvtaNo(template.getWvtaCocNo());
@@ -549,9 +599,10 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 vehicleInfo.setUploadStatus(0);
                 vehicleInfo.setValidationResult(0);
                 vehicleInfo.setDeleted(0);
+                vehicleInfo.setGenerateAffirm(0);
+                vehicleInfo.setUploadAffirm(0);
+                vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null ? SecurityUtils.getUsername() : "MES To System");
                 vehicleInfo.setCreateTime(DateUtils.getNowDate());
-                vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null
-                        ? SecurityUtils.getUsername() : "MES To System");
 
                 // VehicleTemplate.json 已在导入阶段完成字段映射，直接使用，无需再次转换
                 vehicleInfoMapper.insertVehicleInfo(vehicleInfo);

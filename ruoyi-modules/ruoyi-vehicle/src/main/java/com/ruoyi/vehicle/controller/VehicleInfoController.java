@@ -24,13 +24,17 @@ import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.utils.ExcelUtil;
 import io.swagger.v3.oas.annotations.Operation;
+import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.net.URLEncoder;
 import java.util.*;
 import java.util.stream.Collectors;
 @RestController
@@ -238,5 +242,29 @@ public class VehicleInfoController extends BaseController {
     public AjaxResult selectVehicleTemplateIdByCondition(@RequestBody VehicleInfo vehicleInfo) {
         return AjaxResult.success(vehicleInfoService.selectVehicleTemplateIdByCondition(
                 vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(), vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getTvv()));
+    }
+
+    @GetMapping("/download/vin")
+    public void downloadVinTemplate(HttpServletResponse response) throws IOException {
+        download("车辆信息VIN查询模版.xlsx", response);
+    }
+
+    @GetMapping("/download/materialNo")
+    public void downloadMaterialNoTemplate(HttpServletResponse response) throws IOException {
+        download("车辆信息物料号查询模版.xlsx", response);
+    }
+
+    @GetMapping("/download/template")
+    public void downloadTemplate(HttpServletResponse response) throws IOException {
+        download("车辆信息模版.xlsx", response);
+    }
+
+    private void download(String fileName, HttpServletResponse response) throws IOException {
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition", "attachment; filename=" + URLEncoder.encode(fileName, "UTF-8"));
+
+        ClassPathResource resource = new ClassPathResource("assets/" + fileName);
+        IOUtils.copy(resource.getInputStream(), response.getOutputStream());
+        response.flushBuffer();
     }
 }

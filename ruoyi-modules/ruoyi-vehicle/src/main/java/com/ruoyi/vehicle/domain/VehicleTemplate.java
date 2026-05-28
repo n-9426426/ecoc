@@ -7,6 +7,7 @@ import lombok.EqualsAndHashCode;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 /**
  * COC模板主表实体
@@ -86,4 +87,6 @@ public class VehicleTemplate extends BaseEntity {
     private String weight;
 
     private String saleName;
+
+    private Map<String, Map<String, String>> otherSystem;
 }

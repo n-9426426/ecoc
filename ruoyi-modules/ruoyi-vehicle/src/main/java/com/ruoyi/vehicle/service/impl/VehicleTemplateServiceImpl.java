@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.TypeReference;
 import com.alibaba.fastjson2.JSON;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ruoyi.common.core.domain.R;
 import com.ruoyi.common.core.enums.RuleItemType;
 import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.model.FieldValidationResult;
@@ -179,6 +180,46 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             template.setType(tvv[0]);
             template.setVariant(tvv[1]);
             template.setVersionNo(tvv[2]);
+
+            // 解析 json 的每个 key，关联 vehicle_attribute 字典，
+            // 查出对应的 otherLabel 和 otherLabelSystem 并挂载到实体
+            String jsonStr = template.getJson();
+            if (StringUtils.isNotBlank(jsonStr)) {
+                try {
+                    Map<String, Object> jsonMap = objectMapper.readValue(
+                            jsonStr,
+                            new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+
+                    if (!jsonMap.isEmpty()) {
+                        // 通过 Feign 获取 vehicle_attribute 全量字典
+                        R<List<SysDictData>> dictResult =remoteDictService.getDictDataByType("vehicle_attribute");
+
+                        if (dictResult != null && dictResult.getData() != null) {
+                            // 转为 Map<dictLabel, SysDictData>，O(1) 查找
+                            Map<String, SysDictData> dictLabelMap = dictResult.getData().stream()
+                                    .filter(d -> StringUtils.isNotBlank(d.getDictLabel()))
+                                    .collect(Collectors.toMap(
+                                            SysDictData::getDictLabel,
+                                            d -> d,
+                                            (existing, replacement) -> existing
+                                    ));
+
+                            // 遍历 json 的每个 key，匹配字典，组装结果
+                            Map<String, Map<String, String>> jsonDictMap = new LinkedHashMap<>();
+                            for (String key : jsonMap.keySet()) {
+                                SysDictData dictData = dictLabelMap.get(key);
+                                Map<String, String> labels = new HashMap<>();
+                                labels.put("otherLabel",       dictData != null ? dictData.getOtherLabel()       : null);
+                                labels.put("otherLabelSystem", dictData != null ? dictData.getOtherLabelSystem() : null);
+                                jsonDictMap.put(key, labels);
+                            }
+                            template.setOtherSystem(jsonDictMap);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("VehicleTemplate json 字典匹配失败, templateId={}", templateId, e);
+                }
+            }
         }
         return template;
     }
@@ -380,13 +421,13 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 sysNotice.setNoticeTitle("车辆信息模版校验完成通知");
                 String msg =
                         "WVTA编号 " +
-                        template.getWvtaCocNo() +
-                        " 、COC编号 "+
-                        template.getCocTemplateNo() +
-                        " 、版本 "+
-                        template.getVersion() +
-                        " 的校验结果为: " +
-                        (report.isAllValid() ? "通过" : "失败");
+                                template.getWvtaCocNo() +
+                                " 、COC编号 "+
+                                template.getCocTemplateNo() +
+                                " 、版本 "+
+                                template.getVersion() +
+                                " 的校验结果为: " +
+                                (report.isAllValid() ? "通过" : "失败");
                 sysNotice.setNoticeContent(msg);
                 sysNotice.setCreateBy("自动提醒");
                 sysNotice.setCreateTime(new Date());

@@ -1334,6 +1334,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
         if (vehicle.getStatus().equals(1)) {
             throw new RuntimeException("车辆信息已停用");
         }
+        if (vehicle.getGenerateAffirm().equals(0)) {
+            throw new RuntimeException("车辆信息未确认，无法生成XML文件");
+        }
 
         SysNotice sysNotice = new SysNotice();
         sysNotice.setIsRead(false);

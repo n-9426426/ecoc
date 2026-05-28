@@ -468,6 +468,8 @@ public class SysDictDataServiceImpl implements ISysDictDataService {
         dest.setRuleType(src.getRuleType());
         dest.setCreateBy(src.getCreateBy());
         dest.setUpdateBy(src.getUpdateBy());
+        dest.setOtherLabel(src.getOtherLabel());
+        dest.setOtherLabelSystem(src.getOtherLabelSystem());
         // 聚合展示字段
         dest.setDictTypeStr(src.getDictTypeStr());
         dest.setDictTypeAffiliationStr(src.getDictTypeAffiliationStr());
