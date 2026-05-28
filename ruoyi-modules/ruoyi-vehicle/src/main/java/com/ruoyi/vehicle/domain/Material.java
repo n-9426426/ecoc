@@ -84,7 +84,7 @@ public class Material extends BaseEntity {
     private Date effectiveDate;
 
     /** 关联车辆模版列表 */
-    private List<VehicleTemplate> vehicleTemplates;
+    private VehicleTemplate vehicleTemplate;
 
     /** 物料变更历史列表 */
     private List<MaterialHistory> materialHistories;

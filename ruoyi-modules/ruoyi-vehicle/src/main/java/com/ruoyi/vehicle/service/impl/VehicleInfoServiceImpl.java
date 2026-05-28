@@ -50,9 +50,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     private VehicleInfoMapper vehicleInfoMapper;
 
     @Autowired
-    private VehicleTemplateMaterialMapper vehicleTemplateMaterialMapper;
-
-    @Autowired
     private RemoteDictService remoteDictService;
 
     @Autowired
@@ -178,12 +175,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         List<Material> materialList = materialMapper.selectMaterialList(material);
         Long vehicleTemplateId;
         if (materialList.isEmpty()) {
-            vehicleTemplateId = vehicleTemplateMaterialMapper
-                    .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getTvv(), vehicleInfo.getBrand(),
-                            vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getBreakpointTime());
-            if (vehicleTemplateId == null) {
-                throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎无对应的可用车辆模板");
-            }
+            throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎无对应的可用车辆模板");
         } else {
             vehicleTemplateId = materialList.get(0).getVehicleTemplateId();
         }
@@ -265,12 +257,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             List<Material> materialList = materialMapper.selectMaterialList(material);
             Long vehicleTemplateId;
             if (materialList.isEmpty()) {
-                vehicleTemplateId = vehicleTemplateMaterialMapper
-                        .selectVehicleTemplateIdByMaterialNo(vehicleInfo.getMaterialNo(), vehicleInfo.getTvv(), vehicleInfo.getBrand(),
-                                vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getBreakpointTime());
-                if (vehicleTemplateId == null) {
-                    throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎无对应的可用车辆模板");
-                }
+                throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎无对应的可用车辆模板");
             } else {
                 vehicleTemplateId = materialList.get(0).getVehicleTemplateId();
             }
@@ -548,13 +535,14 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 }
 
                 // 通过物料号查模板ID
-                Long templateId = vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(materialNo, tvv, brand, weight, saleName, tire, breakpointTime);
-                if (templateId == null) {
+                List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(brand, weight, saleName, tire, tvv);
+                if (vehicleTemplateList.isEmpty()) {
                     errorMsgs.add("第" + (rowIndex + 1) + "行：物料号[" + materialNo + "]未找到可用关联模板，跳过");
                     continue;
                 }
 
                 // 查模板详情，获取 wvtaCocNo、cocTemplateNo、json
+                Long templateId = vehicleTemplateList.get(0).getTemplateId();
                 VehicleTemplate template = vehicleTemplateMapper
                         .selectVehicleTemplateById(templateId);
                 if (template == null) {
@@ -629,38 +617,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         if (!errorMsgs.isEmpty()) {
             throw new RuntimeException("部分数据导入失败：\n" + String.join("\n", errorMsgs));
         }
-    }
-
-    @Override
-    public List<String> selectAllMaterialNos() {
-        return vehicleTemplateMaterialMapper.selectAllMaterialNos();
-    }
-
-    @Override
-    public Long selectVehicleTemplateIdByMaterialNo(String materialNo) {
-        return vehicleTemplateMaterialMapper.selectVehicleTemplateIdByMaterialNo(materialNo, null, null, null, null, null, null);
-    }
-
-    @Override
-    public VehicleTemplate selectVehicleTemplateById(Long templateId) {
-        return vehicleTemplateMapper.selectVehicleTemplateById(templateId);
-    }
-
-    @Override
-    public List<Map<String, Object>> selectVehicleTemplateIdByCondition(String materialNo, String brand, String weight, String saleName, String tire, String tvv) {
-        List<VehicleTemplate> templates = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(materialNo, brand, weight, saleName, tire, tvv);
-        if (templates.isEmpty()) {
-            throw new RuntimeException("无法匹配任何可用模板");
-        }
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (VehicleTemplate template : templates) {
-            Map<String, Object> templateMap = new HashMap<>();
-            templateMap.put("vehicleTemplateId", template.getTemplateId());
-            templateMap.put("version", template.getVersion());
-            templateMap.put("tvv", template.getTvv());
-            result.add(templateMap);
-        }
-        return result;
     }
 
     public int updateVehicleTemplateId(String vin, Long templateId) {

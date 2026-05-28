@@ -4,6 +4,7 @@ import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.Material;
 import com.ruoyi.vehicle.domain.MaterialHistory;
+import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.mapper.MaterialHistoryMapper;
 import com.ruoyi.vehicle.mapper.MaterialMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMapper;
@@ -13,9 +14,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 
 /**
  * 整车物料 Service 业务层实现
@@ -43,7 +45,7 @@ public class MaterialServiceImpl implements IMaterialService {
     @Override
     public Material selectMaterialById(Long id) {
         Material material = materialMapper.selectMaterialById(id);
-        material.setVehicleTemplates(vehicleTemplateMapper.selectVehicleTemplateIdByCondition(material.getMaterialNo(), null, null, null, null, null));
+        material.setVehicleTemplate(vehicleTemplateMapper.selectVehicleTemplateById(material.getVehicleTemplateId()));
         material.setMaterialHistories(materialHistoryMapper.selectByMaterialId(id, material.getVersion()));
         return material;
     }
@@ -70,19 +72,21 @@ public class MaterialServiceImpl implements IMaterialService {
         LoginUser loginUser = SecurityUtils.getLoginUser();
         material.setCreateBy(loginUser.getUsername());
         material.setCreateTime(new Date());
-        List<Map<String, Object>> template = vehicleInfoService.selectVehicleTemplateIdByCondition(
-                material.getMaterialNo(), material.getBrand(), material.getWeight(), material.getSaleName(), material.getTrie(), material.getTvv()
+        List<VehicleTemplate> templates = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(
+                material.getBrand(), material.getWeight(), material.getSaleName(), material.getTrie(), material.getTvv()
         );
-        if (template.isEmpty()) {
+        if (templates.isEmpty()) {
             throw new RuntimeException("没有匹配的模版");
         }
-        template.sort((a, b) -> {
-            BigDecimal versionA = new BigDecimal(String.valueOf(a.getOrDefault("version", "0")));
-            BigDecimal versionB = new BigDecimal(String.valueOf(b.getOrDefault("version", "0")));
-            return versionB.compareTo(versionA);
-        });
-        material.setVersion(template.get(0) == null ? null : template.get(0).get("version").toString());
-        material.setVehicleTemplateId(template.get(0) == null ? null : (Long) template.get(0).get("vehicleTemplateId"));
+        templates.sort(
+                Comparator.comparing(
+                        t -> t.getVersion() != null ? new BigDecimal(t.getVersion()) : BigDecimal.ZERO,
+                        Comparator.reverseOrder()
+                )
+        );
+        Optional<VehicleTemplate> first = templates.stream().findFirst();
+        material.setVersion(first.map(t -> t.getVersion() == null ? null : t.getVersion()).orElse(null));
+        material.setVehicleTemplateId(first.map(VehicleTemplate::getTemplateId).orElse(null));
         return materialMapper.insertMaterial(material);
     }
 

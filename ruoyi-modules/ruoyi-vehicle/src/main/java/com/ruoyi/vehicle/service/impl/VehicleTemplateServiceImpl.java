@@ -23,10 +23,8 @@ import com.ruoyi.system.api.domain.SysNotice;
 import com.ruoyi.system.api.enums.SysNoticeModel;
 import com.ruoyi.vehicle.domain.AbnormalClassify;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
-import com.ruoyi.vehicle.domain.VehicleTemplateMaterial;
 import com.ruoyi.vehicle.mapper.AbnormalClassifyMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMapper;
-import com.ruoyi.vehicle.mapper.VehicleTemplateMaterialMapper;
 import com.ruoyi.vehicle.service.IVehicleTemplateService;
 import com.ruoyi.vehicle.service.IVehicleValidationService;
 import com.ruoyi.vehicle.utils.ExcelUtil;
@@ -80,9 +78,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
     @Autowired
     private VehicleTemplateMapper templateMapper;
-
-    @Autowired
-    private VehicleTemplateMaterialMapper materialMapper;
 
     @Autowired
     private IVehicleValidationService vehicleValidationService;
@@ -175,7 +170,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     public VehicleTemplate selectVehicleTemplateById(Long templateId) {
         VehicleTemplate template = templateMapper.selectVehicleTemplateById(templateId);
         if (template != null) {
-            template.setMaterialList(materialMapper.selectByTemplateId(templateId));
             String[] tvv = template.getTvv().split(",");
             template.setType(tvv[0]);
             template.setVariant(tvv[1]);
@@ -322,7 +316,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 .filter(id -> !templateIdsWithVehicle.contains(id))
                 .toArray(Long[]::new);
 
-        materialMapper.deleteByTemplateIds(deletableIds);
         return templateMapper.deleteVehicleTemplateByIds(deletableIds);
     }
 
@@ -450,24 +443,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             templateMapper.batchUpdateValidateResult(updateList);
         }
         return reports;
-    }
-
-    // === 物料号维护 ===
-    @Override
-    public List<VehicleTemplateMaterial> selectMaterialByTemplateId(Long templateId) {
-        return materialMapper.selectByTemplateId(templateId);
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public int saveMaterialList(Long templateId, List<VehicleTemplateMaterial> materialList) {
-        materialMapper.deleteByTemplateId(templateId);
-        if (materialList == null || materialList.isEmpty()) return 0;
-        materialList.forEach(m -> {
-            m.setTemplateId(templateId);
-            m.setCreateTime(DateUtils.getNowDate());
-        });
-        return materialMapper.batchInsert(materialList);
     }
 
     @Override
@@ -861,6 +836,23 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         } catch (Exception e) {
             throw new RuntimeException("模板 JSON 映射后序列化失败: " + e.getMessage());
         }
+    }
+
+    @Override
+    public List<Map<String, Object>> selectVehicleTemplateIdByCondition(String brand, String weight, String saleName, String tire, String tvv) {
+        List<VehicleTemplate> templates = templateMapper.selectVehicleTemplateIdByCondition(brand, weight, saleName, tire, tvv);
+        if (templates.isEmpty()) {
+            throw new RuntimeException("无法匹配任何可用模板");
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (VehicleTemplate template : templates) {
+            Map<String, Object> templateMap = new HashMap<>();
+            templateMap.put("vehicleTemplateId", template.getTemplateId());
+            templateMap.put("version", template.getVersion());
+            templateMap.put("tvv", template.getTvv());
+            result.add(templateMap);
+        }
+        return result;
     }
 
     /**
