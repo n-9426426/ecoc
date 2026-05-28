@@ -178,9 +178,11 @@
 
 			<if test="firstMaterialFlag != null">
 				AND vi.first_material_flag = #{firstMaterialFlag}
+				AND vi.generate_affirm = 0
 			</if>
 			<if test="firstTemplateFlag != null">
 				AND vi.first_template_flag = #{firstTemplateFlag}
+				AND vi.upload_affirm = 0
 			</if>
 			${params.dataScope}
 		</where>
@@ -511,6 +513,7 @@
 	<select id="listFirstMaterialUnconfirmed" resultMap="VehicleInfoResult">
 		<include refid="selectVehicleInfoVo"/>
 		WHERE vi.first_material_flag = 1
+		AND vi.generate_affirm = 0
 		AND vi.deleted = 0
 		ORDER BY vi.manufacture_date ASC
 	</select>
@@ -519,6 +522,7 @@
 	<select id="listFirstTemplateUnconfirmed" resultMap="VehicleInfoResult">
 		<include refid="selectVehicleInfoVo"/>
 		WHERE vi.first_template_flag = 1
+		AND vi.upload_affirm = 0
 		AND vi.deleted = 0
 		ORDER BY vi.manufacture_date ASC
 	</select>
@@ -526,7 +530,7 @@
 	<!-- 确认：清除物料号标识，记录确认人和时间 -->
 	<update id="confirmMaterialFlag">
 		UPDATE vehicle_info
-		SET first_material_flag     = 0,
+		SET generate_affirm         = 1,
 			material_confirmed_by   = #{confirmedBy},
 			material_confirmed_time = SYSDATE(),
 			update_by               = #{confirmedBy},
@@ -537,7 +541,7 @@
 	<!-- 确认：清除模版标识，记录确认人和时间 -->
 	<update id="confirmTemplateFlag">
 		UPDATE vehicle_info
-		SET first_template_flag     = 0,
+		SET upload_affirm           = 1,
 			template_confirmed_by   = #{confirmedBy},
 			template_confirmed_time = SYSDATE(),
 			update_by               = #{confirmedBy},
@@ -551,9 +555,8 @@
 		FROM vehicle_info
 		WHERE material_no = #{materialNo}
 		  AND first_material_flag = 1
-		  AND material_confirmed_time IS NULL
+		  AND generate_affirm = 0        -- 改前是 material_confirmed_time IS NULL
 		  AND deleted = 0
-			LIMIT 1
 	</select>
 
 	<!-- 查询该模版下 first_template_flag=1 且未确认的 vehicle_id -->
@@ -562,9 +565,8 @@
 		FROM vehicle_info
 		WHERE vehicle_template_id = #{templateId}
 		  AND first_template_flag = 1
-		  AND template_confirmed_time IS NULL
+		  AND upload_affirm = 0          -- 改前是 template_confirmed_time IS NULL
 		  AND deleted = 0
-			LIMIT 1
 	</select>
 
 	<!-- 该物料号下是否存在已确认记录 -->

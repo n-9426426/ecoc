@@ -122,14 +122,14 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void confirmMaterial(Long vehicleId, String confirmedBy) {
-        vehicleInfoMapper.confirmMaterialFlag(vehicleId, confirmedBy);
+        vehicleInfoMapper.confirmMaterialFlag(vehicleId, confirmedBy);  // 更新 generate_affirm=1 + confirmed 字段
         log.info("[首台车] 物料号确认 vehicleId={} by={}", vehicleId, confirmedBy);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void confirmTemplate(Long vehicleId, String confirmedBy) {
-        vehicleInfoMapper.confirmTemplateFlag(vehicleId, confirmedBy);
+        vehicleInfoMapper.confirmTemplateFlag(vehicleId, confirmedBy);  // 更新 upload_affirm=1 + confirmed 字段
         log.info("[首台车] 模版确认 vehicleId={} by={}", vehicleId, confirmedBy);
     }
 
