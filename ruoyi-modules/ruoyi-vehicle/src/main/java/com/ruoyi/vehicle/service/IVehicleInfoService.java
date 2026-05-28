@@ -4,7 +4,6 @@ import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.VehicleInfo;
-import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -87,14 +86,4 @@ public interface IVehicleInfoService {
     VehicleInfo selectVehicleInfoByVin(String vin);
 
     void importVehicleInfoFromExcel(MultipartFile file) throws IOException;
-
-    List<String> selectAllMaterialNos();
-
-    Long selectVehicleTemplateIdByMaterialNo(String materialNo);
-
-    VehicleTemplate selectVehicleTemplateById(Long templateId);
-
-    List<Map<String, Object>> selectVehicleTemplateIdByCondition(String materialNo, String brand, String weight, String saleName, String tire, String tvv);
-
-    int updateVehicleTemplateId(String vin, Long templateId);
 }

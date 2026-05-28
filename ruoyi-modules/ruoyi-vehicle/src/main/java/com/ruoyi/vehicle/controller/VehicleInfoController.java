@@ -126,6 +126,14 @@ public class VehicleInfoController extends BaseController {
             vehicleInfo.setVinList(vinList);
             vehicleInfo.setVin(null); // 清掉vin，走vinList的IN查询
         }
+        if (StringUtils.isNotBlank(vehicleInfo.getMaterialNo())) {
+            List<String> materialNoList = Arrays.stream(vehicleInfo.getMaterialNo().split("[,，\n]"))
+                    .map(String::trim)
+                    .filter(StringUtils::isNotBlank)
+                    .collect(Collectors.toList());
+            vehicleInfo.setMaterialNoList(materialNoList);
+            vehicleInfo.setMaterialNo(null);
+        }
         startPage();
         List<VehicleInfo> list = vehicleInfoService.selectVehicleInfoList(vehicleInfo);
         return getDataTable(list);
@@ -230,24 +238,6 @@ public class VehicleInfoController extends BaseController {
     public void exportExcel(HttpServletResponse response, @RequestBody VehicleInfo vehicleInfo) throws Exception {
         List<VehicleInfo> list = vehicleInfoService.selectVehicleInfoList(vehicleInfo);
         excelUtil.exportExcel(response, list, "vehicle_info", "Vehicle");
-    }
-
-    /**
-     * 获取所有物料号列表（下拉框用）
-     */
-    @GetMapping("/material/options")
-    public AjaxResult getMaterialOptions() {
-        List<String> list = vehicleInfoService.selectAllMaterialNos();
-        return AjaxResult.success(list);
-    }
-
-    /**
-     * 根据物料号 品牌 重量  销售名称  轮胎查模板关联信息
-     */
-    @PostMapping("/template/condition")
-    public AjaxResult selectVehicleTemplateIdByCondition(@RequestBody VehicleInfo vehicleInfo) {
-        return AjaxResult.success(vehicleInfoService.selectVehicleTemplateIdByCondition(
-                vehicleInfo.getMaterialNo(), vehicleInfo.getBrand(), vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getTvv()));
     }
 
     @GetMapping("/download/vin")

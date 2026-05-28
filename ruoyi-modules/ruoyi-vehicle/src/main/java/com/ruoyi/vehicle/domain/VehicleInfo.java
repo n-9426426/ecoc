@@ -141,6 +141,9 @@ public class VehicleInfo extends BaseEntity {
     /** VIN批量查询列表 */
     private List<String> vinList;
 
+    /** 物料号批量查询列表 */
+    private List<String> materialNoList;
+
     /** 车型代码批量查询列表 */
     private List<String> vehicleModelList;
 

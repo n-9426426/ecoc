@@ -92,6 +92,13 @@
 				</foreach>
 				)
 			</if>
+			<if test="materialNoList != null and materialNoList.size() > 0">
+				AND (
+				<foreach collection="materialNoList" item="m" separator=" OR ">
+					material_no LIKE CONCAT('%', #{m}, '%')
+				</foreach>
+				)
+			</if>
 			<if test="vehicleModelList != null and vehicleModelList.size() > 0">
 				AND (
 				<foreach collection="vehicleModelList" item="m" separator=" OR ">
@@ -104,9 +111,6 @@
 			</if>
 			<if test="factoryName != null and factoryName != ''">
 				AND factory_name like concat('%', #{factoryName}, '%')
-			</if>
-			<if test="materialNo != null and materialNo != ''">
-				AND material_no like concat('%', #{materialNo}, '%')
 			</if>
 			<if test="color != null and color != ''">
 				AND color like concat('%', #{color}, '%')

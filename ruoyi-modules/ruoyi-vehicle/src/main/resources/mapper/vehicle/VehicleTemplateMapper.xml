@@ -250,31 +250,22 @@
     <select id="selectVehicleTemplateIdByCondition" resultMap="VehicleTemplateResult">
         select vt.*, vt.json->>'$.brand' AS brand, vt.json->>'$.weight' AS weight, vt.json->>'$.saleName' AS sale_name, vt.json->>'$.tire' AS tire
         from vehicle_template vt
-        left join vehicle_template_material vtm on vtm.template_id = vt.template_id
-        left join material m on m.vehicle_template_id = vt.template_id
         where vt.del_flag = '0' and vt.status = '0'
-        <choose>
-            <when test="materialNo != null and materialNo != ''">
-                AND vtm.material_no = #{materialNo}
-            </when>
-            <otherwise>
-                <if test="tvv != null and tvv != ''">
-                    AND REPLACE(vt.tvv, ',', '') = #{tvv}
-                </if>
-                <if test="brand != null and brand != ''">
-                    AND vt.json->>'$.brand' = #{brand}
-                </if>
-                <if test="weight != null and weight != ''">
-                    AND vt.json->>'$.weight' = #{weight}
-                </if>
-                <if test="saleName != null and saleName != ''">
-                    AND vt.json->>'$.saleName' = #{saleName}
-                </if>
-                <if test="tire != null and tire != ''">
-                    AND vt.json->>'$.tire' = #{tire}
-                </if>
-            </otherwise>
-        </choose>
+        <if test="tvv != null and tvv != ''">
+            AND REPLACE(vt.tvv, ',', '') = #{tvv}
+        </if>
+        <if test="brand != null and brand != ''">
+            AND vt.json->>'$.brand' = #{brand}
+        </if>
+        <if test="weight != null and weight != ''">
+            AND vt.json->>'$.weight' = #{weight}
+        </if>
+        <if test="saleName != null and saleName != ''">
+            AND vt.json->>'$.saleName' = #{saleName}
+        </if>
+        <if test="tire != null and tire != ''">
+            AND vt.json->>'$.tire' = #{tire}
+        </if>
         ORDER BY CAST(vt.version AS DECIMAL(10, 2)) DESC
     </select>
 

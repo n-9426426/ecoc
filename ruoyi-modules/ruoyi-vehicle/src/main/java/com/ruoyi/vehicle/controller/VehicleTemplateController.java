@@ -10,8 +10,8 @@ import com.ruoyi.common.log.enums.BusinessType;
 import com.ruoyi.common.security.annotation.RequiresPermissions;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.enums.FileTypeEnum;
+import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
-import com.ruoyi.vehicle.domain.VehicleTemplateMaterial;
 import com.ruoyi.vehicle.service.IVehicleTemplateService;
 import com.ruoyi.vehicle.utils.ExcelUtil;
 import org.apache.commons.io.IOUtils;
@@ -190,26 +190,6 @@ public class VehicleTemplateController extends BaseController {
         return AjaxResult.success(reports);
     }
 
-    /**
-     * 查询物料号列表
-     */
-    @RequiresPermissions("vehicle:template:material:get")
-    @GetMapping("/material/{templateId}")
-    public AjaxResult getMaterialList(@PathVariable Long templateId) {
-        return AjaxResult.success(vehicleTemplateService.selectMaterialByTemplateId(templateId));
-    }
-
-    /**
-     * 保存物料号列表（1模板对N物料号）
-     */
-    @RequiresPermissions("vehicle:template:material:edit")
-    @PostMapping("/material/{templateId}")
-    public AjaxResult saveMaterialList(
-            @PathVariable Long templateId,
-            @RequestBody List<VehicleTemplateMaterial> materialList) {
-        return toAjax(vehicleTemplateService.saveMaterialList(templateId, materialList));
-    }
-
     @PostMapping("/callback")
     public AjaxResult callback(@RequestBody Map<String, Object> data) {
         String taskId = (String) data.get("task_id");
@@ -245,5 +225,14 @@ public class VehicleTemplateController extends BaseController {
         String extension = fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
 
         return FileTypeEnum.getByExtension(extension);
+    }
+
+    /**
+     * 根据物料号 品牌 重量  销售名称  轮胎查模板关联信息
+     */
+    @PostMapping("/condition")
+    public AjaxResult selectVehicleTemplateIdByCondition(@RequestBody VehicleInfo vehicleInfo) {
+        return AjaxResult.success(vehicleTemplateService.selectVehicleTemplateIdByCondition(
+                vehicleInfo.getBrand(), vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getTvv()));
     }
 }

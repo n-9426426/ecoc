@@ -2,7 +2,6 @@ package com.ruoyi.vehicle.service;
 
 import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
-import com.ruoyi.vehicle.domain.VehicleTemplateMaterial;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
@@ -28,10 +27,6 @@ public interface IVehicleTemplateService {
 
     List<ValidationReport> batchValidate(Long... templateIds);
 
-    List<VehicleTemplateMaterial> selectMaterialByTemplateId(Long templateId);
-
-    int saveMaterialList(Long templateId, List<VehicleTemplateMaterial> materialList);
-
     Flux<ServerSentEvent<String>> importPdf(MultipartFile file);
 
     void sendProgress(String taskId, Map<String, Object> data);
@@ -51,4 +46,6 @@ public interface IVehicleTemplateService {
     List<VehicleTemplate> selectVehicleTemplateEffectingList();
 
     void evictDictCache(String dictType);
+
+    List<Map<String, Object>> selectVehicleTemplateIdByCondition(String brand, String weight, String saleName, String tire, String tvv);
 }
