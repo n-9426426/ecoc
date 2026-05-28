@@ -166,4 +166,26 @@ public class VehicleInfo extends BaseEntity {
             return Collections.emptyMap();
         }
     }
+
+    // 在 VehicleInfo.java 中新增以下字段（追加到类末尾）
+
+    /** 整车物料号首台待确认标识 0-否 1-是 */
+    private Integer firstMaterialFlag;
+
+    /** 车辆模版首台待确认标识 0-否 1-是 */
+    private Integer firstTemplateFlag;
+
+    /** 物料号首台确认人 */
+    private String materialConfirmedBy;
+
+    /** 物料号首台确认时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date materialConfirmedTime;
+
+    /** 模版首台确认人 */
+    private String templateConfirmedBy;
+
+    /** 模版首台确认时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date templateConfirmedTime;
 }

@@ -48,6 +48,12 @@
 		<result property="projectName"          column="project_name"           />
 		<result property="customerNo"           column="customer_no"            />
 		<result property="tireResistanceGrade"  column="tire_resistance_grade"  />
+		<result property="firstMaterialFlag"      column="first_material_flag"      />
+		<result property="firstTemplateFlag"      column="first_template_flag"      />
+		<result property="materialConfirmedBy"    column="material_confirmed_by"    />
+		<result property="materialConfirmedTime"  column="material_confirmed_time"  />
+		<result property="templateConfirmedBy"    column="template_confirmed_by"    />
+		<result property="templateConfirmedTime"  column="template_confirmed_time"  />
 	</resultMap>
 
 	<sql id="selectVehicleInfoVo">
@@ -57,7 +63,9 @@
 			   deleted, create_by, create_time, update_by, update_time, remark, validation_report_json, vt.version as version,
 			   engine_number, motor_number, brand, weight, sale_name, tire, battery_number, tvv, breakpoint_time,
 			   sdd.dict_label as vehicle_model_str, vt.filepath as vehicle_template_filepath, vt.coc_template_no as coc_template_no,
-			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade
+			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade,   vi.first_material_flag, vi.first_template_flag,
+			   vi.material_confirmed_by, vi.material_confirmed_time,
+			   vi.template_confirmed_by, vi.template_confirmed_time
 		from vehicle_info vi
 		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
 		left join (select template_id, filepath, coc_template_no, is_last, version from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
@@ -162,6 +170,13 @@
 			</if>
 			<if test="manufactureEndTime != null">
 				AND manufacture_date &lt;= #{manufactureEndTime}
+			</if>
+
+			<if test="firstMaterialFlag != null">
+				AND vi.first_material_flag = #{firstMaterialFlag}
+			</if>
+			<if test="firstTemplateFlag != null">
+				AND vi.first_template_flag = #{firstTemplateFlag}
 			</if>
 			${params.dataScope}
 		</where>
@@ -413,4 +428,166 @@
 		</otherwise>
 	</choose>
 	</update>
+
+	<!-- ==================== 首台车管理 ==================== -->
+
+	<!-- 查询该物料号下未删除的记录数（排除自身） -->
+	<select id="countByMaterialNoExclude" resultType="int">
+		SELECT COUNT(1)
+		FROM vehicle_info
+		WHERE material_no = #{materialNo}
+		  AND vehicle_id != #{excludeId}
+		  AND deleted = 0
+	</select>
+
+	<!-- 查询该物料号下制造时间最早的 vehicle_id -->
+	<select id="findEarliestIdByMaterialNo" resultType="long">
+		SELECT vehicle_id
+		FROM vehicle_info
+		WHERE material_no = #{materialNo}
+		  AND deleted = 0
+		ORDER BY manufacture_date ASC
+			LIMIT 1
+	</select>
+
+	<!-- 查询该模版下未删除的记录数（排除自身） -->
+	<select id="countByTemplateIdExclude" resultType="int">
+		SELECT COUNT(1)
+		FROM vehicle_info
+		WHERE vehicle_template_id = #{templateId}
+		  AND vehicle_id != #{excludeId}
+		  AND deleted = 0
+	</select>
+
+	<!-- 查询该模版下制造时间最早的 vehicle_id -->
+	<select id="findEarliestIdByTemplateId" resultType="long">
+		SELECT vehicle_id
+		FROM vehicle_info
+		WHERE vehicle_template_id = #{templateId}
+		  AND deleted = 0
+		ORDER BY manufacture_date ASC
+			LIMIT 1
+	</select>
+
+	<!-- 清除该物料号下所有车辆的物料号标识（删除车辆时重新找最早一条用） -->
+	<update id="clearMaterialFlagByMaterialNo">
+		UPDATE vehicle_info
+		SET first_material_flag = 0,
+			update_time         = SYSDATE()
+		WHERE material_no = #{materialNo}
+		  AND deleted = 0
+	</update>
+
+	<!-- 清除该模版下所有车辆的模版标识（模版修改 / 删除车辆时重新打标用） -->
+	<update id="clearTemplateFlagByTemplateId">
+		UPDATE vehicle_info
+		SET first_template_flag = 0,
+			update_time         = SYSDATE()
+		WHERE vehicle_template_id = #{templateId}
+		  AND deleted = 0
+	</update>
+
+	<!-- 打物料号首台标识 -->
+	<update id="markMaterialFlag">
+		UPDATE vehicle_info
+		SET first_material_flag = #{flag},
+			update_time         = SYSDATE()
+		WHERE vehicle_id = #{vehicleId}
+	</update>
+
+	<!-- 打模版首台标识 -->
+	<update id="markTemplateFlag">
+		UPDATE vehicle_info
+		SET first_template_flag = #{flag},
+			update_time         = SYSDATE()
+		WHERE vehicle_id = #{vehicleId}
+	</update>
+
+	<!-- 查询物料号维度未确认列表（Tab1） -->
+	<select id="listFirstMaterialUnconfirmed" resultMap="VehicleInfoResult">
+		<include refid="selectVehicleInfoVo"/>
+		WHERE vi.first_material_flag = 1
+		AND vi.deleted = 0
+		ORDER BY vi.manufacture_date ASC
+	</select>
+
+	<!-- 查询模版维度未确认列表（Tab2） -->
+	<select id="listFirstTemplateUnconfirmed" resultMap="VehicleInfoResult">
+		<include refid="selectVehicleInfoVo"/>
+		WHERE vi.first_template_flag = 1
+		AND vi.deleted = 0
+		ORDER BY vi.manufacture_date ASC
+	</select>
+
+	<!-- 确认：清除物料号标识，记录确认人和时间 -->
+	<update id="confirmMaterialFlag">
+		UPDATE vehicle_info
+		SET first_material_flag     = 0,
+			material_confirmed_by   = #{confirmedBy},
+			material_confirmed_time = SYSDATE(),
+			update_by               = #{confirmedBy},
+			update_time             = SYSDATE()
+		WHERE vehicle_id = #{vehicleId}
+	</update>
+
+	<!-- 确认：清除模版标识，记录确认人和时间 -->
+	<update id="confirmTemplateFlag">
+		UPDATE vehicle_info
+		SET first_template_flag     = 0,
+			template_confirmed_by   = #{confirmedBy},
+			template_confirmed_time = SYSDATE(),
+			update_by               = #{confirmedBy},
+			update_time             = SYSDATE()
+		WHERE vehicle_id = #{vehicleId}
+	</update>
+
+	<!-- 查询该物料号下 first_material_flag=1 且未确认的 vehicle_id -->
+	<select id="findPendingMaterialFlagId" resultType="long">
+		SELECT vehicle_id
+		FROM vehicle_info
+		WHERE material_no = #{materialNo}
+		  AND first_material_flag = 1
+		  AND material_confirmed_time IS NULL
+		  AND deleted = 0
+			LIMIT 1
+	</select>
+
+	<!-- 查询该模版下 first_template_flag=1 且未确认的 vehicle_id -->
+	<select id="findPendingTemplateFlagId" resultType="long">
+		SELECT vehicle_id
+		FROM vehicle_info
+		WHERE vehicle_template_id = #{templateId}
+		  AND first_template_flag = 1
+		  AND template_confirmed_time IS NULL
+		  AND deleted = 0
+			LIMIT 1
+	</select>
+
+	<!-- 该物料号下是否存在已确认记录 -->
+	<select id="existsConfirmedMaterial" resultType="boolean">
+		SELECT COUNT(1) > 0
+		FROM vehicle_info
+		WHERE material_no = #{materialNo}
+		  AND material_confirmed_time IS NOT NULL
+		  AND deleted = 0
+	</select>
+
+	<!-- 该模版下是否存在已确认记录 -->
+	<select id="existsConfirmedTemplate" resultType="boolean">
+		SELECT COUNT(1) > 0
+		FROM vehicle_info
+		WHERE vehicle_template_id = #{templateId}
+		  AND template_confirmed_time IS NOT NULL
+		  AND deleted = 0
+	</select>
+
+
+	<!-- 通过 uuid 查询该模版组下所有 template_id -->
+	<select id="findTemplateIdsByUuid" resultType="string">
+		SELECT DISTINCT vi.vehicle_template_id
+		FROM vehicle_info vi
+				 INNER JOIN vehicle_template vt ON vt.template_id = vi.vehicle_template_id
+		WHERE vt.uuid = #{uuid}
+		  AND vi.deleted = 0
+	</select>
 </mapper>

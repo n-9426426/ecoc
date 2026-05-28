@@ -27,6 +27,7 @@ import com.ruoyi.vehicle.domain.VehicleTemplateMaterial;
 import com.ruoyi.vehicle.mapper.AbnormalClassifyMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMaterialMapper;
+import com.ruoyi.vehicle.service.IFirstVehicleCheckService;
 import com.ruoyi.vehicle.service.IVehicleTemplateService;
 import com.ruoyi.vehicle.service.IVehicleValidationService;
 import com.ruoyi.vehicle.utils.ExcelUtil;
@@ -101,6 +102,11 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
     @Autowired
     private RemoteNoticeService remoteNoticeService;
+
+    @Autowired
+    private IFirstVehicleCheckService firstVehicleCheckService;
+
+
 
     /**
      * 字典缓存：dictType → (dictLabel → dictValue)
@@ -283,7 +289,12 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         template.setValidateTime(null);
         template.setValidateMsg(null);
         templateMapper.updateAllTemplateNotIsLast(template.getUuid());
-        return templateMapper.insertVehicleTemplate(template);
+        int rows = templateMapper.insertVehicleTemplate(template);
+        if (rows > 0) {
+            // 用 uuid 触发，而不是 templateId
+            firstVehicleCheckService.handleAfterTemplateModified(template.getUuid());
+        }
+        return rows;
     }
 
     @Override

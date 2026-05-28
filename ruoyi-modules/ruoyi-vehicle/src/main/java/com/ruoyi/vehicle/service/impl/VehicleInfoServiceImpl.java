@@ -24,6 +24,7 @@ import com.ruoyi.vehicle.domain.*;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import com.ruoyi.vehicle.enums.VehicleLifecycleOperation;
 import com.ruoyi.vehicle.mapper.*;
+import com.ruoyi.vehicle.service.IFirstVehicleCheckService;
 import com.ruoyi.vehicle.service.IMaterialBlacklistService;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.service.IVehicleValidationService;
@@ -81,6 +82,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Autowired
     private IMaterialBlacklistService materialBlacklistService;
+
+    @Autowired
+    private IFirstVehicleCheckService firstVehicleCheckService;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -216,6 +220,11 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
         validateVehicleInfo(Collections.singletonList(vehicleInfo.getVehicleId()));
         int insertRow = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+        if (insertRow > 0) {
+            // 新增：触发首台车标识检查
+            firstVehicleCheckService.handleAfterInsert(Collections.singletonList(vehicleInfo));
+        }
+
         if (vehicleInfo.getBreakpointTime() != null) {
             String sb =
                     "车辆VIN " +
@@ -303,14 +312,14 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     @Override
     public AjaxResult deleteVehicleInfoByIds(Long[] vehicleIds) {
         try {
-            // 查出要删除的车辆
             List<VehicleInfo> list = vehicleInfoMapper.selectVehicleInfoByIds(vehicleIds);
             for (VehicleInfo v : list) {
-                // vin 加时间戳打破唯一键
                 v.setVin(v.getVin() + "_DEL_" + System.currentTimeMillis());
                 v.setDeleted(2);
                 vehicleInfoMapper.updateVehicleInfo(v);
             }
+            // 删除完成后统一触发（传删除前查出的原始列表）
+            firstVehicleCheckService.handleAfterDelete(list);
             return AjaxResult.success(list.size());
         } catch (Exception e) {
             return AjaxResult.error(e.getMessage());

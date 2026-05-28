@@ -13,6 +13,7 @@ import com.ruoyi.common.log.annotation.Log;
 import com.ruoyi.common.log.enums.BusinessType;
 import com.ruoyi.common.security.annotation.RequiresPermissions;
 import com.ruoyi.common.security.service.TokenService;
+import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.RemoteLoginService;
 import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.RemoteTranslateService;
@@ -21,6 +22,7 @@ import com.ruoyi.system.api.domain.SysUser;
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
+import com.ruoyi.vehicle.service.IFirstVehicleCheckService;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.utils.ExcelUtil;
 import io.swagger.v3.oas.annotations.Operation;
@@ -60,6 +62,10 @@ public class VehicleInfoController extends BaseController {
 
     @Autowired
     private ExcelUtil excelUtil;
+
+
+    @Autowired
+    private IFirstVehicleCheckService firstVehicleCheckService;
 
     @Operation(summary = "MES数据推送至本系统")
     @Log(title = "数据推送", businessType = BusinessType.INSERT)
@@ -266,5 +272,66 @@ public class VehicleInfoController extends BaseController {
         ClassPathResource resource = new ClassPathResource("assets/" + fileName);
         IOUtils.copy(resource.getInputStream(), response.getOutputStream());
         response.flushBuffer();
+    }
+
+
+
+    // ===================================================================
+    //  查询
+    // ===================================================================
+
+    /**
+     * Tab1：整车物料号维度未确认列表
+     * 在车辆信息查询条件基础上，固定过滤 first_material_flag = 1
+     */
+    @Operation(summary = "首台车-物料号维度未确认列表")
+    @RequiresPermissions("vehicle:first:query")
+    @GetMapping("/material/list")
+    public TableDataInfo materialList(VehicleInfo vehicleInfo) {
+        // 固定只查 first_material_flag = 1 的记录
+        vehicleInfo.setFirstMaterialFlag(1);
+        startPage();
+        return getDataTable(vehicleInfoService.selectVehicleInfoList(vehicleInfo));
+    }
+
+    /**
+     * Tab2：TVV/模版维度未确认列表
+     * 在车辆信息查询条件基础上，固定过滤 first_template_flag = 1
+     */
+    @Operation(summary = "首台车-模版维度未确认列表")
+    @RequiresPermissions("vehicle:first:query")
+    @GetMapping("/tvv/list")
+    public TableDataInfo templateList(VehicleInfo vehicleInfo) {
+        vehicleInfo.setFirstTemplateFlag(1);
+        startPage();
+        return getDataTable(vehicleInfoService.selectVehicleInfoList(vehicleInfo));
+    }
+
+    // ===================================================================
+    //  确认
+    // ===================================================================
+
+    /**
+     * 确认物料号首台
+     */
+    @Operation(summary = "确认物料号首台标识")
+    @RequiresPermissions("vehicle:first:confirm")
+    @Log(title = "首台车确认", businessType = BusinessType.UPDATE)
+    @PutMapping("/material/confirm/{vehicleId}")
+    public AjaxResult confirmMaterial(@PathVariable Long vehicleId) {
+        firstVehicleCheckService.confirmMaterial(vehicleId, SecurityUtils.getUsername());
+        return AjaxResult.success();
+    }
+
+    /**
+     * 确认模版首台
+     */
+    @Operation(summary = "确认模版首台标识")
+    @RequiresPermissions("vehicle:first:confirm")
+    @Log(title = "首台车确认", businessType = BusinessType.UPDATE)
+    @PutMapping("/template/confirm/{vehicleId}")
+    public AjaxResult confirmTemplate(@PathVariable Long vehicleId) {
+        firstVehicleCheckService.confirmTemplate(vehicleId, SecurityUtils.getUsername());
+        return AjaxResult.success();
     }
 }

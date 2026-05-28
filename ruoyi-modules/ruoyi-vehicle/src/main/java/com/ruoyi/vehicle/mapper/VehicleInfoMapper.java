@@ -94,4 +94,88 @@ public interface VehicleInfoMapper {
     int updateTempVersionByVin(@Param("vin") String vin, @Param("tempVersion") String tempVersion);
 
     int updateVehicleTemplateIdByTempVersion(@Param("breakpointId") Long breakpointId, @Param("list") List<String> vinList);
+
+
+    // ===================================================================
+    //  首台车管理
+    // ===================================================================
+
+    /**
+     * 查询该物料号下制造时间最早的 vehicle_id
+     */
+    Long findEarliestIdByMaterialNo(@Param("materialNo") String materialNo);
+
+    /**
+     * 查询该模版下制造时间最早的 vehicle_id
+     */
+    Long findEarliestIdByTemplateId(@Param("templateId") String templateId);
+
+    /**
+     * 查询该物料号下当前 first_material_flag=1 且未确认的 vehicle_id
+     * 正常情况下最多只有一条
+     */
+    Long findPendingMaterialFlagId(@Param("materialNo") String materialNo);
+
+    /**
+     * 查询该模版下当前 first_template_flag=1 且未确认的 vehicle_id
+     */
+    Long findPendingTemplateFlagId(@Param("templateId") String templateId);
+
+    /**
+     * 该物料号下是否存在已确认的记录（material_confirmed_time IS NOT NULL）
+     */
+    boolean existsConfirmedMaterial(@Param("materialNo") String materialNo);
+
+    /**
+     * 该模版下是否存在已确认的记录（template_confirmed_time IS NOT NULL）
+     */
+    boolean existsConfirmedTemplate(@Param("templateId") String templateId);
+
+    /**
+     * 清除该物料号下所有车辆的物料号首台标识
+     */
+    void clearMaterialFlagByMaterialNo(@Param("materialNo") String materialNo);
+
+    /**
+     * 清除该模版下所有车辆的模版首台标识
+     */
+    void clearTemplateFlagByTemplateId(@Param("templateId") String templateId);
+
+    /**
+     * 设置指定车辆的物料号首台标识
+     *
+     * @param vehicleId 车辆ID
+     * @param flag      0-取消 1-打标
+     */
+    void markMaterialFlag(@Param("vehicleId") Long vehicleId, @Param("flag") int flag);
+
+    /**
+     * 设置指定车辆的模版首台标识
+     *
+     * @param vehicleId 车辆ID
+     * @param flag      0-取消 1-打标
+     */
+    void markTemplateFlag(@Param("vehicleId") Long vehicleId, @Param("flag") int flag);
+
+    /**
+     * 查询物料号维度未确认列表（Tab1）
+     */
+    List<VehicleInfo> listFirstMaterialUnconfirmed();
+
+    /**
+     * 查询模版维度未确认列表（Tab2）
+     */
+    List<VehicleInfo> listFirstTemplateUnconfirmed();
+
+    /**
+     * 确认物料号首台：清除标识并记录确认人、确认时间
+     */
+    void confirmMaterialFlag(@Param("vehicleId") Long vehicleId, @Param("confirmedBy") String confirmedBy);
+
+    /**
+     * 确认模版首台：清除标识并记录确认人、确认时间
+     */
+    void confirmTemplateFlag(@Param("vehicleId") Long vehicleId, @Param("confirmedBy") String confirmedBy);
+
+    List<String> findTemplateIdsByUuid(@Param("uuid") String uuid);
 }
