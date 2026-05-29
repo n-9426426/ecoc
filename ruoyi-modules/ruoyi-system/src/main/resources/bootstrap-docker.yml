@@ -23,15 +23,3 @@ spring:
   mvc:
     async:
       request-timeout: -1
-canal:
-  hostname: ruoyi-canal
-  port: 11111
-  server: ruoyi-canal:11111
-  destination: example
-  username: canal
-  password: canal
-  filter: ry-cloud\.sys_notice
-  max-retry: 5
-  retry-interval: 5000
-  heartbeat-interval: 30000
-  heartbeat-timeout: 60000

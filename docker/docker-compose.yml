@@ -73,23 +73,6 @@ services:
     networks:
       - app-net
 
-  ruoyi-canal:
-    image: canal/canal-server:v1.1.8
-    container_name: ruoyi-canal
-    ports:
-      - "11111:11111"
-    environment:
-      - canal.instance.master.address=ruoyi-mysql:3306
-      - canal.instance.dbUsername=root
-      - canal.instance.dbPassword=password
-      - canal.instance.connectionCharset=UTF-8
-      - canal.instance.filter.regex=ry-cloud\\.sys_notice
-    depends_on:
-      - ruoyi-mysql
-    restart: unless-stopped
-    networks:
-      - app-net
-
   ruoyi-gateway:
     container_name: ruoyi-gateway
 #    build:
@@ -133,15 +116,12 @@ services:
       - SPRING_PROFILES_ACTIVE=dev
       - SPRING_CLOUD_NACOS_DISCOVERY_SERVER-ADDR=ruoyi-nacos:8848
       - SPRING_CLOUD_NACOS_CONFIG_SERVER-ADDR=ruoyi-nacos:8848
-      - CANAL_HOSTNAME=ruoyi-canal
-      - CANAL_SERVER=ruoyi-canal:11111
     ports:
       - "9201:9201"
     depends_on:
       - ruoyi-redis
       - ruoyi-mysql
       - ruoyi-nacos
-      - ruoyi-canal
     restart: unless-stopped
     networks:
       - app-net

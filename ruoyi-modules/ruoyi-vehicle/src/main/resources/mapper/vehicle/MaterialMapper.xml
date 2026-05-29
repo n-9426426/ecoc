@@ -21,13 +21,14 @@
         <result property="remark"           column="remark"            />
         <result property="lastVersion"      column="last_version"      />
         <result property="vehicleTemplateId" column="vehicle_template_id"/>
-        <result property="effectiveDate" column="effective_date"/>
+        <result property="effectiveDate"       column="effective_date"       />
+        <result property="tireResistanceGrade" column="tire_resistance_grade" />
     </resultMap>
 
     <sql id="selectMaterialVo">
         SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.trie, m.weight, m.brand, m.sale_name,
                m.create_time, m.create_by, m.update_time, m.update_by, m.remark,
-               m.vehicle_template_id,
+               m.vehicle_template_id, m.tire_resistance_grade,
                vt.version, vt.is_last
         FROM material m
         LEFT JOIN vehicle_template vt ON vt.template_id = m.vehicle_template_id
@@ -36,6 +37,7 @@
     <select id="selectMaterialList" parameterType="Material" resultMap="MaterialResult">
         SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.trie, m.weight, m.brand, m.sale_name,
         m.create_time, m.create_by, m.update_time, m.update_by, vt.remark, m.vehicle_template_id,
+        m.tire_resistance_grade,
         ANY_VALUE(vt.version) AS version,
         ANY_VALUE(vt.is_last) AS is_last,
         ANY_VALUE(vt.effective_date) AS effective_date,
@@ -91,6 +93,7 @@
             <if test="createBy != null and createBy != ''">create_by,</if>
             <if test="remark != null and remark != ''">remark,</if>
             <if test="vehicleTemplateId != null">vehicle_template_id,</if>
+            <if test="tireResistanceGrade != null and tireResistanceGrade != ''">tire_resistance_grade,</if>
         </trim>
         <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
             <if test="name != null and name != ''">#{name},</if>
@@ -105,6 +108,7 @@
             <if test="createBy != null and createBy != ''">#{createBy},</if>
             <if test="remark != null and remark != ''">#{remark},</if>
             <if test="vehicleTemplateId != null">#{vehicleTemplateId},</if>
+            <if test="tireResistanceGrade != null and tireResistanceGrade != ''">#{tireResistanceGrade},</if>
         </trim>
     </insert>
 
@@ -123,6 +127,7 @@
             <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
             <if test="remark != null and remark != ''">remark = #{remark},</if>
             <if test="vehicleTemplateId != null">vehicle_template_id = #{vehicleTemplateId},</if>
+            <if test="tireResistanceGrade != null and tireResistanceGrade != ''">tire_resistance_grade = #{tireResistanceGrade},</if>
         </trim>
         WHERE id = #{id}
     </update>
