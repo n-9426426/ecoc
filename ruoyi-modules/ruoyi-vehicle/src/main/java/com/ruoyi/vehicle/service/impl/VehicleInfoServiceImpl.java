@@ -457,7 +457,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> getVehicleInfoFromMes(VehicleDto.Vehicle vehicle, Date now, LoginUser loginUser) {
-        // 直接用传进来的 loginUser，不从 SecurityContext 取
         Set<String> permissions = loginUser.getPermissions();
         if (!permissions.contains("vehicle:info:toSystem")) {
             throw new ServiceException("没有权限执行此操作");
@@ -476,6 +475,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new RuntimeException("车型代码不存在");
         }
         insertVehicleInfo(vehicleInfo);
+        // 新增后触发首台车打标逻辑
+        firstVehicleCheckService.handleAfterInsert(Collections.singletonList(vehicleInfo));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("vin", vehicleInfo.getVin());
@@ -496,19 +497,19 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         Workbook workbook = new XSSFWorkbook(file.getInputStream());
         Sheet sheet = workbook.getSheetAt(0);
 
-        // 第一行是表头，从第二行开始读数据
         int lastRowNum = sheet.getLastRowNum();
         if (lastRowNum < 1) {
             throw new RuntimeException("Excel中没有数据行");
         }
 
         List<String> errorMsgs = new ArrayList<>();
+        // 收集本次成功导入的车辆，用于批量触发首台车打标
+        List<VehicleInfo> importedList = new ArrayList<>();
 
         for (int rowIndex = 1; rowIndex <= lastRowNum; rowIndex++) {
             Row row = sheet.getRow(rowIndex);
             if (row == null) continue;
 
-            // 读取各列
             String vin                 = getCellStringValue(row.getCell(0));
             String vehicleModel        = getCellStringValue(row.getCell(1));
             String materialNo          = getCellStringValue(row.getCell(2));
@@ -533,33 +534,27 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             String motorNumber         = getCellStringValue(row.getCell(21));
             Date breakpointTime        = getCellDateValue(row.getCell(22));
 
-            // 跳过空行
             if (StringUtils.isBlank(vin)) continue;
 
             try {
-                // VIN判重
                 if (vehicleInfoMapper.selectVehicleInfoByVin(vin) != null) {
                     errorMsgs.add("第" + (rowIndex + 1) + "行：VIN[" + vin + "]已存在，跳过");
                     continue;
                 }
 
-                // 通过物料号查模板ID
                 List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(brand, weight, saleName, tire, tvv);
                 if (vehicleTemplateList.isEmpty()) {
                     errorMsgs.add("第" + (rowIndex + 1) + "行：物料号[" + materialNo + "]未找到可用关联模板，跳过");
                     continue;
                 }
 
-                // 查模板详情，获取 wvtaCocNo、cocTemplateNo、json
                 Long templateId = vehicleTemplateList.get(0).getTemplateId();
-                VehicleTemplate template = vehicleTemplateMapper
-                        .selectVehicleTemplateById(templateId);
+                VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(templateId);
                 if (template == null) {
                     errorMsgs.add("第" + (rowIndex + 1) + "行：模板ID[" + templateId + "]不存在，跳过");
                     continue;
                 }
 
-                // 组装 VehicleInfo
                 VehicleInfo vehicleInfo = new VehicleInfo();
                 vehicleInfo.setVin(vin);
                 vehicleInfo.setVehicleModel(vehicleModel);
@@ -584,15 +579,10 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 vehicleInfo.setBatteryNumber(batteryNumber);
                 vehicleInfo.setMotorNumber(motorNumber);
                 vehicleInfo.setBreakpointTime(breakpointTime);
-
-
-                // 从模板自动获取
                 vehicleInfo.setWvtaNo(template.getWvtaCocNo());
                 vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
                 vehicleInfo.setJson(template.getJson());
                 vehicleInfo.setVehicleTemplateId(String.valueOf(templateId));
-
-                // 默认值
                 vehicleInfo.setUploadStatus(0);
                 vehicleInfo.setValidationResult(0);
                 vehicleInfo.setDeleted(0);
@@ -601,10 +591,10 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null ? SecurityUtils.getUsername() : "MES To System");
                 vehicleInfo.setCreateTime(DateUtils.getNowDate());
 
-                // VehicleTemplate.json 已在导入阶段完成字段映射，直接使用，无需再次转换
                 vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+                // insert 后 vehicleId 已回写，加入成功列表
+                importedList.add(vehicleInfo);
 
-                // 写入生命周期
                 VehicleLifecycle lifecycle = new VehicleLifecycle();
                 lifecycle.setTime(new Date());
                 lifecycle.setVin(vin);
@@ -622,10 +612,27 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
         workbook.close();
 
-        // 有错误行则汇总提示，但不影响成功行
+        // 所有行处理完后，批量触发首台车打标
+        // 放在 workbook.close() 之后、异常汇总之前，保证成功的行都能触发
+        if (!importedList.isEmpty()) {
+            firstVehicleCheckService.handleAfterInsert(importedList);
+        }
+
         if (!errorMsgs.isEmpty()) {
             throw new RuntimeException("部分数据导入失败：\n" + String.join("\n", errorMsgs));
         }
+    }
+
+    @Override
+    public List<VehicleInfo> listFirstVehicleUnconfirmed(VehicleInfo vehicleInfo, String dimension) {
+        List<VehicleInfo> list = vehicleInfoMapper.listFirstVehicleUnconfirmed(vehicleInfo, dimension);
+        return list;
+    }
+
+    @Override
+    public List<VehicleInfo> selectVehicleInfoByIds(Long[] vehicleIds) {
+        List<VehicleInfo> snapshot = vehicleInfoMapper.selectVehicleInfoByIds(vehicleIds);
+        return snapshot;
     }
 
     public int updateVehicleTemplateId(String vin, Long templateId) {

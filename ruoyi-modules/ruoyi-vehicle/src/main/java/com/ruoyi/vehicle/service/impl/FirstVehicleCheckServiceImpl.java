@@ -11,24 +11,41 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
  * 首台车确认 Service 实现
  *
- * <p>核心计算逻辑（物料号和模版各自独立）：
+ * <p><b>核心概念：</b>
+ * <ul>
+ *   <li>物料号维度：{@code first_material_flag=1} 标记该物料号下制造日期最早的车，
+ *       由人工"确认生成"（{@code generate_affirm=1}）后完成确认。</li>
+ *   <li>模版维度：{@code first_template_flag=1} 标记该模版下制造日期最早的车，
+ *       由人工"确认上传"（{@code upload_affirm=1}）后完成确认。</li>
+ * </ul>
+ *
+ * <p><b>打标规则（物料号/模版通用）：</b>
  * <pre>
- * 同一物料号/模版下：
- *   1. 存在 flag=1 且未确认的车：
- *      - 它就是制造日期最早的 → 不动
- *      - 它不是最早的         → 清掉它，把最早的打上
- *   2. 不存在任何 flag=1 的车（全部未打标或已确认）：
- *      - 存在已确认的车       → 说明已经处理过，不再打新标
- *      - 不存在已确认的车     → 找最早的打上
+ * 该物料号/模版 在库中是否存在？
+ * ├── 不存在 → 直接打标
+ * └── 存在
+ *     ├── 已有确认记录（generate_affirm/upload_affirm=1）→ 跳过，不打标
+ *     └── 无确认记录 → 找制造日期最早的打标
+ *         ├── 当前 flag=1 的就是最早的 → 不动
+ *         └── 当前 flag=1 的不是最早的 → 清全组，给最早的打标
  * </pre>
+ *
+ * <p><b>删除规则：</b>
+ * <pre>
+ * 被删的车 generate_affirm=1（物料号已确认）→ 不触发物料号重算
+ * 被删的车 generate_affirm=0（未确认）      → 触发物料号重算
+ * 模版维度同理（upload_affirm）
+ * </pre>
+ *
+ * <p><b>模版改动规则：</b>
+ * 重置该 uuid 下所有关联车辆的模版确认状态（upload_affirm=0，清除确认人/时间），
+ * 然后重新打标。
  */
 @Slf4j
 @Service
@@ -53,21 +70,63 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
         if (vehicleList == null || vehicleList.isEmpty()) {
             return;
         }
-        // 场景1：提取本次涉及的所有物料号（去重），逐个重新计算
         if (isSwitchOn(KEY_NEW_MATERIAL)) {
-            vehicleList.stream()
-                    .map(VehicleInfo::getMaterialNo)
-                    .filter(s -> s != null && !s.isEmpty())
-                    .collect(Collectors.toSet())
+            collectMaterialNos(vehicleList)
                     .forEach(this::recalculateMaterialFlag);
         }
-        // 场景2：提取本次涉及的所有模版ID（去重），逐个重新计算
         if (isSwitchOn(KEY_NEW_TEMPLATE)) {
-            vehicleList.stream()
-                    .map(VehicleInfo::getVehicleTemplateId)
-                    .filter(s -> s != null && !s.isEmpty())
-                    .collect(Collectors.toSet())
+            collectTemplateIds(vehicleList)
                     .forEach(this::recalculateTemplateFlag);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void handleAfterUpdate(VehicleInfo newInfo) {
+        if (newInfo == null || newInfo.getVehicleId() == null) {
+            return;
+        }
+
+        // 查更新前的旧数据
+        VehicleInfo oldInfo = vehicleInfoMapper.selectVehicleInfoById(newInfo.getVehicleId());
+        if (oldInfo == null) {
+            // 旧数据不存在，按新增处理
+            handleAfterInsert(Collections.singletonList(newInfo));
+            return;
+        }
+
+        // 物料号维度：物料号发生变化时，旧物料号和新物料号都要重算
+        if (isSwitchOn(KEY_NEW_MATERIAL)) {
+            String oldMaterial = oldInfo.getMaterialNo();
+            String newMaterial = newInfo.getMaterialNo();
+            boolean materialChanged = !Objects.equals(oldMaterial, newMaterial);
+            if (materialChanged) {
+                if (isNotBlank(oldMaterial)) {
+                    log.info("[首台车] 物料号变更，重算旧物料号={}", oldMaterial);
+                    recalculateMaterialFlag(oldMaterial);
+                }
+                if (isNotBlank(newMaterial)) {
+                    log.info("[首台车] 物料号变更，重算新物料号={}", newMaterial);
+                    recalculateMaterialFlag(newMaterial);
+                }
+            }
+        }
+
+        // 模版维度：模版 ID 发生变化时，旧模版和新模版都要重算
+        if (isSwitchOn(KEY_NEW_TEMPLATE)) {
+            String oldTemplateId = oldInfo.getVehicleTemplateId();
+            String newTemplateId = newInfo.getVehicleTemplateId();
+            boolean templateChanged = !Objects.equals(oldTemplateId, newTemplateId);
+            if (templateChanged) {
+                if (isNotBlank(oldTemplateId)) {
+                    log.info("[首台车] 模版变更，重算旧模版={}", oldTemplateId);
+                    recalculateTemplateFlag(oldTemplateId);
+                }
+                if (isNotBlank(newTemplateId)) {
+                    log.info("[首台车] 模版变更，重算新模版={}", newTemplateId);
+                    recalculateTemplateFlag(newTemplateId);
+                }
+            }
         }
     }
 
@@ -77,20 +136,24 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
         if (deletedList == null || deletedList.isEmpty()) {
             return;
         }
-        // 只对删除前持有标识的车辆涉及的物料号/模版重新计算
+
         if (isSwitchOn(KEY_NEW_MATERIAL)) {
+            // 只对"未确认"的车辆涉及的物料号重算
+            // 已确认（generate_affirm=1）说明该物料号已走完流程，删除不影响
             deletedList.stream()
-                    .filter(v -> Objects.equals(v.getFirstMaterialFlag(), 1))
+                    .filter(v -> !Objects.equals(v.getGenerateAffirm(), 1))
                     .map(VehicleInfo::getMaterialNo)
-                    .filter(s -> s != null && !s.isEmpty())
+                    .filter(this::isNotBlank)
                     .collect(Collectors.toSet())
                     .forEach(this::recalculateMaterialFlag);
         }
+
         if (isSwitchOn(KEY_NEW_TEMPLATE)) {
+            // 只对"未确认"的车辆涉及的模版重算
             deletedList.stream()
-                    .filter(v -> Objects.equals(v.getFirstTemplateFlag(), 1))
+                    .filter(v -> !Objects.equals(v.getUploadAffirm(), 1))
                     .map(VehicleInfo::getVehicleTemplateId)
-                    .filter(s -> s != null && !s.isEmpty())
+                    .filter(this::isNotBlank)
                     .collect(Collectors.toSet())
                     .forEach(this::recalculateTemplateFlag);
         }
@@ -102,45 +165,40 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
         if (!isSwitchOn(KEY_TEMPLATE_MODIFIED)) {
             return;
         }
-        // 通过 uuid 找该模版组下所有 template_id 关联的车辆，逐个重新计算
-        List<String> templateIds = vehicleInfoMapper.findTemplateIdsByUuid(uuid);
-        if (templateIds == null || templateIds.isEmpty()) {
+        if (uuid == null || uuid.isEmpty()) {
             return;
         }
-        // 清除所有关联车辆的模版标识
-        templateIds.forEach(vehicleInfoMapper::clearTemplateFlagByTemplateId);
-        // 每个 templateId 下重新找最早的打标（因为不同 templateId 下的车辆是独立的）
+
+        // 查出该 uuid 下所有关联的 templateId
+        List<String> templateIds = vehicleInfoMapper.findTemplateIdsByUuid(uuid);
+        if (templateIds == null || templateIds.isEmpty()) {
+            log.debug("[首台车] 模版 uuid={} 无关联车辆，跳过", uuid);
+            return;
+        }
+
+        // 重置该 uuid 下所有关联车辆的模版确认状态
+        // 模版内容改了，之前的"可上传"确认作废，需要重新人工确认
         templateIds.forEach(templateId -> {
-            Long earliestId = vehicleInfoMapper.findEarliestIdByTemplateId(templateId);
-            if (earliestId != null) {
-                vehicleInfoMapper.markTemplateFlag(earliestId, 1);
-                log.info("[首台车] 模版修改 uuid={} templateId={} → 重新打标 vehicleId={}", uuid, templateId, earliestId);
-            }
+            vehicleInfoMapper.resetTemplateConfirm(templateId);
+            log.info("[首台车] 模版修改 uuid={} templateId={} → 重置确认状态", uuid, templateId);
         });
+
+        // 重置后，existsConfirmedTemplate 返回 false，recalculateTemplateFlag 可以正常打标
+        templateIds.forEach(this::recalculateTemplateFlag);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void confirmMaterial(Long vehicleId, String confirmedBy) {
-        vehicleInfoMapper.confirmMaterialFlag(vehicleId, confirmedBy);  // 更新 generate_affirm=1 + confirmed 字段
-        log.info("[首台车] 物料号确认 vehicleId={} by={}", vehicleId, confirmedBy);
+        vehicleInfoMapper.confirmMaterialFlag(vehicleId, confirmedBy);
+        log.info("[首台车] 物料号确认（可生成）vehicleId={} by={}", vehicleId, confirmedBy);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void confirmTemplate(Long vehicleId, String confirmedBy) {
-        vehicleInfoMapper.confirmTemplateFlag(vehicleId, confirmedBy);  // 更新 upload_affirm=1 + confirmed 字段
-        log.info("[首台车] 模版确认 vehicleId={} by={}", vehicleId, confirmedBy);
-    }
-
-    @Override
-    public List<VehicleInfo> listFirstMaterialUnconfirmed() {
-        return vehicleInfoMapper.listFirstMaterialUnconfirmed();
-    }
-
-    @Override
-    public List<VehicleInfo> listFirstTemplateUnconfirmed() {
-        return vehicleInfoMapper.listFirstTemplateUnconfirmed();
+        vehicleInfoMapper.confirmTemplateFlag(vehicleId, confirmedBy);
+        log.info("[首台车] 模版确认（可上传）vehicleId={} by={}", vehicleId, confirmedBy);
     }
 
     // ===================================================================
@@ -148,49 +206,39 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
     // ===================================================================
 
     /**
-     * 重新计算某个物料号下应该打标的车辆
+     * 重新计算某个物料号下应该打标的车辆。
      *
      * <pre>
-     * 1. 查出当前 flag=1 且未确认的车（pending）
-     * 2. 查出该物料号下制造日期最早的车（earliest）
-     * 3. 如果已有已确认的记录 → 不打新标，直接返回
-     * 4. pending 和 earliest 是同一辆 → 不动
-     * 5. pending 不是 earliest       → 清掉 pending，给 earliest 打标
-     * 6. 没有 pending                → 给 earliest 打标
+     * 1. 该物料号已有确认记录（generate_affirm=1）→ 跳过
+     * 2. 先清掉该物料号下所有 flag，防止脏数据
+     * 3. 找制造日期最早的车
+     * 4. 不存在 → 不打标（该物料号下已无车辆）
+     * 5. 存在   → 打标
      * </pre>
      */
     private void recalculateMaterialFlag(String materialNo) {
-        // 是否存在已确认的记录
-        boolean hasConfirmed = vehicleInfoMapper.existsConfirmedMaterial(materialNo);
-        if (hasConfirmed) {
-            log.debug("[首台车] 物料号 {} 已有确认记录，跳过打标", materialNo);
+        if (!isNotBlank(materialNo)) {
             return;
         }
 
-        // 当前待确认（flag=1）的 vehicle_id
-        Long pendingId = vehicleInfoMapper.findPendingMaterialFlagId(materialNo);
+        // 已有确认记录，说明该物料号已走完流程，不再重复打标
+        if (vehicleInfoMapper.existsConfirmedMaterial(materialNo)) {
+            log.debug("[首台车] 物料号={} 已有确认记录，跳过打标", materialNo);
+            return;
+        }
 
-        // 制造日期最早的 vehicle_id
+        // 先清掉该物料号下全部 flag，保证只有一条 flag=1
+        vehicleInfoMapper.clearMaterialFlagByMaterialNo(materialNo);
+
+        // 找制造日期最早的
         Long earliestId = vehicleInfoMapper.findEarliestIdByMaterialNo(materialNo);
-
         if (earliestId == null) {
+            log.debug("[首台车] 物料号={} 已无车辆，不打标", materialNo);
             return;
-        }
-
-        if (pendingId != null && pendingId.equals(earliestId)) {
-            // 标识正确，不动
-            log.debug("[首台车] 物料号 {} 标识正确，vehicleId={}", materialNo, pendingId);
-            return;
-        }
-
-        if (pendingId != null) {
-            // 标识打在了错误的车上，先清掉
-            vehicleInfoMapper.markMaterialFlag(pendingId, 0);
-            log.info("[首台车] 物料号 {} 标识转移 {} → {}", materialNo, pendingId, earliestId);
         }
 
         vehicleInfoMapper.markMaterialFlag(earliestId, 1);
-        log.info("[首台车] 物料号 {} → 打标 vehicleId={}", materialNo, earliestId);
+        log.info("[首台车] 物料号={} → 打标 vehicleId={}", materialNo, earliestId);
     }
 
     // ===================================================================
@@ -198,34 +246,58 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
     // ===================================================================
 
     /**
-     * 重新计算某个模版下应该打标的车辆（逻辑同物料号维度）
+     * 重新计算某个模版下应该打标的车辆（逻辑与物料号维度完全对称）。
+     *
+     * <pre>
+     * 1. 该模版已有确认记录（upload_affirm=1）→ 跳过
+     * 2. 先清掉该模版下所有 flag
+     * 3. 找制造日期最早的车
+     * 4. 不存在 → 不打标
+     * 5. 存在   → 打标
+     * </pre>
      */
     private void recalculateTemplateFlag(String templateId) {
-        boolean hasConfirmed = vehicleInfoMapper.existsConfirmedTemplate(templateId);
-        if (hasConfirmed) {
-            log.debug("[首台车] 模版 {} 已有确认记录，跳过打标", templateId);
+        if (!isNotBlank(templateId)) {
             return;
         }
 
-        Long pendingId  = vehicleInfoMapper.findPendingTemplateFlagId(templateId);
+        if (vehicleInfoMapper.existsConfirmedTemplate(templateId)) {
+            log.debug("[首台车] 模版={} 已有确认记录，跳过打标", templateId);
+            return;
+        }
+
+        vehicleInfoMapper.clearTemplateFlagByTemplateId(templateId);
+
         Long earliestId = vehicleInfoMapper.findEarliestIdByTemplateId(templateId);
-
         if (earliestId == null) {
+            log.debug("[首台车] 模版={} 已无车辆，不打标", templateId);
             return;
-        }
-
-        if (pendingId != null && pendingId.equals(earliestId)) {
-            log.debug("[首台车] 模版 {} 标识正确，vehicleId={}", templateId, pendingId);
-            return;
-        }
-
-        if (pendingId != null) {
-            vehicleInfoMapper.markTemplateFlag(pendingId, 0);
-            log.info("[首台车] 模版 {} 标识转移 {} → {}", templateId, pendingId, earliestId);
         }
 
         vehicleInfoMapper.markTemplateFlag(earliestId, 1);
-        log.info("[首台车] 模版 {} → 打标 vehicleId={}", templateId, earliestId);
+        log.info("[首台车] 模版={} → 打标 vehicleId={}", templateId, earliestId);
+    }
+
+    // ===================================================================
+    //  工具方法
+    // ===================================================================
+
+    private Set<String> collectMaterialNos(List<VehicleInfo> list) {
+        return list.stream()
+                .map(VehicleInfo::getMaterialNo)
+                .filter(this::isNotBlank)
+                .collect(Collectors.toSet());
+    }
+
+    private Set<String> collectTemplateIds(List<VehicleInfo> list) {
+        return list.stream()
+                .map(VehicleInfo::getVehicleTemplateId)
+                .filter(this::isNotBlank)
+                .collect(Collectors.toSet());
+    }
+
+    private boolean isNotBlank(String s) {
+        return s != null && !s.trim().isEmpty();
     }
 
     // ===================================================================
@@ -235,7 +307,7 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
     private boolean isSwitchOn(String key) {
         try {
             R<List<SysDictData>> result = remoteDictService.getDictDataByType(DICT_TYPE);
-            if (result == null ||!R.isSuccess(result) || result.getData() == null) {
+            if (result == null || !R.isSuccess(result) || result.getData() == null) {
                 return false;
             }
             return result.getData().stream()

@@ -437,15 +437,6 @@
 
 	<!-- ==================== 首台车管理 ==================== -->
 
-	<!-- 查询该物料号下未删除的记录数（排除自身） -->
-	<select id="countByMaterialNoExclude" resultType="int">
-		SELECT COUNT(1)
-		FROM vehicle_info
-		WHERE material_no = #{materialNo}
-		  AND vehicle_id != #{excludeId}
-		  AND deleted = 0
-	</select>
-
 	<!-- 查询该物料号下制造时间最早的 vehicle_id -->
 	<select id="findEarliestIdByMaterialNo" resultType="long">
 		SELECT vehicle_id
@@ -454,15 +445,6 @@
 		  AND deleted = 0
 		ORDER BY manufacture_date ASC
 			LIMIT 1
-	</select>
-
-	<!-- 查询该模版下未删除的记录数（排除自身） -->
-	<select id="countByTemplateIdExclude" resultType="int">
-		SELECT COUNT(1)
-		FROM vehicle_info
-		WHERE vehicle_template_id = #{templateId}
-		  AND vehicle_id != #{excludeId}
-		  AND deleted = 0
 	</select>
 
 	<!-- 查询该模版下制造时间最早的 vehicle_id -->
@@ -475,7 +457,28 @@
 			LIMIT 1
 	</select>
 
-	<!-- 清除该物料号下所有车辆的物料号标识（删除车辆时重新找最早一条用） -->
+	<!-- 该物料号下是否存在已确认记录（generate_affirm = 1） -->
+	<!-- 修改说明：原来判断 material_confirmed_time IS NOT NULL，                 -->
+	<!--           现改为判断 generate_affirm = 1，语义更清晰，                  -->
+	<!--           与 confirmMaterialFlag 的写入字段保持一致                      -->
+	<select id="existsConfirmedMaterial" resultType="boolean">
+		SELECT COUNT(1) > 0
+		FROM vehicle_info
+		WHERE material_no = #{materialNo}
+		  AND generate_affirm = 1
+		  AND deleted = 0
+	</select>
+
+	<!-- 该模版下是否存在已确认记录（upload_affirm = 1） -->
+	<select id="existsConfirmedTemplate" resultType="boolean">
+		SELECT COUNT(1) > 0
+		FROM vehicle_info
+		WHERE vehicle_template_id = #{templateId}
+		  AND upload_affirm = 1
+		  AND deleted = 0
+	</select>
+
+	<!-- 清除该物料号下所有车辆的物料号首台标识 -->
 	<update id="clearMaterialFlagByMaterialNo">
 		UPDATE vehicle_info
 		SET first_material_flag = 0,
@@ -484,7 +487,7 @@
 		  AND deleted = 0
 	</update>
 
-	<!-- 清除该模版下所有车辆的模版标识（模版修改 / 删除车辆时重新打标用） -->
+	<!-- 清除该模版下所有车辆的模版首台标识 -->
 	<update id="clearTemplateFlagByTemplateId">
 		UPDATE vehicle_info
 		SET first_template_flag = 0,
@@ -509,25 +512,8 @@
 		WHERE vehicle_id = #{vehicleId}
 	</update>
 
-	<!-- 查询物料号维度未确认列表（Tab1） -->
-	<select id="listFirstMaterialUnconfirmed" resultMap="VehicleInfoResult">
-		<include refid="selectVehicleInfoVo"/>
-		WHERE vi.first_material_flag = 1
-		AND vi.generate_affirm = 0
-		AND vi.deleted = 0
-		ORDER BY vi.manufacture_date ASC
-	</select>
-
-	<!-- 查询模版维度未确认列表（Tab2） -->
-	<select id="listFirstTemplateUnconfirmed" resultMap="VehicleInfoResult">
-		<include refid="selectVehicleInfoVo"/>
-		WHERE vi.first_template_flag = 1
-		AND vi.upload_affirm = 0
-		AND vi.deleted = 0
-		ORDER BY vi.manufacture_date ASC
-	</select>
-
-	<!-- 确认：清除物料号标识，记录确认人和时间 -->
+	<!-- 确认物料号首台：generate_affirm=1，记录确认人和时间 -->
+	<!-- first_material_flag 保留为 1，靠 generate_affirm=0 过滤"待确认"列表 -->
 	<update id="confirmMaterialFlag">
 		UPDATE vehicle_info
 		SET generate_affirm         = 1,
@@ -538,7 +524,7 @@
 		WHERE vehicle_id = #{vehicleId}
 	</update>
 
-	<!-- 确认：清除模版标识，记录确认人和时间 -->
+	<!-- 确认模版首台：upload_affirm=1，记录确认人和时间 -->
 	<update id="confirmTemplateFlag">
 		UPDATE vehicle_info
 		SET upload_affirm           = 1,
@@ -549,46 +535,148 @@
 		WHERE vehicle_id = #{vehicleId}
 	</update>
 
-	<!-- 查询该物料号下 first_material_flag=1 且未确认的 vehicle_id -->
-	<select id="findPendingMaterialFlagId" resultType="long">
-		SELECT vehicle_id
-		FROM vehicle_info
+	<!-- 重置该物料号下所有车辆的物料号确认状态（预留，暂未使用） -->
+	<update id="resetMaterialConfirm">
+		UPDATE vehicle_info
+		SET generate_affirm         = 0,
+			material_confirmed_by   = NULL,
+			material_confirmed_time = NULL,
+			update_time             = SYSDATE()
 		WHERE material_no = #{materialNo}
-		  AND first_material_flag = 1
-		  AND generate_affirm = 0        -- 改前是 material_confirmed_time IS NULL
 		  AND deleted = 0
-	</select>
+	</update>
 
-	<!-- 查询该模版下 first_template_flag=1 且未确认的 vehicle_id -->
-	<select id="findPendingTemplateFlagId" resultType="long">
-		SELECT vehicle_id
-		FROM vehicle_info
+	<!-- 重置该模版下所有车辆的模版确认状态（模版改动后调用） -->
+	<update id="resetTemplateConfirm">
+		UPDATE vehicle_info
+		SET upload_affirm           = 0,
+			template_confirmed_by   = NULL,
+			template_confirmed_time = NULL,
+			update_time             = SYSDATE()
 		WHERE vehicle_template_id = #{templateId}
-		  AND first_template_flag = 1
-		  AND upload_affirm = 0          -- 改前是 template_confirmed_time IS NULL
 		  AND deleted = 0
+	</update>
+
+	<!--
+        首台车待确认列表（物料号维度 / 模版维度统一查询）
+        dimension = 'material' : first_material_flag=1 AND generate_affirm=0
+        dimension = 'template' : first_template_flag=1 AND upload_affirm=0
+
+        其余字段复用 vehicleInfo 对象的查询条件，与 selectVehicleInfoList 保持一致
+    -->
+	<select id="listFirstVehicleUnconfirmed" resultMap="VehicleInfoResult">
+		<include refid="selectVehicleInfoVo"/>
+		<where>
+			AND vi.deleted = 0
+
+			<!-- 维度过滤 -->
+			<choose>
+				<when test="dimension == 'material'">
+					AND vi.first_material_flag = 1
+					AND vi.generate_affirm = 0
+				</when>
+				<when test="dimension == 'template'">
+					AND vi.first_template_flag = 1
+					AND vi.upload_affirm = 0
+				</when>
+			</choose>
+
+			<!-- 以下复用通用查询条件，vehicleInfo 参数前缀为 vehicleInfo. -->
+			<if test="vehicleInfo.vinList != null and vehicleInfo.vinList.size() > 0">
+				AND (
+				<foreach collection="vehicleInfo.vinList" item="v" separator=" OR ">
+					vin LIKE CONCAT('%', #{v}, '%')
+				</foreach>
+				)
+			</if>
+			<if test="vehicleInfo.vin != null and vehicleInfo.vin != ''">
+				AND vi.vin LIKE CONCAT('%', #{vehicleInfo.vin}, '%')
+			</if>
+			<if test="vehicleInfo.materialNoList != null and vehicleInfo.materialNoList.size() > 0">
+				AND (
+				<foreach collection="vehicleInfo.materialNoList" item="m" separator=" OR ">
+					material_no LIKE CONCAT('%', #{m}, '%')
+				</foreach>
+				)
+			</if>
+			<if test="vehicleInfo.materialNo != null and vehicleInfo.materialNo != ''">
+				AND vi.material_no LIKE CONCAT('%', #{vehicleInfo.materialNo}, '%')
+			</if>
+			<if test="vehicleInfo.vehicleModelList != null and vehicleInfo.vehicleModelList.size() > 0">
+				AND (
+				<foreach collection="vehicleInfo.vehicleModelList" item="m" separator=" OR ">
+					vehicle_model LIKE CONCAT('%', #{m}, '%')
+				</foreach>
+				)
+			</if>
+			<if test="vehicleInfo.factoryCode != null and vehicleInfo.factoryCode != ''">
+				AND vi.factory_code LIKE CONCAT('%', #{vehicleInfo.factoryCode}, '%')
+			</if>
+			<if test="vehicleInfo.factoryName != null and vehicleInfo.factoryName != ''">
+				AND vi.factory_name LIKE CONCAT('%', #{vehicleInfo.factoryName}, '%')
+			</if>
+			<if test="vehicleInfo.country != null and vehicleInfo.country != ''">
+				AND vi.country LIKE CONCAT('%', #{vehicleInfo.country}, '%')
+			</if>
+			<if test="vehicleInfo.color != null and vehicleInfo.color != ''">
+				AND vi.color LIKE CONCAT('%', #{vehicleInfo.color}, '%')
+			</if>
+			<if test="vehicleInfo.secondaryColor != null and vehicleInfo.secondaryColor != ''">
+				AND vi.secondary_color LIKE CONCAT('%', #{vehicleInfo.secondaryColor}, '%')
+			</if>
+			<if test="vehicleInfo.wvtaNo != null and vehicleInfo.wvtaNo != ''">
+				AND vi.wvta_no LIKE CONCAT('%', #{vehicleInfo.wvtaNo}, '%')
+			</if>
+			<if test="vehicleInfo.cocTemplateNo != null and vehicleInfo.cocTemplateNo != ''">
+				AND vt.coc_template_no LIKE CONCAT('%', #{vehicleInfo.cocTemplateNo}, '%')
+			</if>
+			<if test="vehicleInfo.tvv != null and vehicleInfo.tvv != ''">
+				AND vi.tvv LIKE CONCAT('%', #{vehicleInfo.tvv}, '%')
+			</if>
+			<if test="vehicleInfo.brand != null and vehicleInfo.brand != ''">
+				AND vi.brand LIKE CONCAT('%', #{vehicleInfo.brand}, '%')
+			</if>
+			<if test="vehicleInfo.saleName != null and vehicleInfo.saleName != ''">
+				AND vi.sale_name LIKE CONCAT('%', #{vehicleInfo.saleName}, '%')
+			</if>
+			<if test="vehicleInfo.engineNumber != null and vehicleInfo.engineNumber != ''">
+				AND vi.engine_number LIKE CONCAT('%', #{vehicleInfo.engineNumber}, '%')
+			</if>
+			<if test="vehicleInfo.projectName != null and vehicleInfo.projectName != ''">
+				AND vi.project_name LIKE CONCAT('%', #{vehicleInfo.projectName}, '%')
+			</if>
+			<if test="vehicleInfo.customerNo != null and vehicleInfo.customerNo != ''">
+				AND vi.customer_no LIKE CONCAT('%', #{vehicleInfo.customerNo}, '%')
+			</if>
+			<if test="vehicleInfo.tireResistanceGrade != null and vehicleInfo.tireResistanceGrade != ''">
+				AND vi.tire_resistance_grade LIKE CONCAT('%', #{vehicleInfo.tireResistanceGrade}, '%')
+			</if>
+			<if test="vehicleInfo.issueDateBeginTime != null">
+				AND DATE(vi.issue_date) >= DATE(#{vehicleInfo.issueDateBeginTime})
+			</if>
+			<if test="vehicleInfo.issueDateEndTime != null">
+				AND DATE(vi.issue_date) &lt;= DATE(#{vehicleInfo.issueDateEndTime})
+			</if>
+			<if test="vehicleInfo.manufactureBeginTime != null">
+				AND vi.manufacture_date >= #{vehicleInfo.manufactureBeginTime}
+			</if>
+			<if test="vehicleInfo.manufactureEndTime != null">
+				AND vi.manufacture_date &lt;= #{vehicleInfo.manufactureEndTime}
+			</if>
+			<if test="vehicleInfo.createdBeginTime != null">
+				AND DATE(vi.create_time) >= DATE(#{vehicleInfo.createdBeginTime})
+			</if>
+			<if test="vehicleInfo.createdEndTime != null">
+				AND DATE(vi.create_time) &lt;= DATE(#{vehicleInfo.createdEndTime})
+			</if>
+			<if test="vehicleInfo.breakpointTime != null">
+				AND DATE(vi.breakpoint_time) = DATE(#{vehicleInfo.breakpointTime})
+			</if>
+		</where>
+		ORDER BY vi.manufacture_date ASC
 	</select>
 
-	<!-- 该物料号下是否存在已确认记录 -->
-	<select id="existsConfirmedMaterial" resultType="boolean">
-		SELECT COUNT(1) > 0
-		FROM vehicle_info
-		WHERE material_no = #{materialNo}
-		  AND material_confirmed_time IS NOT NULL
-		  AND deleted = 0
-	</select>
-
-	<!-- 该模版下是否存在已确认记录 -->
-	<select id="existsConfirmedTemplate" resultType="boolean">
-		SELECT COUNT(1) > 0
-		FROM vehicle_info
-		WHERE vehicle_template_id = #{templateId}
-		  AND template_confirmed_time IS NOT NULL
-		  AND deleted = 0
-	</select>
-
-
-	<!-- 通过 uuid 查询该模版组下所有 template_id -->
+	<!-- 通过 uuid 查询该模版组下所有关联的 vehicle_template_id -->
 	<select id="findTemplateIdsByUuid" resultType="string">
 		SELECT DISTINCT vi.vehicle_template_id
 		FROM vehicle_info vi

@@ -86,4 +86,8 @@ public interface IVehicleInfoService {
     VehicleInfo selectVehicleInfoByVin(String vin);
 
     void importVehicleInfoFromExcel(MultipartFile file) throws IOException;
+
+    List<VehicleInfo> listFirstVehicleUnconfirmed(VehicleInfo vehicleInfo, String dimension);
+
+    List<VehicleInfo> selectVehicleInfoByIds(Long[] vehicleIds);
 }

@@ -155,7 +155,12 @@ public class VehicleInfoController extends BaseController {
     @PutMapping("/changeStatus")
     public AjaxResult changeStatus(@RequestBody VehicleInfo vehicleInfo)
     {
-        return toAjax(vehicleInfoService.updateStatus(vehicleInfo));
+        vehicleInfo.setValidationResult(0);
+        vehicleInfo.setUploadStatus(0);
+        vehicleInfoService.updateVehicleInfo(vehicleInfo, true);
+        // handleAfterUpdate 内部自行查旧数据，只有物料号或模版变化时才触发重算
+        firstVehicleCheckService.handleAfterUpdate(vehicleInfo);
+        return AjaxResult.success();
     }
 
     /**
@@ -166,7 +171,9 @@ public class VehicleInfoController extends BaseController {
     @Log(title = "车辆信息管理", businessType = BusinessType.INSERT)
     @PostMapping
     public AjaxResult add(@RequestBody VehicleInfo vehicleInfo) {
-        return AjaxResult.success(vehicleInfoService.insertVehicleInfo(vehicleInfo));
+        vehicleInfoService.insertVehicleInfo(vehicleInfo);
+        firstVehicleCheckService.handleAfterInsert(Collections.singletonList(vehicleInfo));
+        return AjaxResult.success(vehicleInfo);
     }
 
     @Operation(summary = "校验车辆信息")
@@ -198,7 +205,10 @@ public class VehicleInfoController extends BaseController {
     @Log(title = "车辆信息管理", businessType = BusinessType.DELETE)
     @DeleteMapping("/{vehicleIds}")
     public AjaxResult remove(@PathVariable Long[] vehicleIds) {
-        return AjaxResult.success(vehicleInfoService.deleteVehicleInfoByIds(vehicleIds));
+        List<VehicleInfo> snapshot = vehicleInfoService.selectVehicleInfoByIds(vehicleIds);
+        vehicleInfoService.deleteVehicleInfoByIds(vehicleIds);
+        firstVehicleCheckService.handleAfterDelete(snapshot);
+        return AjaxResult.success();
     }
 
     /**
@@ -266,60 +276,79 @@ public class VehicleInfoController extends BaseController {
 
 
 
-    // ===================================================================
-    //  查询
-    // ===================================================================
-
     /**
-     * Tab1：整车物料号维度未确认列表
-     * 在车辆信息查询条件基础上，固定过滤 first_material_flag = 1
+     * 首台车待确认列表（物料号维度 + 模版维度统一接口）
+     *
+     * <p>通过 dimension 参数区分维度：
+     * <ul>
+     *   <li>material：物料号维度，查 first_material_flag=1 AND generate_affirm=0</li>
+     *   <li>template：模版维度，查 first_template_flag=1 AND upload_affirm=0</li>
+     * </ul>
+     *
+     * <p>其余查询条件与车辆列表保持一致，支持 VIN、物料号、模版号等过滤。
      */
-    @Operation(summary = "首台车-物料号维度未确认列表")
+    @Operation(summary = "首台车待确认列表")
     @RequiresPermissions("vehicle:first:query")
-    @GetMapping("/material/list")
-    public TableDataInfo materialList(VehicleInfo vehicleInfo) {
-        // 固定只查 first_material_flag = 1 的记录
-        vehicleInfo.setFirstMaterialFlag(1);
+    @GetMapping("/first/list")
+    public TableDataInfo firstVehicleList(
+            VehicleInfo vehicleInfo,
+            @RequestParam(value = "dimension", defaultValue = "material") String dimension) {
+
+        if (!"material".equals(dimension) && !"template".equals(dimension)) {
+            return getDataTable(Collections.emptyList());
+        }
+
+        // VIN 支持逗号/换行分隔批量查询
+        if (StringUtils.isNotBlank(vehicleInfo.getVin())) {
+            List<String> vinList = Arrays.stream(vehicleInfo.getVin().split("[,，\n]"))
+                    .map(String::trim)
+                    .filter(StringUtils::isNotBlank)
+                    .collect(Collectors.toList());
+            vehicleInfo.setVinList(vinList);
+            vehicleInfo.setVin(null);
+        }
+        // 物料号支持逗号/换行分隔批量查询
+        if (StringUtils.isNotBlank(vehicleInfo.getMaterialNo())) {
+            List<String> materialNoList = Arrays.stream(vehicleInfo.getMaterialNo().split("[,，\n]"))
+                    .map(String::trim)
+                    .filter(StringUtils::isNotBlank)
+                    .collect(Collectors.toList());
+            vehicleInfo.setMaterialNoList(materialNoList);
+            vehicleInfo.setMaterialNo(null);
+        }
+
         startPage();
-        return getDataTable(vehicleInfoService.selectVehicleInfoList(vehicleInfo));
+        List<VehicleInfo> list = vehicleInfoService.listFirstVehicleUnconfirmed(vehicleInfo, dimension);
+        return getDataTable(list);
     }
 
-    /**
-     * Tab2：TVV/模版维度未确认列表
-     * 在车辆信息查询条件基础上，固定过滤 first_template_flag = 1
-     */
-    @Operation(summary = "首台车-模版维度未确认列表")
-    @RequiresPermissions("vehicle:first:query")
-    @GetMapping("/tvv/list")
-    public TableDataInfo templateList(VehicleInfo vehicleInfo) {
-        vehicleInfo.setFirstTemplateFlag(1);
-        startPage();
-        return getDataTable(vehicleInfoService.selectVehicleInfoList(vehicleInfo));
-    }
-
-    // ===================================================================
-    //  确认
-    // ===================================================================
+// ===================================================================
+//  确认
+// ===================================================================
 
     /**
-     * 确认物料号首台
+     * 确认物料号首台（确认可生成）
+     * <p>将该车辆 generate_affirm 置为 1，记录确认人和时间。
+     * <p>确认后该车辆不再出现在 dimension=material 的待确认列表中。
      */
-    @Operation(summary = "确认物料号首台标识")
+    @Operation(summary = "确认物料号首台（可生成）")
     @RequiresPermissions("vehicle:first:confirm")
     @Log(title = "首台车确认", businessType = BusinessType.UPDATE)
-    @PutMapping("/material/confirm/{vehicleId}")
+    @PutMapping("/first/material/confirm/{vehicleId}")
     public AjaxResult confirmMaterial(@PathVariable Long vehicleId) {
         firstVehicleCheckService.confirmMaterial(vehicleId, SecurityUtils.getUsername());
         return AjaxResult.success();
     }
 
     /**
-     * 确认模版首台
+     * 确认模版首台（确认可上传）
+     * <p>将该车辆 upload_affirm 置为 1，记录确认人和时间。
+     * <p>确认后该车辆不再出现在 dimension=template 的待确认列表中。
      */
-    @Operation(summary = "确认模版首台标识")
+    @Operation(summary = "确认模版首台（可上传）")
     @RequiresPermissions("vehicle:first:confirm")
     @Log(title = "首台车确认", businessType = BusinessType.UPDATE)
-    @PutMapping("/template/confirm/{vehicleId}")
+    @PutMapping("/first/template/confirm/{vehicleId}")
     public AjaxResult confirmTemplate(@PathVariable Long vehicleId) {
         firstVehicleCheckService.confirmTemplate(vehicleId, SecurityUtils.getUsername());
         return AjaxResult.success();
