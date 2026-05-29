@@ -8,26 +8,29 @@
         <result property="oldVersion"        column="old_version"/>
         <result property="newVersion"        column="new_version"/>
         <result property="changeTime"        column="change_time"/>
-        <result property="trie"              column="trie"/>
+        <result property="tire"              column="tire"/>
         <result property="weight"            column="weight"/>
         <result property="brand"             column="brand"/>
         <result property="saleName"          column="sale_name"/>
         <result property="effectiveDate"     column="effective_date"/>
         <result property="overdueDate"       column="overdue_date"/>
+        <result property="operator"          column="operator"/>
+        <result property="remark"            column="remark"/>
     </resultMap>
 
     <select id="selectByMaterialId" resultMap="MaterialHistoryResult">
-        SELECT mh.*, m.trie, m.weight, m.brand, m.sale_name,
+        SELECT mh.*, m.tire, m.weight, m.brand, m.sale_name, mh.operator, mh.remark,
                vt.effective_date, vt.overdue_date
         FROM material_history mh
                  LEFT JOIN material m ON m.id = mh.material_id
                  LEFT JOIN vehicle_template vt ON vt.template_id = m.vehicle_template_id AND vt.version = #{version}
         WHERE mh.material_id = #{materialId}
+        order by change_time desc
     </select>
 
     <insert id="insert" parameterType="com.ruoyi.vehicle.domain.MaterialHistory" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO material_history (material_id, old_version, new_version, change_time)
-        VALUES (#{materialId}, #{oldVersion}, #{newVersion}, #{changeTime})
+        INSERT INTO material_history (material_id, old_version, new_version, change_time, operator, remark)
+        VALUES (#{materialId}, #{oldVersion}, #{newVersion}, #{changeTime}, #{operator}, #{remark})
     </insert>
 
     <delete id="deleteById">

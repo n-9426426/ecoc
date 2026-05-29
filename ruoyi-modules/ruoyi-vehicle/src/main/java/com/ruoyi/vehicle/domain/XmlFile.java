@@ -103,6 +103,8 @@ public class XmlFile extends BaseEntity {
 
     private String validationReportJson;
 
+    private Integer uploadAffirm;
+
     /** VIN批量查询列表 */
     private List<String> vinList;
 

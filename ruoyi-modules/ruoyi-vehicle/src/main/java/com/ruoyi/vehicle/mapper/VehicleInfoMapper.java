@@ -4,6 +4,7 @@ import com.ruoyi.vehicle.domain.VehicleInfo;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 车辆信息 数据层
@@ -165,4 +166,38 @@ public interface VehicleInfoMapper {
      * 通过模版组 uuid 查询该 uuid 下所有关联的 vehicle_template_id 列表
      */
     List<String> findTemplateIdsByUuid(@Param("uuid") String uuid);
+
+    List<Map<String, String>> selectOldVersionAndNewVersion(@Param("list") List<String> materialNoList);
+
+    /**
+     * 批量更新生成确认通知发送状态
+     *
+     * @param vehicleIds 车辆ID列表
+     * @param status     发送状态 0-未发送 1-已发送
+     */
+    void updateGenerateAffirmNotice(@Param("vehicleIds") List<Long> vehicleIds, @Param("status") Integer status);
+
+    /**
+     * 批量更新上传确认通知发送状态
+     *
+     * @param vehicleIds 车辆ID列表
+     * @param status     发送状态 0-未发送 1-已发送
+     */
+    void updateUploadAffirmNotice(@Param("vehicleIds") List<Long> vehicleIds, @Param("status") Integer status);
+
+    /**
+     * 查询需要发送生成确认通知的记录
+     * 条件：generate_affirm=0 且 generate_affirm_notice=0 且已到提醒时间
+     *
+     * @return 车辆信息列表
+     */
+    List<VehicleInfo> listPendingGenerateAffirmNotice();
+
+    /**
+     * 查询需要发送上传确认通知的记录
+     * 条件：upload_affirm=0 且 upload_affirm_notice=0 且已到提醒时间
+     *
+     * @return 车辆信息列表
+     */
+    List<VehicleInfo> listPendingUploadAffirmNotice();
 }

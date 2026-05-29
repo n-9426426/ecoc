@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper
-PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
-"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+		PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+		"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.ruoyi.system.mapper.SysDictDataMapper">
-	
+
 	<resultMap type="SysDictData" id="SysDictDataResult">
 		<id     property="dictCode"    			  column="dict_code"   />
 		<result property="dictSort"    			  column="dict_sort"   />
@@ -29,20 +29,21 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		<result property="uuid"		   			  column="uuid"/>
 		<result property="otherLabel"  			  column="other_label"/>
 		<result property="otherLabelSystem"  	  column="other_label_system"/>
+		<result property="cocOrder"           	  column="coc_order"/>
 	</resultMap>
 
 	<sql id="selectDictDataVo">
 		select sdd.dict_code, sdd.dict_sort, sdd.dict_label, sdd.dict_value, sdd.dict_type, sdd.css_class, sdd.rule, sdd.range_rule,
 			   sdd.key_map, sdd.value_map, sdd.is_default, sdd.status, sdd.create_by, sdd.create_time, sdd.remark, sdd.dict_type_affiliation,
 			   sdd.original_system, sdt.dict_name as dict_type_str, sdd2.dict_label as dict_type_affiliation_str, sdd.rule_type, sdd.uuid,
-			   sdd.other_label, sdd.other_label_system
+			   sdd.other_label, sdd.other_label_system, sdd.coc_order
 		from sys_dict_data sdd
 		left join sys_dict_type sdt on sdd.dict_type = sdt.dict_type
 		left join sys_dict_data sdd2 on sdd.dict_type_affiliation = sdd2.dict_code
 	</sql>
 
 	<select id="selectDictDataList" parameterType="SysDictData" resultMap="SysDictDataResult">
-	    <include refid="selectDictDataVo"/>
+		<include refid="selectDictDataVo"/>
 		<where>
 			1 = 1
 			<if test="dictTypeAffiliation != null">
@@ -51,7 +52,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 			<if test="isVehicle != null and !isVehicle">
 				AND sdd.dict_type != 'vehicle_attribute'
 			</if>
-		    <if test="dictType != null and dictType != ''">
+			<if test="dictType != null and dictType != ''">
 				AND sdd.dict_type = #{dictType}
 			</if>
 			<if test="dictLabel != null and dictLabel != ''">
@@ -72,111 +73,114 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		</where>
 		order by dict_type, sdd.dict_sort asc
 	</select>
-	
+
 	<select id="selectDictDataByType" parameterType="String" resultMap="SysDictDataResult">
 		<include refid="selectDictDataVo"/>
 		where sdd.status = '0' and sdd.dict_type = #{dictType} order by sdd.dict_sort asc
 	</select>
-	
+
 	<select id="selectDictLabel" resultType="String">
 		select dict_label from sys_dict_data
 		where dict_type = #{dictType} and dict_value = #{dictValue}
 	</select>
-	
+
 	<select id="selectDictDataById" parameterType="Long" resultMap="SysDictDataResult">
 		<include refid="selectDictDataVo"/>
 		where sdd.dict_code = #{dictCode}
 	</select>
-	
+
 	<select id="countDictDataByType" resultType="Integer">
-	    select count(1) from sys_dict_data where dict_type=#{dictType}
+		select count(1) from sys_dict_data where dict_type=#{dictType}
 	</select>
-	
+
 	<delete id="deleteDictDataById" parameterType="Long">
- 		delete from sys_dict_data where dict_code = #{dictCode}
- 	</delete>
- 	
- 	<delete id="deleteDictDataByIds" parameterType="Long">
- 		delete from sys_dict_data where dict_code in
- 		<foreach collection="array" item="dictCode" open="(" separator="," close=")">
- 			#{dictCode}
-        </foreach> 
- 	</delete>
-	
+		delete from sys_dict_data where dict_code = #{dictCode}
+	</delete>
+
+	<delete id="deleteDictDataByIds" parameterType="Long">
+		delete from sys_dict_data where dict_code in
+		<foreach collection="array" item="dictCode" open="(" separator="," close=")">
+			#{dictCode}
+		</foreach>
+	</delete>
+
 	<update id="updateDictData" parameterType="SysDictData">
- 		update sys_dict_data
- 		<set>
- 			<if test="dictSort != null">dict_sort = #{dictSort},</if>
- 			<if test="dictLabel != null and dictLabel != ''">dict_label = #{dictLabel},</if>
- 			<if test="dictValue != null and dictValue != ''">dict_value = #{dictValue},</if>
- 			<if test="dictType != null and dictType != ''">dict_type = #{dictType},</if>
- 			<if test="cssClass != null">css_class = #{cssClass},</if>
- 			<if test="rule != null">rule = #{rule},</if>
- 		    <if test="rangeRule != null">range_rule = #{rangeRule},</if>
+		update sys_dict_data
+		<set>
+			<if test="dictSort != null">dict_sort = #{dictSort},</if>
+			<if test="dictLabel != null and dictLabel != ''">dict_label = #{dictLabel},</if>
+			<if test="dictValue != null and dictValue != ''">dict_value = #{dictValue},</if>
+			<if test="dictType != null and dictType != ''">dict_type = #{dictType},</if>
+			<if test="cssClass != null">css_class = #{cssClass},</if>
+			<if test="rule != null">rule = #{rule},</if>
+			<if test="rangeRule != null">range_rule = #{rangeRule},</if>
 			<if test="keyMap != null">key_map = #{keyMap},</if>
 			<if test="valueMap != null">value_map = #{valueMap},</if>
- 			<if test="isDefault != null and isDefault != ''">is_default = #{isDefault},</if>
- 			<if test="status != null">status = #{status},</if>
- 			<if test="remark != null">remark = #{remark},</if>
- 			<if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
+			<if test="isDefault != null and isDefault != ''">is_default = #{isDefault},</if>
+			<if test="status != null">status = #{status},</if>
+			<if test="remark != null">remark = #{remark},</if>
+			<if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
 			<if test="dictTypeAffiliation != null">dict_type_affiliation = #{dictTypeAffiliation},</if>
 			<if test="ruleType != null and ruleType != ''">rule_type = #{ruleType},</if>
- 		    <if test="originalSystem != null and originalSystem != ''">original_system = #{originalSystem},</if>
+			<if test="originalSystem != null and originalSystem != ''">original_system = #{originalSystem},</if>
 			<if test="uuid != null and uuid != ''">uuid = #{uuid},</if>
 			<if test="otherLabel != null and otherLabel != ''">other_label = #{otherLabel},</if>
 			<if test="otherLabelSystem != null and otherLabelSystem != ''">other_label_system = #{otherLabelSystem},</if>
- 			update_time = sysdate()
- 		</set>
- 		where dict_code = #{dictCode}
+			<if test="cocOrder != null and cocOrder != ''">coc_order = #{cocOrder},</if>
+			update_time = sysdate()
+		</set>
+		where dict_code = #{dictCode}
 	</update>
-	
+
 	<update id="updateDictDataType" parameterType="String">
- 		update sys_dict_data set dict_type = #{newDictType} where dict_type = #{oldDictType}
+		update sys_dict_data set dict_type = #{newDictType} where dict_type = #{oldDictType}
 	</update>
 
 	<insert id="insertDictData" parameterType="SysDictData">
 		insert into sys_dict_data(
-			<if test="dictSort != null">dict_sort,</if>
-			<if test="dictLabel != null and dictLabel != ''">dict_label,</if>
-			<if test="dictValue != null and dictValue != ''">dict_value,</if>
-			<if test="dictType != null and dictType != ''">dict_type,</if>
-			<if test="cssClass != null and cssClass != ''">css_class,</if>
-			<if test="rule != null and rule != ''">rule,</if>
-			<if test="rangeRule != null">range_rule,</if>
-			<if test="keyMap != null">key_map,</if>
-			<if test="valueMap != null">value_map,</if>
-			<if test="isDefault != null and isDefault != ''">is_default,</if>
-			<if test="status != null">status,</if>
-			<if test="remark != null and remark != ''">remark,</if>
-			<if test="dictTypeAffiliation != null">dict_type_affiliation,</if>
-			<if test="createBy != null and createBy != ''">create_by,</if>
-			<if test="ruleType != null and ruleType != ''">rule_type,</if>
-			<if test="originalSystem != null and originalSystem != ''">original_system,</if>
-			<if test="uuid != null and uuid != ''">uuid,</if>
-			<if test="otherLabel != null and otherLabel != ''">other_label,</if>
-			<if test="otherLabelSystem != null and otherLabelSystem != ''">other_label_system,</if>
-			create_time
+		<if test="dictSort != null">dict_sort,</if>
+		<if test="dictLabel != null and dictLabel != ''">dict_label,</if>
+		<if test="dictValue != null and dictValue != ''">dict_value,</if>
+		<if test="dictType != null and dictType != ''">dict_type,</if>
+		<if test="cssClass != null and cssClass != ''">css_class,</if>
+		<if test="rule != null and rule != ''">rule,</if>
+		<if test="rangeRule != null">range_rule,</if>
+		<if test="keyMap != null">key_map,</if>
+		<if test="valueMap != null">value_map,</if>
+		<if test="isDefault != null and isDefault != ''">is_default,</if>
+		<if test="status != null">status,</if>
+		<if test="remark != null and remark != ''">remark,</if>
+		<if test="dictTypeAffiliation != null">dict_type_affiliation,</if>
+		<if test="createBy != null and createBy != ''">create_by,</if>
+		<if test="ruleType != null and ruleType != ''">rule_type,</if>
+		<if test="originalSystem != null and originalSystem != ''">original_system,</if>
+		<if test="uuid != null and uuid != ''">uuid,</if>
+		<if test="otherLabel != null and otherLabel != ''">other_label,</if>
+		<if test="otherLabelSystem != null and otherLabelSystem != ''">other_label_system,</if>
+		<if test="cocOrder != null and cocOrder != ''">coc_order,</if>
+		create_time
 		)values(
-			<if test="dictSort != null">#{dictSort},</if>
-			<if test="dictLabel != null and dictLabel != ''">#{dictLabel},</if>
-			<if test="dictValue != null and dictValue != ''">#{dictValue},</if>
-			<if test="dictType != null and dictType != ''">#{dictType},</if>
-			<if test="cssClass != null and cssClass != ''">#{cssClass},</if>
-			<if test="rule != null and rule != ''">#{rule},</if>
-			<if test="rangeRule != null">#{rangeRule},</if>
-			<if test="keyMap != null">#{keyMap},</if>
-			<if test="valueMap != null">#{valueMap},</if>
-			<if test="isDefault != null and isDefault != ''">#{isDefault},</if>
-			<if test="status != null">#{status},</if>
-			<if test="remark != null and remark != ''">#{remark},</if>
-			<if test="dictTypeAffiliation != null">#{dictTypeAffiliation},</if>
-			<if test="createBy != null and createBy != ''">#{createBy},</if>
-			<if test="ruleType != null and ruleType != ''">#{ruleType},</if>
-			<if test="originalSystem != null and originalSystem != ''">#{originalSystem},</if>
-			<if test="uuid != null and uuid != ''">#{uuid},</if>
-			<if test="otherLabel != null and otherLabel != ''">#{otherLabel},</if>
-			<if test="otherLabelSystem != null and otherLabelSystem != ''">#{otherLabelSystem},</if>
-			sysdate()
+		<if test="dictSort != null">#{dictSort},</if>
+		<if test="dictLabel != null and dictLabel != ''">#{dictLabel},</if>
+		<if test="dictValue != null and dictValue != ''">#{dictValue},</if>
+		<if test="dictType != null and dictType != ''">#{dictType},</if>
+		<if test="cssClass != null and cssClass != ''">#{cssClass},</if>
+		<if test="rule != null and rule != ''">#{rule},</if>
+		<if test="rangeRule != null">#{rangeRule},</if>
+		<if test="keyMap != null">#{keyMap},</if>
+		<if test="valueMap != null">#{valueMap},</if>
+		<if test="isDefault != null and isDefault != ''">#{isDefault},</if>
+		<if test="status != null">#{status},</if>
+		<if test="remark != null and remark != ''">#{remark},</if>
+		<if test="dictTypeAffiliation != null">#{dictTypeAffiliation},</if>
+		<if test="createBy != null and createBy != ''">#{createBy},</if>
+		<if test="ruleType != null and ruleType != ''">#{ruleType},</if>
+		<if test="originalSystem != null and originalSystem != ''">#{originalSystem},</if>
+		<if test="uuid != null and uuid != ''">#{uuid},</if>
+		<if test="otherLabel != null and otherLabel != ''">#{otherLabel},</if>
+		<if test="otherLabelSystem != null and otherLabelSystem != ''">#{otherLabelSystem},</if>
+		<if test="cocOrder != null and cocOrder != ''">#{cocOrder},</if>
+		sysdate()
 		)
 	</insert>
 
@@ -227,7 +231,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 		ELSE NULL END
 		)                                       AS key_map_agg,
 		GROUP_CONCAT(sdd.value_map ORDER BY sdd.dict_code ASC SEPARATOR ';')
-		    									AS value_map_agg
+		AS value_map_agg
 		FROM sys_dict_data sdd
 		LEFT JOIN sys_dict_type sdt ON sdd.dict_type = sdt.dict_type
 		LEFT JOIN sys_dict_data sdd2 ON sdd.dict_type_affiliation = sdd2.dict_code
@@ -322,4 +326,4 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 			#{sort}
 		</foreach>
 	</select>
-</mapper> 
+</mapper>

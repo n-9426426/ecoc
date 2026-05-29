@@ -54,6 +54,8 @@
 		<result property="materialConfirmedTime"  column="material_confirmed_time"  />
 		<result property="templateConfirmedBy"    column="template_confirmed_by"    />
 		<result property="templateConfirmedTime"  column="template_confirmed_time"  />
+		<result property="generateAffirmNotice" column="generate_affirm_notice" />
+		<result property="uploadAffirmNotice"   column="upload_affirm_notice"   />
 	</resultMap>
 
 	<sql id="selectVehicleInfoVo">
@@ -65,7 +67,8 @@
 			   sdd.dict_label as vehicle_model_str, vt.filepath as vehicle_template_filepath, vt.coc_template_no as coc_template_no,
 			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade,   vi.first_material_flag, vi.first_template_flag,
 			   vi.material_confirmed_by, vi.material_confirmed_time,
-			   vi.template_confirmed_by, vi.template_confirmed_time
+			   vi.template_confirmed_by, vi.template_confirmed_time,
+			   vi.generate_affirm_notice, vi.upload_affirm_notice
 		from vehicle_info vi
 		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
 		left join (select template_id, filepath, coc_template_no, is_last, version from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
@@ -226,6 +229,8 @@
 		<if test="customerNo != null and customerNo != ''">customer_no,</if>
 		<if test="tireResistanceGrade != null and tireResistanceGrade != ''">tire_resistance_grade,</if>
 		<if test="createBy != null and createBy != ''">create_by, </if>
+		<if test="generateAffirmNotice != null">generate_affirm_notice,</if>
+		<if test="uploadAffirmNotice != null">upload_affirm_notice,</if>
 		create_time
 		) values (
 		<if test="vin != null and vin != ''">#{vin}, </if>
@@ -263,6 +268,8 @@
 		<if test="customerNo != null and customerNo != ''">#{customerNo},</if>
 		<if test="tireResistanceGrade != null and tireResistanceGrade != ''">#{tireResistanceGrade},</if>
 		<if test="createBy != null and createBy != ''">#{createBy}, </if>
+		<if test="generateAffirmNotice != null">generate_affirm_notice,</if>
+		<if test="uploadAffirmNotice != null">upload_affirm_notice,</if>
 		sysdate()
 		)
 	</insert>
@@ -306,6 +313,8 @@
 			<if test="projectName != null and projectName != ''">project_name = #{projectName},</if>
 			<if test="customerNo != null and customerNo != ''">customer_no = #{customerNo},</if>
 			<if test="tireResistanceGrade != null and tireResistanceGrade != ''">tire_resistance_grade = #{tireResistanceGrade},</if>
+			<if test="generateAffirmNotice != null">generate_affirm_notice = #{generateAffirmNotice},</if>
+			<if test="uploadAffirmNotice != null">upload_affirm_notice = #{uploadAffirmNotice},</if>
 			update_time = sysdate()
 		</set>
 		where vehicle_id = #{vehicleId}
@@ -683,5 +692,71 @@
 				 INNER JOIN vehicle_template vt ON vt.template_id = vi.vehicle_template_id
 		WHERE vt.uuid = #{uuid}
 		  AND vi.deleted = 0
+	</select>
+
+	<select id="selectOldVersionAndNewVersion" resultType="java.util.HashMap">
+		SELECT vi.vin, vt1.version AS oldVersion, vt2.version AS newVersion
+		FROM vehicle_info vi
+		LEFT JOIN vehicle_template vt1 ON vt1.template_id = vi.vehicle_template_id
+		LEFT JOIN material m ON m.material_no = vi.material_no
+		LEFT JOIN vehicle_template vt2 ON vt2.template_id = m.vehicle_template_id
+		WHERE vi.material_no IN
+		<foreach collection="list" item="materialNo" open="(" separator="," close=")">
+			#{materialNo}
+		</foreach>
+	</select>
+
+	<!-- 1. 批量更新 generate_affirm_notice 状态 -->
+	<update id="updateGenerateAffirmNotice">
+		UPDATE vehicle_info
+		SET generate_affirm_notice = #{status},
+		update_time            = SYSDATE()
+		WHERE vehicle_id IN
+		<foreach collection="vehicleIds" item="vehicleId" open="(" separator="," close=")">
+			#{vehicleId}
+		</foreach>
+	</update>
+
+	<!-- 2. 批量更新 upload_affirm_notice 状态 -->
+	<update id="updateUploadAffirmNotice">
+		UPDATE vehicle_info
+		SET upload_affirm_notice = #{status},
+		update_time          = SYSDATE()
+		WHERE vehicle_id IN
+		<foreach collection="vehicleIds" item="vehicleId" open="(" separator="," close=")">
+			#{vehicleId}
+		</foreach>
+	</update>
+
+	<!-- 3. 查询需要发送"生成确认通知"的记录 -->
+	<select id="listPendingGenerateAffirmNotice" resultMap="VehicleInfoResult">
+		<include refid="selectVehicleInfoVo"/>
+		WHERE vi.generate_affirm        = 0
+		AND vi.generate_affirm_notice = 0
+		AND vi.deleted                = 0
+		AND EXISTS (
+		SELECT 1
+		FROM sys_dict_data sdd
+		WHERE sdd.dict_type  = 'reminder_time'
+		AND sdd.dict_sort  = 3
+		AND sdd.dict_value > 0
+		AND DATE_ADD(vi.create_time, INTERVAL CAST(sdd.dict_value / 1000 AS UNSIGNED) SECOND) &lt;= NOW()
+		)
+	</select>
+
+	<!-- 4. 查询需要发送"上传确认通知"的记录 -->
+	<select id="listPendingUploadAffirmNotice" resultMap="VehicleInfoResult">
+		<include refid="selectVehicleInfoVo"/>
+		WHERE vi.upload_affirm        = 0
+		AND vi.upload_affirm_notice = 0
+		AND vi.deleted              = 0
+		AND EXISTS (
+		SELECT 1
+		FROM sys_dict_data sdd
+		WHERE sdd.dict_type  = 'reminder_time'
+		AND sdd.dict_sort  = 4
+		AND sdd.dict_value > 0
+		AND DATE_ADD(vi.create_time, INTERVAL CAST(sdd.dict_value / 1000 AS UNSIGNED) SECOND) &lt;= NOW()
+		)
 	</select>
 </mapper>

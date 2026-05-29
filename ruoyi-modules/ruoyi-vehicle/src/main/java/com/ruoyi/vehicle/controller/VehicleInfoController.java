@@ -21,7 +21,10 @@ import com.ruoyi.system.api.domain.LoginBody;
 import com.ruoyi.system.api.domain.SysUser;
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.VehicleInfo;
+import com.ruoyi.vehicle.domain.dto.BatchUpdateJsonFieldsDto;
+import com.ruoyi.vehicle.domain.dto.BatchUpdateTemplateDto;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
+import com.ruoyi.vehicle.domain.vo.VehicleJsonKeyVo;
 import com.ruoyi.vehicle.service.IFirstVehicleCheckService;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.utils.ExcelUtil;
@@ -274,7 +277,75 @@ public class VehicleInfoController extends BaseController {
         response.flushBuffer();
     }
 
+    /**
+     * 获取各车辆信息关联的模版的版本，要修改的版本
+     * POST /vehicle/info/batchUpdateTemplate
+     */
+    @PostMapping("/getTemplateVersion")
+    public AjaxResult getTemplateVersion(@RequestBody BatchUpdateTemplateDto dto) {
+        try {
+            Map<String, List<Map<String, String>>> map = vehicleInfoService.getTemplateVersion(dto.getVehicleIds());
+            return AjaxResult.success(map);
+        } catch (ServiceException e) {
+            return AjaxResult.error(e.getMessage());
+        }
+    }
 
+    /**
+     * 批量修改关联模版
+     * POST /vehicle/info/batchUpdateTemplate
+     */
+    @PostMapping("/batchUpdateTemplate")
+    public AjaxResult batchUpdateTemplate(@RequestBody BatchUpdateTemplateDto dto) {
+        try {
+            int count = vehicleInfoService.batchUpdateVehicleTemplate(dto.getVehicleIds());
+            return AjaxResult.success("成功更新 " + count + " 辆车辆的关联模版");
+        } catch (ServiceException e) {
+            return AjaxResult.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 查询多辆车 JSON 键的并集，关联字典 label 信息
+     * POST /vehicle/info/jsonKeys
+     * Body: {"vehicleIds": [1, 2, 3]}
+     */
+    @PostMapping("/jsonKeys")
+    public AjaxResult listJsonKeys(@RequestBody Map<String, List<Long>> body) {
+        List<Long> vehicleIds = body.get("vehicleIds");
+        List<VehicleJsonKeyVo> result = vehicleInfoService.listJsonKeysByVehicleIds(vehicleIds);
+        return AjaxResult.success(result);
+    }
+
+    /**
+     * 批量替换车辆 JSON 中指定键的值
+     * POST /vehicle/info/batchUpdateJsonFields
+     * Body: {"vehicleIds": [1,2,3], "fieldValues": {"engineType":"电动","color":"白色"}}
+     */
+    @PostMapping("/batchUpdateJsonFields")
+    public AjaxResult batchUpdateJsonFields(@RequestBody BatchUpdateJsonFieldsDto dto) {
+        try {
+            int count = vehicleInfoService.batchUpdateVehicleJsonFields(
+                    dto.getVehicleIds(), dto.getFieldValues());
+            return AjaxResult.success("成功更新 " + count + " 辆车辆的 JSON 字段");
+        } catch (ServiceException e) {
+            return AjaxResult.error(e.getMessage());
+        }
+    }
+
+    /**
+     * Tab1：整车物料号维度未确认列表
+     * 在车辆信息查询条件基础上，固定过滤 first_material_flag = 1
+     */
+    @Operation(summary = "首台车-物料号维度未确认列表")
+    @RequiresPermissions("vehicle:first:query")
+    @GetMapping("/material/list")
+    public TableDataInfo materialList(VehicleInfo vehicleInfo) {
+        // 固定只查 first_material_flag = 1 的记录
+        vehicleInfo.setFirstMaterialFlag(1);
+        startPage();
+        return getDataTable(vehicleInfoService.selectVehicleInfoList(vehicleInfo));
+    }
 
     /**
      * 首台车待确认列表（物料号维度 + 模版维度统一接口）

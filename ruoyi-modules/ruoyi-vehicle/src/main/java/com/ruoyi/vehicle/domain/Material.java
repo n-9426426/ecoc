@@ -35,7 +35,7 @@ public class Material extends BaseEntity {
     private String country;
 
     /** 轮胎 */
-    private String trie;
+    private String tire;
 
     /** 重量 */
     private String weight;
@@ -63,8 +63,12 @@ public class Material extends BaseEntity {
     /** 备注 */
     private String remark;
 
+    private String switchRemark;
+
     /** 车辆信息模版ID */
     private Long vehicleTemplateId;
+
+    private String tireResistanceGrade;
 
     // -------------------- 关联/查询扩展字段 --------------------
 
@@ -83,8 +87,8 @@ public class Material extends BaseEntity {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date effectiveDate;
 
-    /** 关联车辆模版列表 */
-    private VehicleTemplate vehicleTemplate;
+    /** 匹配的车辆模版列表 */
+    private List<VehicleTemplate> vehicleTemplates;
 
     /** 物料变更历史列表 */
     private List<MaterialHistory> materialHistories;

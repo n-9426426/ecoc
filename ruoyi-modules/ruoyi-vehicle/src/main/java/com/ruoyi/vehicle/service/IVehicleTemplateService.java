@@ -39,7 +39,11 @@ public interface IVehicleTemplateService {
 
     List<VehicleTemplate> historyVersion(VehicleTemplate template);
 
-    Flux<ServerSentEvent<String>> importExcel(MultipartFile file);
+    // 提交任务，返回 taskId（内部创建 sink 并异步执行）
+    String submitImportTask(MultipartFile file);
+
+    // 根据 taskId 返回对应的 Flux（供 SSE 接口使用）
+    Flux<ServerSentEvent<String>> getImportFlux(String taskId);
 
     List<VehicleTemplate> selectVehicleTemplateExpiringList();
 
@@ -47,5 +51,5 @@ public interface IVehicleTemplateService {
 
     void evictDictCache(String dictType);
 
-    List<Map<String, Object>> selectVehicleTemplateIdByCondition(String brand, String weight, String saleName, String tire, String tvv);
+    List<Map<String, Object>> selectVehicleTemplateIdByCondition(String materialNo, String brand, String weight, String saleName, String tire, String tvv);
 }

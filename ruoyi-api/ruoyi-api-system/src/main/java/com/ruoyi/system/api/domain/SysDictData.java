@@ -74,6 +74,8 @@ public class SysDictData extends BaseEntity
 
     private String otherLabelSystem;
 
+    private String cocOrder;
+
     private String tableName;
 
     private String excelColumnNameEnUs;
