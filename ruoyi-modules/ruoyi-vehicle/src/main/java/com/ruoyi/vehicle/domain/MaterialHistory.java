@@ -24,6 +24,10 @@ public class MaterialHistory extends BaseEntity {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date changeTime;
 
+    private String operator;
+
+    private String remark;
+
     private String trie;
     private String weight;
     private String brand;

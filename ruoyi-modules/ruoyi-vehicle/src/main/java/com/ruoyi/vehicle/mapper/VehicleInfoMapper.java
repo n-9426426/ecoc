@@ -4,6 +4,7 @@ import com.ruoyi.vehicle.domain.VehicleInfo;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 车辆信息 数据层
@@ -178,4 +179,6 @@ public interface VehicleInfoMapper {
     void confirmTemplateFlag(@Param("vehicleId") Long vehicleId, @Param("confirmedBy") String confirmedBy);
 
     List<String> findTemplateIdsByUuid(@Param("uuid") String uuid);
+
+    List<Map<String, String>> selectOldVersionAndNewVersion(@Param("list") List<String> materialNoList);
 }

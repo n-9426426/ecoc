@@ -22,6 +22,7 @@ import com.ruoyi.system.api.enums.SysNoticeModel;
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.*;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
+import com.ruoyi.vehicle.domain.vo.VehicleJsonKeyVo;
 import com.ruoyi.vehicle.enums.VehicleLifecycleOperation;
 import com.ruoyi.vehicle.mapper.*;
 import com.ruoyi.vehicle.service.IFirstVehicleCheckService;
@@ -125,6 +126,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                             Map<String, String> labels = new HashMap<>();
                             labels.put("otherLabel",       dictData != null ? dictData.getOtherLabel()       : null);
                             labels.put("otherLabelSystem", dictData != null ? dictData.getOtherLabelSystem() : null);
+                            labels.put("cocOrder", dictData != null ? dictData.getCocOrder() : null);
                             jsonDictMap.put(key, labels);
                         }
                         vehicle.setOtherSystem(jsonDictMap);
@@ -198,8 +200,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setValidationResult(0);
         vehicleInfo.setDeleted(0);
         vehicleInfo.setCreateTime(vehicleInfo.getCreateTime() == null ? DateUtils.getNowDate() : vehicleInfo.getCreateTime());
-        vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null
-                ? SecurityUtils.getUsername() : "MES To System");
+        vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null ? SecurityUtils.getUsername() : "MES To System");
+        int insertRow = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
 
         // VehicleTemplate.json 已在模板导入阶段完成字段映射，直接使用
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
@@ -211,7 +213,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleLifecycleMapper.insert(vehicleLifecycle);
 
         validateVehicleInfo(Collections.singletonList(vehicleInfo.getVehicleId()));
-        int insertRow = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
         if (insertRow > 0) {
             // 新增：触发首台车标识检查
             firstVehicleCheckService.handleAfterInsert(Collections.singletonList(vehicleInfo));
@@ -544,7 +545,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 }
 
                 // 通过物料号查模板ID
-                List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(brand, weight, saleName, tire, tvv);
+                List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(null, brand, weight, saleName, tire, tvv);
                 if (vehicleTemplateList.isEmpty()) {
                     errorMsgs.add("第" + (rowIndex + 1) + "行：物料号[" + materialNo + "]未找到可用关联模板，跳过");
                     continue;
@@ -626,6 +627,273 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         if (!errorMsgs.isEmpty()) {
             throw new RuntimeException("部分数据导入失败：\n" + String.join("\n", errorMsgs));
         }
+    }
+
+    /**
+     * 批量修改关联模版
+     * 规则：所选车辆必须属于同一整车物料号（material_no），否则拒绝操作
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int batchUpdateVehicleTemplate(List<Long> vehicleIds) {
+        if (vehicleIds == null || vehicleIds.isEmpty()) {
+            throw new ServiceException("请选择需要修改的车辆");
+        }
+
+        // 1. 批量查出车辆信息
+        Long[] idArray = vehicleIds.toArray(new Long[0]);
+        List<VehicleInfo> vehicleList = vehicleInfoMapper.selectVehicleInfoByIds(idArray);
+        if (vehicleList.isEmpty()) {
+            throw new ServiceException("未找到对应的车辆信息");
+        }
+
+        // 2. 校验所有车辆必须属于同一整车物料号
+        Set<String> materialNos = vehicleList.stream()
+                .map(VehicleInfo::getMaterialNo)
+                .filter(StringUtils::isNotBlank)
+                .collect(java.util.stream.Collectors.toSet());
+
+        if (materialNos.size() > 1) {
+            throw new ServiceException("批量修改关联模版只允许操作同一整车物料号下的车辆，"
+                    + "当前选中了 " + materialNos.size() + " 种不同物料号：" + materialNos);
+        }
+        if (materialNos.isEmpty()) {
+            throw new ServiceException("所选车辆物料号为空，无法执行批量修改");
+        }
+
+        Material query = new Material();
+        query.setMaterialNo(materialNos.iterator().next());
+        List<Material> materialList = materialMapper.selectMaterialList(query);
+        if (materialList.isEmpty()) {
+            throw new ServiceException("物料号管理信息为空，无法切换版本");
+        }
+        Long templateId = materialList.get(0).getVehicleTemplateId();
+
+        VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(templateId);
+        if (template == null) {
+            throw new ServiceException("目标模版不存在，templateId=" + templateId);
+        }
+        // 模版需处于启用状态（status='0'）
+        if (!"0".equals(template.getStatus())) {
+            throw new ServiceException("目标模版已停用，请选择启用状态的模版");
+        }
+
+
+        // 4. 逐条更新（保留触发校验、生命周期记录的完整链路）
+        String operator = SecurityUtils.getUsername();
+        int successCount = 0;
+        List<String> failVins = new ArrayList<>();
+
+        for (VehicleInfo vehicle : vehicleList) {
+            try {
+                vehicle.setVehicleTemplateId(String.valueOf(templateId));
+                vehicle.setWvtaNo(template.getWvtaCocNo());
+                vehicle.setCocTemplateNo(template.getCocTemplateNo());
+                vehicle.setJson(template.getJson());
+                vehicle.setVin(null);
+                vehicle.setUpdateBy(operator);
+                vehicle.setUpdateTime(DateUtils.getNowDate());
+                // 重置校验状态，等待重新校验
+                vehicle.setValidationResult(0);
+                vehicle.setUploadStatus(0);
+
+                vehicleInfoMapper.updateVehicleInfo(vehicle);
+
+                successCount++;
+            } catch (Exception e) {
+                log.error("批量修改模版：vehicleId={} 更新失败", vehicle.getVehicleId(), e);
+                failVins.add(String.valueOf(vehicle.getVehicleId()));
+            }
+        }
+
+        // 5. 批量触发校验（只校验成功更新的）
+        List<Long> updatedIds = vehicleList.stream()
+                .map(VehicleInfo::getVehicleId)
+                .filter(id -> !failVins.contains(String.valueOf(id)))
+                .collect(java.util.stream.Collectors.toList());
+        if (!updatedIds.isEmpty()) {
+            validateVehicleInfo(updatedIds);
+        }
+
+        if (!failVins.isEmpty()) {
+            throw new ServiceException("部分车辆模版更新失败，vehicleId=" + failVins
+                    + "，已成功更新 " + successCount + " 条");
+        }
+
+        return successCount;
+    }
+
+    /**
+     *  根据传入的 ids 查询所有车辆 JSON 键的并集，关联 vehicle_attribute 字典信息后返回
+     */
+    @Override
+    public List<VehicleJsonKeyVo> listJsonKeysByVehicleIds(List<Long> vehicleIds) {
+        if (vehicleIds == null || vehicleIds.isEmpty()) {
+            throw new ServiceException("请传入车辆ID列表");
+        }
+
+        // 1. 批量查出车辆，收集 JSON 键并集（保持键首次出现的顺序）
+        Long[] idArray = vehicleIds.toArray(new Long[0]);
+        List<VehicleInfo> vehicleList = vehicleInfoMapper.selectVehicleInfoByIds(idArray);
+
+        // 使用 LinkedHashSet 保证顺序同时去重
+        Set<String> keyUnion = new LinkedHashSet<>();
+        for (VehicleInfo vehicle : vehicleList) {
+            if (StringUtils.isBlank(vehicle.getJson())) {
+                continue;
+            }
+            try {
+                Map<String, Object> jsonMap = objectMapper.readValue(
+                        vehicle.getJson(),
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                keyUnion.addAll(jsonMap.keySet());
+            } catch (Exception e) {
+                log.warn("解析 vehicle JSON 失败, vehicleId={}", vehicle.getVehicleId(), e);
+            }
+        }
+
+        if (keyUnion.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 2. 拉取 vehicle_attribute 字典，构建 dictLabel -> SysDictData 映射
+        Map<String, SysDictData> dictLabelMap = Collections.emptyMap();
+        try {
+            com.ruoyi.common.core.domain.R<List<SysDictData>> dictResult =
+                    remoteDictService.getDictDataByType("vehicle_attribute");
+            if (dictResult != null && dictResult.getData() != null) {
+                dictLabelMap = dictResult.getData().stream()
+                        .filter(d -> StringUtils.isNotBlank(d.getDictLabel()))
+                        .collect(java.util.stream.Collectors.toMap(
+                                SysDictData::getDictLabel,
+                                d -> d,
+                                (existing, replacement) -> existing
+                        ));
+            }
+        } catch (Exception e) {
+            log.warn("获取 vehicle_attribute 字典失败", e);
+        }
+
+        // 3. 组装 VO 列表
+        List<VehicleJsonKeyVo> result = new ArrayList<>(keyUnion.size());
+        for (String key : keyUnion) {
+            SysDictData dictData = dictLabelMap.get(key);
+            result.add(new VehicleJsonKeyVo(
+                    key,
+                    dictData != null ? dictData.getOtherLabel()       : null,
+                    dictData != null ? dictData.getOtherLabelSystem() : null,
+                    dictData != null ? dictData.getCocOrder()         : null
+            ));
+        }
+        return result;
+    }
+
+    /**
+     * 根据传入的 ids 和 fieldValues，
+     * 将每辆车 JSON 中与 fieldValues.key 相同的键的值替换为对应新值，保存回数据库
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int batchUpdateVehicleJsonFields(List<Long> vehicleIds, Map<String, String> fieldValues) {
+        if (vehicleIds == null || vehicleIds.isEmpty()) {
+            throw new ServiceException("请传入车辆ID列表");
+        }
+        if (fieldValues == null || fieldValues.isEmpty()) {
+            throw new ServiceException("请传入需要修改的字段映射");
+        }
+
+        // 1. 批量查出车辆
+        Long[] idArray = vehicleIds.toArray(new Long[0]);
+        List<VehicleInfo> vehicleList = vehicleInfoMapper.selectVehicleInfoByIds(idArray);
+        if (vehicleList.isEmpty()) {
+            throw new ServiceException("未找到对应的车辆信息");
+        }
+
+        String operator = SecurityUtils.getUsername();
+        int successCount = 0;
+        List<String> failedVehicleIds = new ArrayList<>();
+
+        for (VehicleInfo vehicle : vehicleList) {
+            try {
+                String originalJson = vehicle.getJson();
+
+                // JSON 为空时跳过（不报错）
+                if (StringUtils.isBlank(originalJson)) {
+                    log.warn("vehicleId={} 的 JSON 为空，跳过字段更新", vehicle.getVehicleId());
+                    continue;
+                }
+
+                // 2. 反序列化 JSON
+                Map<String, Object> jsonMap = objectMapper.readValue(
+                        originalJson,
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+
+                // 3. 只替换 JSON 中已存在的键；不存在的键忽略（不新增）
+                boolean changed = false;
+                for (Map.Entry<String, String> entry : fieldValues.entrySet()) {
+                    if (jsonMap.containsKey(entry.getKey())) {
+                        jsonMap.put(entry.getKey(), entry.getValue());
+                        changed = true;
+                    }
+                }
+
+                if (!changed) {
+                    // 该车辆 JSON 中没有任何匹配的键，无需更新
+                    continue;
+                }
+
+                // 4. 序列化回 JSON 字符串
+                String newJson = objectMapper.writeValueAsString(jsonMap);
+
+                // 5. 更新数据库（只改 json、update_by、update_time，不触碰其他字段）
+                VehicleInfo update = new VehicleInfo();
+                update.setVehicleId(vehicle.getVehicleId());
+                update.setJson(newJson);
+                update.setVin(null);   // 防止误更新 vin
+                update.setUpdateBy(operator);
+                update.setUpdateTime(DateUtils.getNowDate());
+
+                vehicleInfoMapper.updateVehicleInfo(update);
+                successCount++;
+
+            } catch (Exception e) {
+                log.error("批量修改 JSON 字段：vehicleId={} 处理失败", vehicle.getVehicleId(), e);
+                failedVehicleIds.add(String.valueOf(vehicle.getVehicleId()));
+            }
+        }
+
+        // 6. 对成功更新的车辆触发重新校验
+        if (successCount > 0) {
+            List<Long> updatedIds = vehicleList.stream()
+                    .map(VehicleInfo::getVehicleId)
+                    .filter(id -> !failedVehicleIds.contains(String.valueOf(id)))
+                    .collect(java.util.stream.Collectors.toList());
+            validateVehicleInfo(updatedIds);
+        }
+
+        if (!failedVehicleIds.isEmpty()) {
+            throw new ServiceException("部分车辆 JSON 字段更新失败，vehicleId=" + failedVehicleIds
+                    + "，已成功更新 " + successCount + " 辆");
+        }
+
+        return successCount;
+    }
+
+    @Override
+    public Map<String, List<Map<String, String>>> getTemplateVersion(List<Long> vehicleIds) {
+        List<VehicleInfo> vehicleInfoList = vehicleInfoMapper.selectVehicleInfoByIds(vehicleIds.toArray(new Long[0]));
+        if (vehicleInfoList.isEmpty()) {
+            throw new ServiceException("请传入车辆ID列表");
+        }
+        List<String> materialNoList = vehicleInfoList.stream()
+                .map(VehicleInfo::getMaterialNo)
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .collect(java.util.stream.Collectors.toList());
+        Map<String, List<Map<String, String>>> result = new HashMap<>();
+        List<Map<String, String>> map = vehicleInfoMapper.selectOldVersionAndNewVersion(materialNoList);
+        result.put(materialNoList.get(0), map);
+        return result;
     }
 
     public int updateVehicleTemplateId(String vin, Long templateId) {

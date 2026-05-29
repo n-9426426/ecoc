@@ -5,6 +5,7 @@ import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
+import com.ruoyi.vehicle.domain.vo.VehicleJsonKeyVo;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -86,4 +87,32 @@ public interface IVehicleInfoService {
     VehicleInfo selectVehicleInfoByVin(String vin);
 
     void importVehicleInfoFromExcel(MultipartFile file) throws IOException;
+
+    /**
+     * 批量修改关联模版（只允许同一整车物料号下的车辆）
+     *
+     * @param vehicleIds 车辆ID列表
+     * @param templateId 目标模版ID
+     * @return 成功更新行数
+     */
+    int batchUpdateVehicleTemplate(List<Long> vehicleIds);
+
+    /**
+     * 根据 vehicleIds 汇总所有车辆 JSON 键的并集，并关联字典 label 信息
+     *
+     * @param vehicleIds 车辆ID列表
+     * @return JSON 键关联字典信息列表（已去重，保持插入顺序）
+     */
+    List<VehicleJsonKeyVo> listJsonKeysByVehicleIds(List<Long> vehicleIds);
+
+    /**
+     * 批量替换车辆 JSON 中指定键的值
+     *
+     * @param vehicleIds  车辆ID列表
+     * @param fieldValues 需要替换的字段 Map（key=JSON键, value=新值）
+     * @return 成功更新的车辆数量
+     */
+    int batchUpdateVehicleJsonFields(List<Long> vehicleIds, Map<String, String> fieldValues);
+
+    Map<String, List<Map<String, String>>> getTemplateVersion(List<Long> vehicleIds);
 }

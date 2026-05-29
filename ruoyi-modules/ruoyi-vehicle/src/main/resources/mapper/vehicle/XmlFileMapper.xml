@@ -31,6 +31,7 @@
         <result property="issueDate" column="issue_date"/>
         <result property="validateResult" column="validate_result"/>
         <result property="validationReportJson" column="validation_report_json"/>
+        <result property="uploadAffirm" column="upload_affirm"/>
     </resultMap>
 
     <sql id="selectXmlFileVo">
@@ -40,10 +41,11 @@
                xl.update_time, xl.remark, xl.xml_template_id, xl.model_code, xl.factory_code,
                xl.vehicle_material_no, xl.country, xl.upload_result, xl.upload_date, xl.issue_date,
                xl.validate_result,xt.template_name xml_template_name, xl.validation_report_json,
-               sdd.dict_label model_name
+               sdd.dict_label model_name, vi.upload_affirm
         from xml_file xl
         left join xml_template xt on xl.xml_template_id = xt.template_id
         left join sys_dict_data sdd on sdd.dict_value = xl.model_code
+        left join vehicle_info vi on vi.vin = xl.vin
     </sql>
 
     <select id="selectXmlFileList" parameterType="XmlFile" resultMap="XmlFileResult">

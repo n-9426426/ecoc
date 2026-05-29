@@ -45,7 +45,10 @@ public class MaterialServiceImpl implements IMaterialService {
     @Override
     public Material selectMaterialById(Long id) {
         Material material = materialMapper.selectMaterialById(id);
-        material.setVehicleTemplate(vehicleTemplateMapper.selectVehicleTemplateById(material.getVehicleTemplateId()));
+        List<VehicleTemplate> vehicleTemplates = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(
+                null, material.getBrand(), material.getWeight(), material.getSaleName(), material.getTrie(), material.getTvv()
+        );
+        material.setVehicleTemplates(vehicleTemplates);
         material.setMaterialHistories(materialHistoryMapper.selectByMaterialId(id, material.getVersion()));
         return material;
     }
@@ -72,7 +75,7 @@ public class MaterialServiceImpl implements IMaterialService {
         LoginUser loginUser = SecurityUtils.getLoginUser();
         material.setCreateBy(loginUser.getUsername());
         material.setCreateTime(new Date());
-        List<VehicleTemplate> templates = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(
+        List<VehicleTemplate> templates = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(null,
                 material.getBrand(), material.getWeight(), material.getSaleName(), material.getTrie(), material.getTvv()
         );
         if (templates.isEmpty()) {
@@ -105,6 +108,8 @@ public class MaterialServiceImpl implements IMaterialService {
             history.setOldVersion(material.getVersion());
             history.setNewVersion(material.getNewVersion());
             history.setChangeTime(new Date());
+            history.setOperator(loginUser.getUsername());
+            history.setRemark(material.getRemark());
             materialHistoryMapper.insert(history);
         }
         return row;

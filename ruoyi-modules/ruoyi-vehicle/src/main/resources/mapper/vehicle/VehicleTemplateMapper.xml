@@ -250,7 +250,11 @@
     <select id="selectVehicleTemplateIdByCondition" resultMap="VehicleTemplateResult">
         select vt.*, vt.json->>'$.brand' AS brand, vt.json->>'$.weight' AS weight, vt.json->>'$.saleName' AS sale_name, vt.json->>'$.tire' AS tire
         from vehicle_template vt
+        left join material m on m.vehicle_template_id = vt.template_id
         where vt.del_flag = '0' and vt.status = '0'
+        <if test="materialNo != null and materialNo != ''">
+            and m.material_no = #{materialNo}
+        </if>
         <if test="tvv != null and tvv != ''">
             AND REPLACE(vt.tvv, ',', '') = #{tvv}
         </if>

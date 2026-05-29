@@ -44,7 +44,7 @@ public class ExcelUtil {
      * 从当前请求上下文中解析语言参数
      *优先级：URL参数 ?lang=en_US > Header Accept-Language > 默认 zh_CN
      */
-    private String resolveCurrentLang() {
+    public String resolveCurrentLang() {
         try {
             ServletRequestAttributes attributes =(ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
             if (attributes != null) {
@@ -254,13 +254,13 @@ public class ExcelUtil {
     public <T> List<T> importExcel(InputStream inputStream,
                                    String tableName,
                                    Class<T> clazz,
+                                   String lang,
                                    Integer... skipRows) throws Exception {
         // 解析跳过行数，默认 0
         int skipCount = (skipRows != null && skipRows.length > 0 && skipRows[0] != null)
                 ? Math.max(skipRows[0], 0)
                 : 0;
 
-        String lang = resolveCurrentLang();
         log.info("导入 Excel，tableName={}，lang={}，跳过数据行数={}", tableName, lang, skipCount);
 
         List<ExcelColumnConfig> configs = getConfigs(tableName);

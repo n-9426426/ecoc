@@ -37,6 +37,7 @@ public interface VehicleTemplateMapper {
     List<VehicleTemplate> selectEffectingTemplates();
 
     List<VehicleTemplate> selectVehicleTemplateIdByCondition(
+            @Param("materialNo") String materialNo,
             @Param("brand") String brand,
             @Param("weight") String weight,
             @Param("saleName") String saleName,

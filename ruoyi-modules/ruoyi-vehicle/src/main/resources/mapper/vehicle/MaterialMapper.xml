@@ -42,7 +42,7 @@
         (
         SELECT max_vt.version
         FROM vehicle_template max_vt
-        WHERE max_vt.uuid = ANY_VALUE(vt.uuid) <!-- 👈 子查询里用到的 vt 字段也包裹一下 -->
+        WHERE max_vt.uuid = ANY_VALUE(vt.uuid)
         AND max_vt.is_last = 1
         ) AS last_version
         FROM material m

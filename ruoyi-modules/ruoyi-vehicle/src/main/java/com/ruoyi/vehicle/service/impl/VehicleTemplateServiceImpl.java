@@ -49,9 +49,11 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
 import javax.annotation.PostConstruct;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -211,6 +213,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                                 Map<String, String> labels = new HashMap<>();
                                 labels.put("otherLabel",       dictData != null ? dictData.getOtherLabel()       : null);
                                 labels.put("otherLabelSystem", dictData != null ? dictData.getOtherLabelSystem() : null);
+                                labels.put("cocOrder", dictData != null ? dictData.getCocOrder() : null);
                                 jsonDictMap.put(key, labels);
                             }
                             template.setOtherSystem(jsonDictMap);
@@ -530,55 +533,36 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     }
 
     @Override
-    public Flux<ServerSentEvent<String>> importExcel(MultipartFile file) {
+    public String submitImportTask(MultipartFile file) {
         String taskId = UUID.randomUUID().toString();
         Sinks.Many<ServerSentEvent<String>> sink = Sinks.many().unicast().onBackpressureBuffer();
         sinks.put(taskId, sink);
 
+        // 文件内容需要在异步线程前读出，避免请求结束后流关闭
+        byte[] fileBytes;
         try {
-            List<VehicleTemplate> vehicleTemplates = excelUtil.importExcel(file.getInputStream(), "vehicle_template", VehicleTemplate.class, 1);
-            List<SysDictData> vehicleModels = remoteDictService.getDictDataByType("vehicle_model").getData();
-            // 建立 label -> dictCode 映射，避免双重循环
-            Map<String, String> labelToCodeMap = vehicleModels.stream()
-                    .collect(Collectors.toMap(
-                            SysDictData::getDictLabel,
-                            SysDictData::getDictValue,
-                            (k1, k2) -> k1
-                    ));
-            List<SysDictData> vehicleAttribute = remoteDictService.getDictDataByType("vehicle_attribute").getData();
-            Map<String, String> keyMap = vehicleAttribute.stream()
-                    .filter(item -> item.getKeyMap() != null)
-                    .collect(Collectors.toMap(
-                            SysDictData::getDictLabel,
-                            SysDictData::getKeyMap,
-                            (k1, k2) -> k1
-                    ));
-
-            // 遍历替换 vehicleType
-            vehicleTemplates.forEach(template -> {
-                String vehicleType = template.getVehicleType();
-                if (vehicleType != null && labelToCodeMap.containsKey(vehicleType)) {
-                    template.setVehicleType(labelToCodeMap.get(vehicleType));
-                } else {
-                    log.warn("vehicleType [{}] 未在字典 vehicle_model 中找到对应 dictCode", vehicleType);
-                }
-                template.setUuid(UUID.randomUUID().toString());
-                template.setVersion("1.0");
-                template.setStatus("1");
-                template.setValidateResult("1");
-                template.setCreateBy(SecurityUtils.getUsername());
-                template.setCreateTime(DateUtils.getNowDate());
-                // Excel 解析后立即对 json 做字段映射，模板保存映射后的值
-                // VehicleInfo 后续直接复用此 json，无需再次转换
-                String mappedJson = jsonConvertFromTemplateJson(template.getJson());
-                template.setJson(mappedJson);
-                Map<String, String> jsonMap = JSONObject.parseObject(mappedJson, new TypeReference<Map<String, String>>() {});
-                template.setTvv(jsonMap.get("Type") + "," + jsonMap.get("Variant") + "," + jsonMap.get("Version"));
-                templateMapper.insertVehicleTemplate(template);
-            });
+            fileBytes = file.getBytes();
         } catch (Exception e) {
-            log.error("文件导入失败, taskId={}", taskId, e);
-            return null;
+            sinks.remove(taskId);
+            throw new ServiceException("文件读取失败: " + e.getMessage());
+        }
+        String currentUser = SecurityUtils.getUsername();
+        // 在请求线程提前解析语言，避免异步线程中 RequestContextHolder 为 null
+        String lang = excelUtil.resolveCurrentLang();
+        CompletableFuture.runAsync(() -> doImport(taskId, fileBytes, currentUser, lang));
+
+        return taskId;
+    }
+
+    @Override
+    public Flux<ServerSentEvent<String>> getImportFlux(String taskId) {
+        Sinks.Many<ServerSentEvent<String>> sink = sinks.get(taskId);
+        if (sink == null) {
+            // taskId 不存在或已过期，直接返回一个 error 事件后结束
+            return Flux.just(ServerSentEvent.<String>builder()
+                    .event("error")
+                    .data("{\"message\":\"任务不存在或已过期\"}")
+                    .build());
         }
 
         return sink.asFlux()
@@ -590,6 +574,119 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                     log.info("SSE完成, taskId: {}", taskId);
                     sinks.remove(taskId);
                 });
+    }
+
+    /**
+     * 实际导入逻辑，在异步线程中执行
+     */
+    private void doImport(String taskId, byte[] fileBytes, String createBy, String lang) {
+        Sinks.Many<ServerSentEvent<String>> sink = sinks.get(taskId);
+        if (sink == null) return;
+
+        int successCount = 0;
+        int failCount = 0;
+        List<String> errorDetails = new ArrayList<>();
+
+        try {
+            List<VehicleTemplate> vehicleTemplates = excelUtil.importExcel(
+                    new ByteArrayInputStream(fileBytes), "vehicle_template", VehicleTemplate.class, lang, 1);
+
+            Map<String, String> labelToCodeMap = remoteDictService
+                    .getDictDataByType("vehicle_model").getData().stream()
+                    .collect(Collectors.toMap(
+                            SysDictData::getDictLabel,
+                            SysDictData::getDictValue,
+                            (k1, k2) -> k1));
+
+            remoteDictService.getDictDataByType("vehicle_attribute").getData().stream()
+                    .filter(item -> item.getKeyMap() != null)
+                    .collect(Collectors.toMap(
+                            SysDictData::getDictLabel,
+                            SysDictData::getKeyMap,
+                            (k1, k2) -> k1));
+
+            int total = vehicleTemplates.size();
+
+            for (int i = 0; i < total; i++) {
+                VehicleTemplate template = vehicleTemplates.get(i);
+                int rowNum = i + 2;
+
+                try {
+                    String vehicleType = template.getVehicleType();
+                    if (vehicleType == null || !labelToCodeMap.containsKey(vehicleType)) {
+                        throw new IllegalArgumentException(
+                                "vehicleType [" + vehicleType + "] 未在字典 vehicle_model 中找到对应 dictCode");
+                    }
+                    template.setVehicleType(labelToCodeMap.get(vehicleType));
+                    template.setUuid(UUID.randomUUID().toString());
+                    template.setVersion("1.0");
+                    template.setStatus("1");
+                    template.setValidateResult("1");
+                    template.setCreateBy(createBy);
+                    template.setCreateTime(DateUtils.getNowDate());
+
+                    String mappedJson = jsonConvertFromTemplateJson(template.getJson());
+                    template.setJson(mappedJson);
+                    Map<String, String> jsonMap = JSONObject.parseObject(
+                            mappedJson, new TypeReference<Map<String, String>>() {});
+                    template.setTvv(jsonMap.get("Type") + "," + jsonMap.get("Variant") + "," + jsonMap.get("Version"));
+
+                    templateMapper.insertVehicleTemplate(template);
+                    successCount++;
+
+                    pushEvent(sink, "progress", String.format(
+                            "{\"row\":%d,\"total\":%d,\"status\":\"success\"}", rowNum, total));
+
+                } catch (Exception rowEx) {
+                    failCount++;
+                    String errorMsg = String.format("第%d行: %s", rowNum, rowEx.getMessage());
+                    errorDetails.add(errorMsg);
+                    log.warn("导入第{}行失败: {}", rowNum, rowEx.getMessage());
+
+                    pushEvent(sink, "progress", String.format(
+                            "{\"row\":%d,\"total\":%d,\"status\":\"fail\",\"reason\":\"%s\"}",
+                            rowNum, total, escapeJson(rowEx.getMessage())));
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("文件导入失败, taskId={}", taskId, e);
+            pushEvent(sink, "error", String.format(
+                    "{\"message\":\"文件解析失败: %s\"}", escapeJson(e.getMessage())));
+            sink.tryEmitComplete();
+            sinks.remove(taskId);
+            return;
+        }
+
+        String detailJson = errorDetails.stream()
+                .map(s -> "\"" + escapeJson(s) + "\"")
+                .collect(Collectors.joining(",", "[", "]"));
+
+        pushEvent(sink, "complete", String.format(
+                "{\"successCount\":%d,\"failCount\":%d,\"errorDetails\":%s}",
+                successCount, failCount, detailJson));
+
+        sink.tryEmitComplete();
+        sinks.remove(taskId);
+    }
+
+    private void pushEvent(Sinks.Many<ServerSentEvent<String>> sink, String eventType, String data) {
+        Sinks.EmitResult result = sink.tryEmitNext(
+                ServerSentEvent.<String>builder()
+                        .event(eventType)
+                        .data(data)
+                        .build());
+        if (result.isFailure()) {
+            log.warn("SSE 推送失败, event={}, result={}", eventType, result);
+        }
+    }
+
+    private String escapeJson(String raw) {
+        if (raw == null) return "";
+        return raw.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
     }
 
     /**
@@ -850,8 +947,8 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     }
 
     @Override
-    public List<Map<String, Object>> selectVehicleTemplateIdByCondition(String brand, String weight, String saleName, String tire, String tvv) {
-        List<VehicleTemplate> templates = templateMapper.selectVehicleTemplateIdByCondition(brand, weight, saleName, tire, tvv);
+    public List<Map<String, Object>> selectVehicleTemplateIdByCondition(String materialNo, String brand, String weight, String saleName, String tire, String tvv) {
+        List<VehicleTemplate> templates = templateMapper.selectVehicleTemplateIdByCondition(materialNo, brand, weight, saleName, tire, tvv);
         if (templates.isEmpty()) {
             throw new RuntimeException("无法匹配任何可用模板");
         }

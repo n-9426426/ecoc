@@ -145,8 +145,13 @@ public class VehicleTemplateController extends BaseController {
         if (!(validateFile(file) == FileTypeEnum.EXCEL)) {
             throw new ServiceException(remoteTranslateService.translate("common.upload.file.type.unsupported", null));
         }
-        vehicleTemplateService.importExcel(file);
-        return AjaxResult.success("导入成功");
+        String taskId = vehicleTemplateService.submitImportTask(file);
+        return AjaxResult.success(taskId);  // 前端拿到 taskId 再去订阅 SSE
+    }
+
+    @GetMapping(value = "/import/progress/{taskId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> importProgress(@PathVariable String taskId) {
+        return vehicleTemplateService.getImportFlux(taskId);
     }
 
     /**
@@ -232,7 +237,7 @@ public class VehicleTemplateController extends BaseController {
      */
     @PostMapping("/condition")
     public AjaxResult selectVehicleTemplateIdByCondition(@RequestBody VehicleInfo vehicleInfo) {
-        return AjaxResult.success(vehicleTemplateService.selectVehicleTemplateIdByCondition(
+        return AjaxResult.success(vehicleTemplateService.selectVehicleTemplateIdByCondition(vehicleInfo.getMaterialNo(),
                 vehicleInfo.getBrand(), vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getTvv()));
     }
 }
