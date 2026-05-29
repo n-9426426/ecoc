@@ -8,7 +8,7 @@
         <result property="materialNo"       column="material_no"       />
         <result property="tvv"              column="tvv"               />
         <result property="country"          column="country"           />
-        <result property="trie"             column="trie"              />
+        <result property="tire"             column="tire"              />
         <result property="weight"           column="weight"            />
         <result property="brand"            column="brand"             />
         <result property="saleName"         column="sale_name"         />
@@ -26,7 +26,7 @@
     </resultMap>
 
     <sql id="selectMaterialVo">
-        SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.trie, m.weight, m.brand, m.sale_name,
+        SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.tire, m.weight, m.brand, m.sale_name,
                m.create_time, m.create_by, m.update_time, m.update_by, m.remark,
                m.vehicle_template_id, m.tire_resistance_grade,
                vt.version, vt.is_last
@@ -35,7 +35,7 @@
     </sql>
 
     <select id="selectMaterialList" parameterType="Material" resultMap="MaterialResult">
-        SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.trie, m.weight, m.brand, m.sale_name,
+        SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.tire, m.weight, m.brand, m.sale_name,
         m.create_time, m.create_by, m.update_time, m.update_by, vt.remark, m.vehicle_template_id,
         m.tire_resistance_grade,
         ANY_VALUE(vt.version) AS version,
@@ -85,7 +85,7 @@
             <if test="materialNo != null and materialNo != ''">material_no,</if>
             <if test="tvv != null and tvv != ''">tvv,</if>
             <if test="country != null and country != ''">country,</if>
-            <if test="trie != null and trie != ''">trie,</if>
+            <if test="tire != null and tire != ''">tire,</if>
             <if test="weight != null and weight != ''">weight,</if>
             <if test="brand != null and brand != ''">brand,</if>
             <if test="saleName != null and saleName != ''">sale_name,</if>
@@ -100,7 +100,7 @@
             <if test="materialNo != null and materialNo != ''">#{materialNo},</if>
             <if test="tvv != null and tvv != ''">#{tvv},</if>
             <if test="country != null and country != ''">#{country},</if>
-            <if test="trie != null and trie != ''">#{trie},</if>
+            <if test="tire != null and tire != ''">#{tire},</if>
             <if test="weight != null and weight != ''">#{weight},</if>
             <if test="brand != null and brand != ''">#{brand},</if>
             <if test="saleName != null and saleName != ''">#{saleName},</if>
@@ -119,7 +119,7 @@
             <if test="materialNo != null and materialNo != ''">material_no = #{materialNo},</if>
             <if test="tvv != null and tvv != ''">tvv = #{tvv},</if>
             <if test="country != null and country != ''">country = #{country},</if>
-            <if test="trie != null and trie != ''">trie = #{trie},</if>
+            <if test="tire != null and tire != ''">tire = #{tire},</if>
             <if test="weight != null and weight != ''">weight = #{weight},</if>
             <if test="brand != null and brand != ''">brand = #{brand},</if>
             <if test="saleName != null and saleName != ''">sale_name = #{saleName},</if>

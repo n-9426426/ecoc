@@ -930,7 +930,13 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                         converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
                         converted = "N/A".equals(converted) ? "" : converted;
                         if (StringUtils.isNotBlank(converted)) {
-                            result.put(rule.getDictLabel(), converted);
+                            String label = rule.getDictLabel();
+                            Object existing = result.get(label);
+                            if (existing != null && StringUtils.isNotBlank(String.valueOf(existing))) {
+                                result.put(label, existing + "," + converted);
+                            } else {
+                                result.put(label, converted);
+                            }
                         }
                     }
                 }

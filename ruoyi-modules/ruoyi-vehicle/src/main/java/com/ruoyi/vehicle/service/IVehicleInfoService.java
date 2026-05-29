@@ -1,5 +1,6 @@
 package com.ruoyi.vehicle.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.system.api.model.LoginUser;
@@ -82,7 +83,7 @@ public interface IVehicleInfoService {
 
     public List<ValidationReport> validateVehicleInfo(List<Long> vehicleInfoId);
 
-    Map<String, Object> getVehicleInfoFromMes(VehicleDto.Vehicle vehicle, Date now, LoginUser loginUser);
+    Map<String, Object> getVehicleInfoFromMes(VehicleDto.Vehicle vehicle, Date now, LoginUser loginUser) throws JsonProcessingException;
 
     VehicleInfo selectVehicleInfoByVin(String vin);
 

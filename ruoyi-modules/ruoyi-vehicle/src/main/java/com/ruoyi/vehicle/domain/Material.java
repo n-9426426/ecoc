@@ -35,7 +35,7 @@ public class Material extends BaseEntity {
     private String country;
 
     /** 轮胎 */
-    private String trie;
+    private String tire;
 
     /** 重量 */
     private String weight;
@@ -63,8 +63,12 @@ public class Material extends BaseEntity {
     /** 备注 */
     private String remark;
 
+    private String switchRemark;
+
     /** 车辆信息模版ID */
     private Long vehicleTemplateId;
+
+    private String tireResistanceGrade;
 
     // -------------------- 关联/查询扩展字段 --------------------
 

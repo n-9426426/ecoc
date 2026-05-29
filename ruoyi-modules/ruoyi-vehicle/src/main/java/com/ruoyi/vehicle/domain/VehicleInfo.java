@@ -191,4 +191,14 @@ public class VehicleInfo extends BaseEntity {
     /** 模版首台确认时间 */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date templateConfirmedTime;
+
+    /**
+     * 生成确认通知是否已经发送: 0-未发送 1-已发送
+     */
+    private Integer generateAffirmNotice;
+
+    /**
+     * 上传确认通知是否已经发送: 0-未发送 1-已发送
+     */
+    private Integer uploadAffirmNotice;
 }

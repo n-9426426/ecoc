@@ -2,7 +2,9 @@ package com.ruoyi.vehicle.service.impl;
 
 import com.alibaba.fastjson2.JSON;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ruoyi.common.core.enums.RuleItemType;
 import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.model.FieldValidationResult;
@@ -176,15 +178,15 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         }
 
         // 查模板
-        Material material = new Material();
-        material.setMaterialNo(vehicleInfo.getMaterialNo());
-        List<Material> materialList = materialMapper.selectMaterialList(material);
+        Material query = new Material();
+        query.setMaterialNo(vehicleInfo.getMaterialNo());
+        List<Material> materialList = materialMapper.selectMaterialList(query);
         Long vehicleTemplateId;
         if (materialList.isEmpty()) {
             throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎无对应的可用车辆模板");
-        } else {
-            vehicleTemplateId = materialList.get(0).getVehicleTemplateId();
         }
+        Material material = materialList.get(0);
+        vehicleTemplateId = material.getVehicleTemplateId();
 
         // 查模板详情，自动填充关联字段
         VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(vehicleTemplateId);
@@ -192,10 +194,19 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new RuntimeException("模板不存在，templateId=" + vehicleTemplateId);
         }
 
+        String json = "";
+        try {
+            JsonNode rootNode = objectMapper.readTree(template.getJson());
+            // 扁平化并替换字段值
+            replaceFieldValues(rootNode, material);
+            json = objectMapper.writeValueAsString(rootNode);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("动态参数替换失败");
+        }
         vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
         vehicleInfo.setWvtaNo(template.getWvtaCocNo());
         vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
-        vehicleInfo.setJson(template.getJson());
+        vehicleInfo.setJson(json);
         vehicleInfo.setUploadStatus(0);
         vehicleInfo.setValidationResult(0);
         vehicleInfo.setDeleted(0);
@@ -243,6 +254,60 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             sysNotice.setCreateBy("自动提醒");
             sysNotice.setCreateTime(new Date());
             sysNotice.setSorts(Arrays.asList(16, 17));
+            remoteNoticeService.innerAdd(sysNotice);
+        }
+
+        if (vehicleInfo.getGenerateAffirm().equals(0)) {
+            String sb =
+                    "物料号 " +
+                            vehicleInfo.getMaterialNo() +
+                            " 生成待确认" +
+                            System.lineSeparator();
+            Map<String, String> params = new HashMap<>();
+            params.put("vin", vehicleInfo.getVin());
+            params.put("vehicleModel", vehicleInfo.getVehicleModel());
+            params.put("factoryCode", vehicleInfo.getFactoryCode());
+            params.put("country", vehicleInfo.getCountry());
+            params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            params.put("materialNo", vehicleInfo.getMaterialNo());
+            SysNotice sysNotice = new SysNotice();
+            sysNotice.setModel(SysNoticeModel.FIRST_VEHICLE_GENERATE_AFFIRM.getModel());
+            sysNotice.setQueryParams(JSON.toJSONString(params));
+            sysNotice.setIsRead(false);
+            sysNotice.setStatus("0");
+            sysNotice.setNoticeType("1");
+            sysNotice.setNoticeTitle("首台车生成待确认");
+            sysNotice.setNoticeContent(sb);
+            sysNotice.setCreateBy("自动提醒");
+            sysNotice.setCreateTime(new Date());
+            sysNotice.setSorts(Arrays.asList(18, 19));
+            remoteNoticeService.innerAdd(sysNotice);
+        }
+
+        if (vehicleInfo.getUploadAffirm().equals(0)) {
+            String sb =
+                    "物料号 " +
+                            vehicleInfo.getMaterialNo() +
+                            " 上传待确认" +
+                            System.lineSeparator();
+            Map<String, String> params = new HashMap<>();
+            params.put("vin", vehicleInfo.getVin());
+            params.put("vehicleModel", vehicleInfo.getVehicleModel());
+            params.put("factoryCode", vehicleInfo.getFactoryCode());
+            params.put("country", vehicleInfo.getCountry());
+            params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            params.put("materialNo", vehicleInfo.getMaterialNo());
+            SysNotice sysNotice = new SysNotice();
+            sysNotice.setModel(SysNoticeModel.FIRST_VEHICLE_UPLOAD_AFFIRM.getModel());
+            sysNotice.setQueryParams(JSON.toJSONString(params));
+            sysNotice.setIsRead(false);
+            sysNotice.setStatus("0");
+            sysNotice.setNoticeType("1");
+            sysNotice.setNoticeTitle("首台车上传待确认");
+            sysNotice.setNoticeContent(sb);
+            sysNotice.setCreateBy("自动提醒");
+            sysNotice.setCreateTime(new Date());
+            sysNotice.setSorts(Arrays.asList(20, 21));
             remoteNoticeService.innerAdd(sysNotice);
         }
         return insertRow;
@@ -457,7 +522,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Map<String, Object> getVehicleInfoFromMes(VehicleDto.Vehicle vehicle, Date now, LoginUser loginUser) {
+    public Map<String, Object> getVehicleInfoFromMes(VehicleDto.Vehicle vehicle, Date now, LoginUser loginUser) throws JsonProcessingException {
         // 直接用传进来的 loginUser，不从 SecurityContext 取
         Set<String> permissions = loginUser.getPermissions();
         if (!permissions.contains("vehicle:info:toSystem")) {
@@ -499,13 +564,13 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
         // 第一行是表头，从第二行开始读数据
         int lastRowNum = sheet.getLastRowNum();
-        if (lastRowNum < 1) {
+        if (lastRowNum < 3) {
             throw new RuntimeException("Excel中没有数据行");
         }
 
         List<String> errorMsgs = new ArrayList<>();
 
-        for (int rowIndex = 1; rowIndex <= lastRowNum; rowIndex++) {
+        for (int rowIndex = 3; rowIndex <= lastRowNum; rowIndex++) {
             Row row = sheet.getRow(rowIndex);
             if (row == null) continue;
 
@@ -933,4 +998,59 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         return null;
     }
 
+    /**
+     * 递归遍历 JSON 节点，替换目标字段的值
+     */
+    private void replaceFieldValues(JsonNode node, Material material) {
+        if (node.isObject()) {
+            ObjectNode objectNode = (ObjectNode) node;
+            Iterator<Map.Entry<String, JsonNode>> fields = objectNode.fields();
+
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> entry = fields.next();
+                String fieldName = entry.getKey();
+                JsonNode fieldValue = entry.getValue();
+
+                // 根据字段名进行替换
+                switch (fieldName) {
+                    case "RollingResistanceClassCode":
+                        if (material.getTireResistanceGrade() != null) {
+                            objectNode.put(fieldName, material.getTireResistanceGrade());
+                        }
+                        break;
+                    case "CommercialName":
+                        if (material.getSaleName() != null) {
+                            objectNode.put(fieldName, material.getSaleName());
+                        }
+                        break;
+                    case "Make":
+                        if (material.getBrand() != null) {
+                            objectNode.put(fieldName, material.getBrand());
+                        }
+                        break;
+                    case "ActualMass":
+                        if (material.getWeight() != null) {
+                            objectNode.put(fieldName, material.getWeight());
+                        }
+                        break;
+                    case "TechnicallyPermissibleMaximumTowableMass":
+                        if (material.getTire() != null) {
+                            objectNode.put(fieldName, material.getTire());
+                        }
+                        break;
+                    default:
+                        // 递归处理嵌套对象或数组
+                        if (fieldValue.isObject() || fieldValue.isArray()) {
+                            replaceFieldValues(fieldValue, material);
+                        }
+                        break;
+                }
+            }
+        } else if (node.isArray()) {
+            // 遍历数组中的每个元素
+            for (JsonNode arrayElement : node) {
+                replaceFieldValues(arrayElement, material);
+            }
+        }
+    }
 }

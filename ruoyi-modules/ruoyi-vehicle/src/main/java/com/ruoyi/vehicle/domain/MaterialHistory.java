@@ -28,7 +28,7 @@ public class MaterialHistory extends BaseEntity {
 
     private String remark;
 
-    private String trie;
+    private String tire;
     private String weight;
     private String brand;
     private String saleName;
