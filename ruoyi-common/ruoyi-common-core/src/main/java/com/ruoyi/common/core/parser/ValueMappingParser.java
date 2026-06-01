@@ -44,6 +44,11 @@ import java.util.regex.Pattern;
  *                                     调用前须通过 {@link #setDictProvider} 注入字典提供者。
  *                                     示例：value_map = "DICT_MAP:color"，rawValue = "BW"
  *                                           → 查 dict_type=color & dict_label=BW 返回对应 dict_value
+ *  STRIP_UNIT_JOIN:{inSep}:{outSep} 按 inSep 拆分，每项提取第1个数字，再用 outSep 拼接
+ *  GROUP_JOIN_SEP:{inSep}:{outSep}  不做值转换，仅修改当前 uuid 组的多值拼接符。
+ *  RIM_SPEC:BOTH                     提取轮毂规格235/50R19 103V 19x7J ET47 6.28N/kN C1
+ *                                              215/55R18 99H 18x7 1/2J ET33 5.96N/kN C1
+ *                                    输出示例：19,7  /  18,7.5
  * </pre>
  *
  * <h2>数据库存储约定（value_map 列 ≤ 100 字符）</h2>
@@ -204,6 +209,22 @@ public class ValueMappingParser {
                     return extractNthNumber(raw, index);
                 }
 
+                case "STRIP_UNIT_JOIN": {
+                    // STRIP_UNIT_JOIN:{inSep}:{outSep}
+                    // 按 inSep 拆分，每项提取第1个数字，再用 outSep 拼接
+                    if (parts.length < 3) return raw;
+                    String inSep  = unescapeSep(parts[1]);
+                    String outSep = unescapeSep(parts[2]);
+                    String[] items = raw.split(Pattern.quote(inSep), -1);
+                    StringJoiner sj = new StringJoiner(outSep);
+                    for (String item : items) {
+                        String num = extractNthNumber(item.trim(), 1);
+                        if (num != null) sj.add(num);
+                    }
+                    String joined = sj.toString();
+                    return joined.isEmpty() ? null : joined;
+                }
+
                 // ── 从复杂文本提取第 N 个数字 ─────────────────────
                 case "EXTRACT_NUMBER": {
                     int index = (parts.length >= 2) ? parseIndex(parts[1], 1) : 1;
@@ -230,7 +251,7 @@ public class ValueMappingParser {
                             .replace("\u0005", "(?<=")
                             .replace("\u0006", "(?<!");
                     int group   = parseIndex(parts[2], 1);
-                    Matcher m = Pattern.compile(regex).matcher(raw);
+                    Matcher m = Pattern.compile(regex, Pattern.UNICODE_CHARACTER_CLASS).matcher(raw);
                     return m.find() ? m.group(group) : null;
                 }
 
@@ -263,8 +284,10 @@ public class ValueMappingParser {
                     // value_map = SPLIT_TAKE:{sep}:{index}
                     if (parts.length < 3) return raw;
                     String sep   = unescapeSep(parts[1]);
+                    // 第 284-287 行，改为：
                     int    idx   = parseIndex(parts[2], 0);
                     String[] arr = raw.split(Pattern.quote(sep), -1);
+                    if (idx < 0) idx = arr.length + idx;          // 支持 -1 取最后一项
                     if (idx < 0 || idx >= arr.length) return null;
                     return arr[idx].trim();
                 }
@@ -285,10 +308,12 @@ public class ValueMappingParser {
 
                 // ── 枚举映射 ──────────────────────────────────────
                 case "ENUM": {
-                    // value_map = ENUM:{k1=v1,k2=v2,...}
                     if (parts.length < 2) return null;
                     Map<String, String> enumMap = parseEnumMap(parts[1]);
-                    return enumMap.getOrDefault(raw, enumMap.getOrDefault("*", null));
+                    String matched = enumMap.getOrDefault(raw, enumMap.getOrDefault("*", null));
+                    // 支持将枚举值 __NULL__ 映射为 EMPTY_SENTINEL，用于主动置空
+                    if ("__NULL__".equals(matched)) return EMPTY_SENTINEL;
+                    return matched;
                 }
 
                 // ── 去掉前缀 ──────────────────────────────────────
@@ -349,7 +374,7 @@ public class ValueMappingParser {
                     }
                     String part1 = m.group(g1);
                     String part2 = m.group(g2).trim();
-                    return part1 + sep + part2;
+                    return part1.toLowerCase() + sep + part2.toLowerCase();
                 }
 
                 // ── 字典查找 ──────────────────────────────────────
@@ -371,6 +396,53 @@ public class ValueMappingParser {
                         log.warn("[ValueMappingParser] DICT_MAP 未命中: dictType={} dictLabel={}", dictType, raw);
                     }
                     return dictValue;
+                }
+
+                // ── 提取轮毂规格：RIM_SPEC:BOTH ──────────────────────────────
+                // 输入示例：235/50R19 103V 19x7J ET47 6.28N/kN C1
+                //           215/55R18 99H 18x7 1/2J ET33 5.96N/kN C1
+                // 输出示例：19,7  /  18,7.5
+                case "RIM_SPEC": {
+                    if (parts.length < 2) return null;
+                    String part = parts[1].toUpperCase();
+
+                    if ("BOTH".equals(part)) {
+                        // 1. 提取直径：R 后面的整数
+                        Matcher diamMatcher = Pattern.compile("R(\\d+)").matcher(raw);
+                        if (!diamMatcher.find()) {
+                            log.warn("[ValueMappingParser] RIM_SPEC:BOTH 未找到直径(R\\d+): {}", raw);
+                            return null;
+                        }
+                        String diameter = diamMatcher.group(1);
+
+                        // 2. 提取宽度：x 后面、J 前面，支持 "7J" 和 "7 1/2J" 两种格式
+                        Matcher widthMatcher = Pattern.compile("x(\\d+(?:\\s+\\d+/\\d+)?)J").matcher(raw);
+                        if (!widthMatcher.find()) {
+                            log.warn("[ValueMappingParser] RIM_SPEC:BOTH 未找到宽度(x...J): {}", raw);
+                            return null;
+                        }
+                        String widthRaw = widthMatcher.group(1).trim(); // "7" 或 "7 1/2"
+
+                        // 3. 分数转小数："7 1/2" → 7.5，"7" → 7
+                        String width;
+                        Matcher fracMatcher = Pattern.compile("(\\d+)\\s+(\\d+)/(\\d+)").matcher(widthRaw);
+                        if (fracMatcher.matches()) {
+                            double val = Double.parseDouble(fracMatcher.group(1))
+                                    + Double.parseDouble(fracMatcher.group(2))
+                                    / Double.parseDouble(fracMatcher.group(3));
+                            // 整数去掉 .0，小数保留
+                            width = (val == Math.floor(val))
+                                    ? String.valueOf((long) val)
+                                    : String.valueOf(val);
+                        } else {
+                            width = widthRaw; // 纯整数，直接用
+                        }
+
+                        return diameter + "," + width; // "19,7" 或 "18,7.5"
+                    }
+
+                    log.warn("[ValueMappingParser] RIM_SPEC 不支持的 part: {}", parts[1]);
+                    return null;
                 }
 
                 default:
@@ -566,6 +638,7 @@ public class ValueMappingParser {
             case "PIPE":      return "|";
             case "SLASH":     return "/";
             case "TAB":       return "\t";
+            case "COMMA_SPACE": return ", ";
             default:          return sep;
         }
     }
@@ -634,5 +707,29 @@ public class ValueMappingParser {
             case "\t": return "TAB";
             default:   return sep;
         }
+    }
+
+    /**
+     * 从 value_map 描述符中提取 GROUP_JOIN_SEP 声明的输入/输出分隔符。
+     *
+     * <p>格式：{@code GROUP_JOIN_SEP:{inSep}:{outSep}}
+     * <ul>
+     *   <li>{inSep}  — 原始多值之间的分隔符（如 COMMA、SEMICOLON 等别名或字面量）</li>
+     *   <li>{outSep} — 输出拼接时使用的分隔符</li>
+     * </ul>
+     *
+     * @param valueMap value_map 字段值
+     * @return 长度为2的数组 [inSep, outSep]；非 GROUP_JOIN_SEP 规则返回 null
+     */
+    public static String[] extractGroupJoinSep(String valueMap) {
+        if (StringUtils.isBlank(valueMap)) return null;
+        String trimmed = valueMap.trim();
+        if (!trimmed.toUpperCase().startsWith("GROUP_JOIN_SEP:")) return null;
+        String[] parts = trimmed.split(":", 3);
+        if (parts.length < 3) return null;
+        return new String[]{
+                unescapeSep(parts[1]),   // inSep
+                unescapeSep(parts[2])    // outSep
+        };
     }
 }

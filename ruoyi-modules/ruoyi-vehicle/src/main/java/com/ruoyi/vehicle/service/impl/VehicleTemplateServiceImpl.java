@@ -257,9 +257,11 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(DateUtils.getNowDate());
         template.setIsLast(1);
-        if (!StringUtils.isBlank(template.getType()) && !StringUtils.isBlank(template.getVariant()) && !StringUtils.isBlank(template.getVersion())) {
-            template.setTvv(template.getType() + "," + template.getVariant() + "," + template.getVersionNo());
-        }
+        String mappedJson = jsonConvertFromTemplateJson(template.getJson());
+        template.setJson(mappedJson);
+        Map<String, String> jsonMap = JSONObject.parseObject(
+                mappedJson, new TypeReference<Map<String, String>>() {});
+        template.setTvv(jsonMap.get("Type") + "," + jsonMap.get("Variant") + "," + jsonMap.get("Version"));
         int row = templateMapper.insertVehicleTemplate(template);
         batchValidate(template.getTemplateId());
         return row;
@@ -285,6 +287,11 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         template.setValidateResult("1");
         template.setValidateTime(null);
         template.setValidateMsg(null);
+        String mappedJson = jsonConvertFromTemplateJson(template.getJson());
+        template.setJson(mappedJson);
+        Map<String, String> jsonMap = JSONObject.parseObject(
+                mappedJson, new TypeReference<Map<String, String>>() {});
+        template.setTvv(jsonMap.get("Type") + "," + jsonMap.get("Variant") + "," + jsonMap.get("Version"));
         templateMapper.updateAllTemplateNotIsLast(template.getUuid());
         int rows = templateMapper.insertVehicleTemplate(template);
         if (rows > 0) {
@@ -909,12 +916,32 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 // 多 key_map 链里每一段都独立写到自己的 dictLabel
                 for (List<SysDictData> multiChain : multiKeyChainMap.values()) {
                     multiChain.sort(Comparator.comparingLong(SysDictData::getDictCode));
+
+                    // ★ 从链中读取 GROUP_JOIN_SEP 声明，解析输出分隔符，默认逗号
+                    String[] groupSeps = multiChain.stream()
+                            .map(SysDictData::getValueMap)
+                            .map(ValueMappingParser::extractGroupJoinSep)
+                            .filter(Objects::nonNull)
+                            .findFirst()
+                            .orElse(null);
+
+                    String outSep = (groupSeps != null) ? groupSeps[1] : ",";
+
                     for (SysDictData rule : multiChain) {
-                        if (StringUtils.isBlank(rule.getKeyMap())) continue;
                         if (StringUtils.isBlank(rule.getDictLabel())) continue;
-                        Object rawObj = map.get(rule.getKeyMap());
+
+                        // ★ GROUP_JOIN_SEP 记录仅作配置声明，不参与值转换，跳过
+                        if (StringUtils.isNotBlank(rule.getValueMap())
+                                && rule.getValueMap().trim().toUpperCase().startsWith("GROUP_JOIN_SEP")) {
+                            continue;
+                        }
+
+                        // key_map 为空时，rawValue = null，后续逻辑正常处理（convert/EMPTY_SENTINEL等）
+                        Object rawObj = StringUtils.isNotBlank(rule.getKeyMap())
+                                ? map.get(rule.getKeyMap()) : null;
                         String rawValue = rawObj == null ? null : String.valueOf(rawObj);
                         String converted = rawValue;
+
                         if (StringUtils.isNotBlank(rule.getValueMap())) {
                             String stepped = ValueMappingParser.convert(rawValue, rule.getValueMap());
                             if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
@@ -927,13 +954,15 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                                         rule.getDictCode(), rule.getKeyMap());
                             }
                         }
+
                         converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
                         converted = "N/A".equals(converted) ? "" : converted;
+
                         if (StringUtils.isNotBlank(converted)) {
                             String label = rule.getDictLabel();
                             Object existing = result.get(label);
                             if (existing != null && StringUtils.isNotBlank(String.valueOf(existing))) {
-                                result.put(label, existing + "," + converted);
+                                result.put(label, existing + outSep + converted);
                             } else {
                                 result.put(label, converted);
                             }
