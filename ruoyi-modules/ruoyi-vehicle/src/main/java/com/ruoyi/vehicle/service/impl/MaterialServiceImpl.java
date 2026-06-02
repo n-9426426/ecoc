@@ -89,9 +89,9 @@ public class MaterialServiceImpl implements IMaterialService {
                         t -> t,
                         (existing, replacement) -> existing
                 ));
-        if (templateMap.size() > 1) {
-            throw new RuntimeException("请输入正确的数据以匹配模版");
-        }
+//        if (templateMap.size() > 1) {
+//            throw new RuntimeException("请输入正确的数据以匹配模版");
+//        }
         templateMap = templates.stream()
                 .sorted(Comparator.comparing(
                         t -> new BigDecimal(t.getVersion()),
@@ -130,9 +130,9 @@ public class MaterialServiceImpl implements IMaterialService {
                         t -> t,
                         (existing, replacement) -> existing
                 ));
-        if (templateMap.size() > 1) {
-            throw new RuntimeException("请输入正确的数据以匹配模版");
-        }
+//        if (templateMap.size() > 1) {
+//            throw new RuntimeException("请输入正确的数据以匹配模版");
+//        }
         Map<String, VehicleTemplate> map = templates.stream()
                 .collect(Collectors.toMap(
                         VehicleTemplate::getVersion,
@@ -216,7 +216,7 @@ public class MaterialServiceImpl implements IMaterialService {
 
                 if (existing == null) {
                     // 新增
-                    materialMapper.insertMaterial(material);
+                    insertMaterial(material);
                     successCount++;
                 } else if (updateSupport) {
                     // 允许更新：保留原主键

@@ -11,10 +11,15 @@ import com.ruoyi.vehicle.domain.Material;
 import com.ruoyi.vehicle.service.IMaterialService;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.net.URLEncoder;
 import java.util.List;
 
 /**
@@ -88,7 +93,7 @@ public class MaterialController extends BaseController {
         return toAjax(materialService.deleteMaterialByIds(ids));
     }
 
-    @PostMapping("/importData")
+    @PostMapping("/import")
     public AjaxResult importData(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "updateSupport", defaultValue = "false") boolean updateSupport) {
@@ -99,5 +104,16 @@ public class MaterialController extends BaseController {
             log.error("物料号导入失败：{}", e.getMessage(), e);
             return AjaxResult.error("导入失败：" + e.getMessage());
         }
+    }
+
+    @GetMapping("/download/template")
+    public void downloadTemplate(HttpServletResponse response) throws IOException {
+        String fileName = "物料号导入模版.xlsx";
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition", "attachment; filename=" + URLEncoder.encode(fileName, "UTF-8"));
+
+        ClassPathResource resource = new ClassPathResource("assets/" + fileName);
+        IOUtils.copy(resource.getInputStream(), response.getOutputStream());
+        response.flushBuffer();
     }
 }

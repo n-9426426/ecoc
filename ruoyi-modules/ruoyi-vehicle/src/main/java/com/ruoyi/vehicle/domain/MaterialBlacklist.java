@@ -24,4 +24,6 @@ public class MaterialBlacklist extends BaseEntity {
 
     /** 状态(0=正常 1=停用) */
     private Integer status;
+
+    private String customerNo;
 }

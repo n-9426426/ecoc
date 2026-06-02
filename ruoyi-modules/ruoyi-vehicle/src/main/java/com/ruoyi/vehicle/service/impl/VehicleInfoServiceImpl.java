@@ -31,24 +31,31 @@ import com.ruoyi.vehicle.service.IFirstVehicleCheckService;
 import com.ruoyi.vehicle.service.IMaterialBlacklistService;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.service.IVehicleValidationService;
+import com.ruoyi.vehicle.utils.ExcelUtil;
 import com.ruoyi.vehicle.utils.JsonDictConverter;
-import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.DateUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.*;
-
+import java.util.stream.Collectors;
 
 @Service("vehicleInfoService")
 public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     private static final Logger log = LoggerFactory.getLogger(VehicleInfoServiceImpl.class);
+
+    @Autowired
+    private ExcelUtil excelUtil;
 
     @Autowired
     private VehicleInfoMapper vehicleInfoMapper;
@@ -85,6 +92,11 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Autowired
     private IFirstVehicleCheckService firstVehicleCheckService;
+
+    // @Lazy 打破循环依赖，同时保证拿到的是带事务代理的 self
+    @Lazy
+    @Autowired
+    private VehicleInfoServiceImpl self;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -180,10 +192,11 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         // 查模板
         Material query = new Material();
         query.setMaterialNo(vehicleInfo.getMaterialNo());
+        query.setStatus(0);
         List<Material> materialList = materialMapper.selectMaterialList(query);
         Long vehicleTemplateId;
         if (materialList.isEmpty()) {
-            throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎无对应的可用车辆模板");
+            throw new RuntimeException("该物料号无对应的可用车辆模板");
         }
         Material material = materialList.get(0);
         vehicleTemplateId = material.getVehicleTemplateId();
@@ -331,6 +344,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         if (StringUtils.isNotBlank(vehicleInfo.getMaterialNo())) {
             Material material = new Material();
             material.setMaterialNo(vehicleInfo.getMaterialNo());
+            material.setStatus(0);
             List<Material> materialList = materialMapper.selectMaterialList(material);
             Long vehicleTemplateId;
             if (materialList.isEmpty()) {
@@ -561,130 +575,77 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         return vehicleInfoMapper.selectVehicleInfoByVin(vin);
     }
 
+    /**
+     * Excel 导入入口：无大事务，每行通过 self.insertSingleVehicleInfoRow() 独立提交，
+     * 避免多线程并发批量导入时产生死锁。
+     */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void importVehicleInfoFromExcel(MultipartFile file) throws IOException {
-        Workbook workbook = new XSSFWorkbook(file.getInputStream());
-        Sheet sheet = workbook.getSheetAt(0);
+        String lang = excelUtil.resolveCurrentLang();
 
-        int lastRowNum = sheet.getLastRowNum();
-        if (lastRowNum < 3) {
+        List<VehicleInfo> vehicleInfoList;
+        try {
+            vehicleInfoList = excelUtil.importExcel(
+                    file.getInputStream(),
+                    "vehicle_info",
+                    VehicleInfo.class,
+                    lang,
+                    2   // 跳过列头后的 2 行（原逻辑从 rowIndex=3 开始）
+            );
+        } catch (Exception e) {
+            throw new RuntimeException("Excel 解析失败：" + e.getMessage(), e);
+        }
+
+        if (vehicleInfoList.isEmpty()) {
             throw new RuntimeException("Excel中没有数据行");
         }
 
         List<String> errorMsgs = new ArrayList<>();
-        // 收集本次成功导入的车辆，用于批量触发首台车打标
         List<VehicleInfo> importedList = new ArrayList<>();
 
-        for (int rowIndex = 3; rowIndex <= lastRowNum; rowIndex++) {
-            Row row = sheet.getRow(rowIndex);
-            if (row == null) continue;
+        for (int i = 0; i < vehicleInfoList.size(); i++) {
+            int excelRowNum = i + 4;
+            VehicleInfo vehicleInfo = vehicleInfoList.get(i);
 
-            String vin                 = getCellStringValue(row.getCell(0));
-            String vehicleModel        = getCellStringValue(row.getCell(1));
-            String materialNo          = getCellStringValue(row.getCell(2));
-            String brand               = getCellStringValue(row.getCell(3));
-            String weight              = getCellStringValue(row.getCell(4));
-            String saleName            = getCellStringValue(row.getCell(5));
-            String tire                = getCellStringValue(row.getCell(6));
-            String projectName         = getCellStringValue(row.getCell(7));
-            String customerNo          = getCellStringValue(row.getCell(8));
-            String tireResistanceGrade = getCellStringValue(row.getCell(9));
-            String factoryCode         = getCellStringValue(row.getCell(10));
-            String factoryName         = getCellStringValue(row.getCell(11));
-            String country             = getCellStringValue(row.getCell(12));
-            String color               = getCellStringValue(row.getCell(13));
-            String secondaryColor      = getCellStringValue(row.getCell(14));
-            Date issueDate             = getCellDateValue(row.getCell(15));
-            String certificateVersion  = getCellStringValue(row.getCell(16));
-            String tvv                 = getCellStringValue(row.getCell(17));
-            Date manufactureDate       = getCellDateValue(row.getCell(18));
-            String engineNumber        = getCellStringValue(row.getCell(19));
-            String batteryNumber       = getCellStringValue(row.getCell(20));
-            String motorNumber         = getCellStringValue(row.getCell(21));
-            Date breakpointTime        = getCellDateValue(row.getCell(22));
-
+            String vin = vehicleInfo.getVin();
             if (StringUtils.isBlank(vin)) continue;
 
             try {
-                if (vehicleInfoMapper.selectVehicleInfoByVin(vin) != null) {
-                    errorMsgs.add("第" + (rowIndex + 1) + "行：VIN[" + vin + "]已存在，跳过");
-                    continue;
+                VehicleInfo existing = vehicleInfoMapper.selectVehicleInfoByVin(vin);
+                if (existing != null) {
+                    errorMsgs.add("第" + excelRowNum + "行：VIN[" + vin + "]已存在，覆盖");
+                    vehicleInfoMapper.deleteVehicleInfoByIds(new Long[]{existing.getVehicleId()});
                 }
 
-                // 通过物料号查模板ID
-                List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(null, brand, weight, saleName, tire, tvv);
-                if (vehicleTemplateList.isEmpty()) {
-                    errorMsgs.add("第" + (rowIndex + 1) + "行：物料号[" + materialNo + "]未找到可用关联模板，跳过");
+                // 查物料
+                Material query = new Material();
+                query.setMaterialNo(vehicleInfo.getMaterialNo());
+                query.setStatus(0);
+                List<Material> materialList = materialMapper.selectMaterialList(query);
+                if (materialList.isEmpty()) {
+                    errorMsgs.add("第" + excelRowNum + "行：物料号[" + vehicleInfo.getMaterialNo() + "]无对应可用模板，跳过");
                     continue;
                 }
+                Long templateId = materialList.get(0).getVehicleTemplateId();
 
-                Long templateId = vehicleTemplateList.get(0).getTemplateId();
+                // 查模板
                 VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(templateId);
                 if (template == null) {
-                    errorMsgs.add("第" + (rowIndex + 1) + "行：模板ID[" + templateId + "]不存在，跳过");
+                    errorMsgs.add("第" + excelRowNum + "行：模板ID[" + templateId + "]不存在，跳过");
                     continue;
                 }
 
-                VehicleInfo vehicleInfo = new VehicleInfo();
-                vehicleInfo.setVin(vin);
-                vehicleInfo.setVehicleModel(vehicleModel);
-                vehicleInfo.setMaterialNo(materialNo);
-                vehicleInfo.setBrand(brand);
-                vehicleInfo.setWeight(weight);
-                vehicleInfo.setSaleName(saleName);
-                vehicleInfo.setTire(tire);
-                vehicleInfo.setProjectName(projectName);
-                vehicleInfo.setCustomerNo(customerNo);
-                vehicleInfo.setTireResistanceGrade(tireResistanceGrade);
-                vehicleInfo.setFactoryCode(factoryCode);
-                vehicleInfo.setFactoryName(factoryName);
-                vehicleInfo.setCountry(country);
-                vehicleInfo.setColor(color);
-                vehicleInfo.setSecondaryColor(secondaryColor);
-                vehicleInfo.setIssueDate(issueDate);
-                vehicleInfo.setCertificateVersion(certificateVersion);
-                vehicleInfo.setTvv(tvv);
-                vehicleInfo.setManufactureDate(manufactureDate);
-                vehicleInfo.setEngineNumber(engineNumber);
-                vehicleInfo.setBatteryNumber(batteryNumber);
-                vehicleInfo.setMotorNumber(motorNumber);
-                vehicleInfo.setBreakpointTime(breakpointTime);
-                vehicleInfo.setWvtaNo(template.getWvtaCocNo());
-                vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
-                vehicleInfo.setJson(template.getJson());
-                vehicleInfo.setVehicleTemplateId(String.valueOf(templateId));
-                vehicleInfo.setUploadStatus(0);
-                vehicleInfo.setValidationResult(0);
-                vehicleInfo.setDeleted(0);
-                vehicleInfo.setGenerateAffirm(template.getGenerateAffirm());
-                vehicleInfo.setUploadAffirm(template.getUploadAffirm());
-                vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null ? SecurityUtils.getUsername() : "MES To System");
-                vehicleInfo.setCreateTime(DateUtils.getNowDate());
-
-                vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
-                // insert 后 vehicleId 已回写，加入成功列表
+                // 每行独立事务插入，锁及时释放，避免大事务死锁
+                self.insertSingleVehicleInfoRow(vehicleInfo, template);
                 importedList.add(vehicleInfo);
 
-                VehicleLifecycle lifecycle = new VehicleLifecycle();
-                lifecycle.setTime(new Date());
-                lifecycle.setVin(vin);
-                lifecycle.setOperate("0");
-                lifecycle.setResult(0);
-                vehicleLifecycleMapper.insert(lifecycle);
-
-                validateVehicleInfo(Collections.singletonList(vehicleInfo.getVehicleId()));
-
             } catch (Exception e) {
-                log.error("导入第{}行异常：{}", rowIndex + 1, e.getMessage(), e);
-                errorMsgs.add("第" + (rowIndex + 1) + "行：导入异常，" + e.getMessage());
+                log.error("导入第{}行异常：{}", excelRowNum, e.getMessage(), e);
+                errorMsgs.add("第" + excelRowNum + "行：导入异常，" + e.getMessage());
             }
         }
 
-        workbook.close();
-
         // 所有行处理完后，批量触发首台车打标
-        // 放在 workbook.close() 之后、异常汇总之前，保证成功的行都能触发
         if (!importedList.isEmpty()) {
             firstVehicleCheckService.handleAfterInsert(importedList);
         }
@@ -694,6 +655,41 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         }
     }
 
+    /**
+     * 单行独立事务：REQUIRES_NEW 保证每行提交后立即释放锁，
+     * 与其他并发导入事务不形成循环等待，根治死锁问题。
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public void insertSingleVehicleInfoRow(VehicleInfo vehicleInfo, VehicleTemplate template) {
+        String vin = vehicleInfo.getVin();
+
+        // 补充模板关联字段
+        vehicleInfo.setTvv(template.getTvv().replace(",", ""));
+        vehicleInfo.setWvtaNo(template.getWvtaCocNo());
+        vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
+        vehicleInfo.setJson(template.getJson());
+        vehicleInfo.setVehicleTemplateId(String.valueOf(template.getTemplateId()));
+
+        // 补充系统字段
+        vehicleInfo.setUploadStatus(0);
+        vehicleInfo.setValidationResult(0);
+        vehicleInfo.setDeleted(0);
+        vehicleInfo.setGenerateAffirm(template.getGenerateAffirm());
+        vehicleInfo.setUploadAffirm(template.getUploadAffirm());
+        vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null ? SecurityUtils.getUsername() : "MES To System");
+        vehicleInfo.setCreateTime(DateUtils.getNowDate());
+
+        vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+
+        VehicleLifecycle lifecycle = new VehicleLifecycle();
+        lifecycle.setTime(new Date());
+        lifecycle.setVin(vin);
+        lifecycle.setOperate(VehicleLifecycleOperation.VEHICLE_INFO_CREATE.getOperation());
+        lifecycle.setResult(0);
+        vehicleLifecycleMapper.insert(lifecycle);
+
+        validateVehicleInfo(Collections.singletonList(vehicleInfo.getVehicleId()));
+    }
     /**
      * 批量修改关联模版
      * 规则：所选车辆必须属于同一整车物料号（material_no），否则拒绝操作
@@ -728,6 +724,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
         Material query = new Material();
         query.setMaterialNo(materialNos.iterator().next());
+        query.setStatus(0);
         List<Material> materialList = materialMapper.selectMaterialList(query);
         if (materialList.isEmpty()) {
             throw new ServiceException("物料号管理信息为空，无法切换版本");
@@ -1025,9 +1022,13 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
                 // 根据字段名进行替换
                 switch (fieldName) {
-                    case "RollingResistanceClassCode":
+                    case "RollingResistanceClass":
+                        List<SysDictData> tireResistanceGradeData = remoteDictService.getDictDataByType("tire_resistance_grade").getData();
+                        Map<String, String> tireResistanceGradeMap = tireResistanceGradeData.stream()
+                                .collect(Collectors.toMap(SysDictData::getDictLabel, SysDictData::getDictValue, (a, b) -> a));
                         if (material.getTireResistanceGrade() != null) {
-                            objectNode.put(fieldName, material.getTireResistanceGrade());
+                            String tireResistanceGradeValue = tireResistanceGradeMap.get(material.getTireResistanceGrade());
+                            objectNode.put(fieldName, tireResistanceGradeValue != null ? tireResistanceGradeValue : fieldValue.asText());
                         }
                         break;
                     case "CommercialName":

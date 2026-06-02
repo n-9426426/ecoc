@@ -181,9 +181,11 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         VehicleTemplate template = templateMapper.selectVehicleTemplateById(templateId);
         if (template != null) {
             String[] tvv = template.getTvv().split(",");
-            template.setType(tvv[0]);
-            template.setVariant(tvv[1]);
-            template.setVersionNo(tvv[2]);
+            if (tvv.length > 2) {
+                template.setType(tvv[0]);
+                template.setVariant(tvv[1]);
+                template.setVersionNo(tvv[2]);
+            }
 
             // 解析 json 的每个 key，关联 vehicle_attribute 字典，
             // 查出对应的 otherLabel 和 otherLabelSystem 并挂载到实体
@@ -251,9 +253,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRES_NEW)
     public int insertVehicleTemplate(VehicleTemplate template) {
         template.setUuid(UUID.randomUUID().toString());
-        template.setVersion("1.0");
-        template.setStatus("1");
-        template.setValidateResult("1");
+        template.setVersion(StringUtils.isBlank(template.getVersion()) ? "1.0" : template.getVersion());
+        template.setStatus(StringUtils.isBlank(template.getStatus()) ? "1" : template.getStatus());
+        template.setValidateResult(StringUtils.isBlank(template.getValidateResult()) ? "1" : template.getValidateResult());
         template.setValidateTime(null);
         template.setValidateMsg(null);
         template.setCreateBy(SecurityUtils.getUsername());
@@ -274,10 +276,14 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     public int updateVehicleTemplate(VehicleTemplate template) {
         VehicleTemplate existTemplate = templateMapper.selectVehicleByUuid(template.getUuid());
         String templateVersion = existTemplate.getVersion();
-        if (templateVersion == null) {
-            templateVersion = "1.0";
+        if (template.getVersion() == null) {
+            if (templateVersion == null) {
+                templateVersion = "1.0";
+            } else {
+                templateVersion = String.valueOf(new BigDecimal(templateVersion).add(new BigDecimal(1)));
+            }
         } else {
-            templateVersion = String.valueOf(new BigDecimal(templateVersion).add(new BigDecimal(1)));
+            templateVersion = template.getVersion();
         }
         template.setUuid(existTemplate.getUuid());
         template.setTemplateId(null);
@@ -286,7 +292,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(DateUtils.getNowDate());
         template.setTvv(template.getType() + "," + template.getVariant() + "," + template.getVersionNo());
-        template.setValidateResult("1");
+        template.setValidateResult(StringUtils.isBlank(template.getValidateResult()) ? "1" : template.getValidateResult());
         template.setValidateTime(null);
         template.setValidateMsg(null);
         String mappedJson = jsonConvertFromTemplateJson(template.getJson());
@@ -619,7 +625,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             // ===================== 新增：导入前预校验非配置列头 =====================
             // ExcelUtil 会把未在 excel_column_config 中配置的列头写入每行的 json 字段，
             // 取第一行的 json key 集合作为"额外列头"代表（所有行一致）
-            if (!vehicleTemplates.isEmpty()) {
+            if (!vehicleTemplates.isEmpty() && 1 == 0) {
                 String firstJson = vehicleTemplates.get(0).getJson();
                 if (firstJson != null && !firstJson.trim().isEmpty()) {
                     Map<String, String> firstJsonMap = JSONObject.parseObject(
@@ -655,9 +661,38 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                     }
                     template.setVehicleType(labelToCodeMap.get(vehicleType));
                     template.setUuid(UUID.randomUUID().toString());
-                    template.setVersion("1.0");
-                    template.setStatus("1");
-                    template.setValidateResult("1");
+                    String statusRaw = template.getStatus();
+                    if ("No".equalsIgnoreCase(statusRaw)) {
+                        template.setStatus("1");
+                    } else if ("Yes".equalsIgnoreCase(statusRaw)) {
+                        template.setStatus("0");
+                    } else {
+                        template.setStatus("1"); // 默认兜底
+                    }
+                    String validateRaw = template.getValidateResult();
+                    if (validateRaw == null
+                            || validateRaw.trim().isEmpty()
+                            || "N/A".equalsIgnoreCase(validateRaw.trim())
+                            || "NULL".equalsIgnoreCase(validateRaw.trim())
+                            || "No".equalsIgnoreCase(validateRaw.trim())) {
+                        template.setValidateResult("0");
+                    } else if ("Yes".equalsIgnoreCase(validateRaw.trim())) {
+                        template.setValidateResult("1");
+                    } else {
+                        template.setValidateResult("0"); // 未知值兜底
+                    }
+                    String generateRaw = template.getGenerateAffirmRaw();
+                    if ("Yes".equalsIgnoreCase(generateRaw)) {
+                        template.setGenerateAffirm(1);
+                    } else if ("No".equalsIgnoreCase(generateRaw)) {
+                        template.setGenerateAffirm(0);
+                    }
+                    String uploadRaw = template.getUploadAffirmRaw();
+                    if ("Yes".equalsIgnoreCase(uploadRaw)) {
+                        template.setUploadAffirm(1);
+                    } else if ("No".equalsIgnoreCase(uploadRaw)) {
+                        template.setUploadAffirm(0);
+                    }
                     template.setCreateBy(createBy);
                     template.setCreateTime(DateUtils.getNowDate());
 

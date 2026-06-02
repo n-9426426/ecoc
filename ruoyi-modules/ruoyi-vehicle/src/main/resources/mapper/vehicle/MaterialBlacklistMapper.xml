@@ -12,12 +12,13 @@
         <result property="createTime" column="create_time"/>
         <result property="updateBy"   column="update_by"/>
         <result property="updateTime" column="update_time"/>
-        <result property="remark"     column="remark"/>
+        <result property="remark"      column="remark"/>
+        <result property="customerNo"  column="customer_no"/>
     </resultMap>
 
     <sql id="selectMaterialBlacklistVo">
         SELECT id, material_no, brand, status, create_by, create_time,
-               update_by, update_time, remark
+               update_by, update_time, remark, customer_no
         FROM material_blacklist
     </sql>
 
@@ -25,11 +26,14 @@
     <select id="selectMaterialBlacklistList" resultMap="MaterialBlacklistResult">
         <include refid="selectMaterialBlacklistVo"/>
         <where>
-            <if test="materialNo != null and materialNo != ''">
-                AND material_no LIKE CONCAT('%', #{materialNo}, '%')
-            </if>
             <if test="brand != null and brand != ''">
                 AND brand LIKE CONCAT('%', #{brand}, '%')
+            </if>
+            <if test="customerNo != null and customerNo != ''">
+                AND customer_no LIKE CONCAT('%', #{customerNo}, '%')
+            </if>
+            <if test="materialNo != null and materialNo != ''">
+                AND material_no LIKE CONCAT('%', #{materialNo}, '%')
             </if>
             <if test="status != null">
                 AND status = #{status}
@@ -47,10 +51,10 @@
     <!-- 新增 -->
     <insert id="insertMaterialBlacklist" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO material_blacklist (
-            material_no, brand, status, create_by, create_time, remark
+            material_no, brand, status, create_by, create_time, remark, customer_no
         ) VALUES (
-                     #{materialNo}, #{brand}, #{status}, #{createBy}, SYSDATE(), #{remark}
-                 )
+            #{materialNo}, #{brand}, #{status}, #{createBy}, SYSDATE(), #{remark}, #{customerNo}
+        )
     </insert>
 
     <!-- 修改 -->
@@ -61,6 +65,7 @@
             <if test="brand != null and brand != ''">brand = #{brand},</if>
             <if test="status != null">status = #{status},</if>
             <if test="remark != null">remark = #{remark},</if>
+            <if test="customerNo != null and customerNo != ''">customer_no = #{customerNo},</if>
             update_by   = #{updateBy},
             update_time = SYSDATE()
         </set>

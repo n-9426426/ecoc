@@ -70,6 +70,10 @@ public class Material extends BaseEntity {
 
     private String tireResistanceGrade;
 
+    private String vehicleModel;
+
+    private Integer status;
+
     // -------------------- 关联/查询扩展字段 --------------------
 
     private String vehicleType;

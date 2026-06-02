@@ -103,8 +103,12 @@ public class VehicleTemplate extends BaseEntity {
     /** 生成确认 */
     private Integer generateAffirm;
 
+    private String generateAffirmRaw;
+
     /** 上传确认 */
     private Integer uploadAffirm;
+
+    private String uploadAffirmRaw;
 
     private Map<String, Map<String, String>> otherSystem;
 }

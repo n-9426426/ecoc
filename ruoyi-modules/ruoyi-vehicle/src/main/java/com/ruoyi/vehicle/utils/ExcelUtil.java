@@ -295,7 +295,9 @@ public class ExcelUtil {
                 if (cell != null) {
                     String headerName = getCellValue(cell);
                     if (headerName == null || headerName.trim().isEmpty()) continue;
-                    headerName = headerName.trim();
+                    // 去掉表头中的汉字部分，保留英文/数字/空格/符号
+                    headerName = headerName.trim().replaceAll("[\\u4e00-\\u9fa5]+", "").trim();
+                    if (headerName.isEmpty()) continue;
                     String fieldName = headerFieldMap.get(headerName);
                     if (fieldName != null) {
                         indexFieldMap.put(i, fieldName);
