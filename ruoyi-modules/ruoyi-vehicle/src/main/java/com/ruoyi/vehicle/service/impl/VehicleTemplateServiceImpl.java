@@ -625,7 +625,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             // ===================== 新增：导入前预校验非配置列头 =====================
             // ExcelUtil 会把未在 excel_column_config 中配置的列头写入每行的 json 字段，
             // 取第一行的 json key 集合作为"额外列头"代表（所有行一致）
-            if (!vehicleTemplates.isEmpty() && 1 == 0) {
+            if (!vehicleTemplates.isEmpty()) {
                 String firstJson = vehicleTemplates.get(0).getJson();
                 if (firstJson != null && !firstJson.trim().isEmpty()) {
                     Map<String, String> firstJsonMap = JSONObject.parseObject(
