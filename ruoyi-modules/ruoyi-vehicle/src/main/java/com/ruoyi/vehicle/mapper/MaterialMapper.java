@@ -50,4 +50,6 @@ public interface MaterialMapper {
      * @return 结果
      */
     int deleteMaterialByIds(Long[] ids);
+
+    Material selectByMaterialNo(String materialNo);
 }

@@ -67,12 +67,24 @@ public class VehicleTemplate extends BaseEntity {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date overdueDate;
 
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date overdueDateStart;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date overdueDateEnd;
+
     private String templateVersion;
 
     private String tvv;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date effectiveDate;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date effectiveDateStart;
+
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date effectiveDateEnd;
 
     private String type;
 
@@ -87,6 +99,12 @@ public class VehicleTemplate extends BaseEntity {
     private String weight;
 
     private String saleName;
+
+    /** 生成确认 */
+    private Integer generateAffirm;
+
+    /** 上传确认 */
+    private Integer uploadAffirm;
 
     private Map<String, Map<String, String>> otherSystem;
 }

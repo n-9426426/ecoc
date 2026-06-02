@@ -14,6 +14,7 @@ import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.service.IVehicleTemplateService;
 import com.ruoyi.vehicle.utils.ExcelUtil;
+import io.swagger.v3.oas.annotations.Operation;
 import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -212,7 +213,7 @@ public class VehicleTemplateController extends BaseController {
 
     @GetMapping("/download")
     public void downloadTemplate(HttpServletResponse response) throws IOException {
-        String fileName = "COC模版.xlsx";
+        String fileName = "COC导入模版.xlsx";
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         response.setHeader("Content-Disposition", "attachment; filename=" + URLEncoder.encode(fileName, "UTF-8"));
 
@@ -239,5 +240,11 @@ public class VehicleTemplateController extends BaseController {
     public AjaxResult selectVehicleTemplateIdByCondition(@RequestBody VehicleInfo vehicleInfo) {
         return AjaxResult.success(vehicleTemplateService.selectVehicleTemplateIdByCondition(vehicleInfo.getMaterialNo(),
                 vehicleInfo.getBrand(), vehicleInfo.getWeight(), vehicleInfo.getSaleName(), vehicleInfo.getTire(), vehicleInfo.getTvv()));
+    }
+
+    @Operation(summary = "新增前先获取可变参数列表")
+    @GetMapping("/params")
+    public AjaxResult getTemplateParams() {
+        return AjaxResult.success(vehicleTemplateService.getTemplateParams());
     }
 }

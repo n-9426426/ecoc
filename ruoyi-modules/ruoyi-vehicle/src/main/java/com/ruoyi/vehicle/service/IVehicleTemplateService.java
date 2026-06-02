@@ -52,4 +52,6 @@ public interface IVehicleTemplateService {
     void evictDictCache(String dictType);
 
     List<Map<String, Object>> selectVehicleTemplateIdByCondition(String materialNo, String brand, String weight, String saleName, String tire, String tvv);
+
+    Map<String, String> getTemplateParams();
 }

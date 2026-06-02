@@ -62,20 +62,20 @@ public class VehicleDto implements Serializable {
         private String motorNumber;
 
         // 重量
-        @NotBlank
         private String weight;
 
         // 销售名称
-        @NotBlank
         private String saleName;
 
         // 品牌
-        @NotBlank
         private String brand;
 
         // 轮胎
-        @NotBlank
         private String tire;
+
+        private String salesCompanyName;
+
+        private String customerNumber;
 
         private Date breakpoint;
     }

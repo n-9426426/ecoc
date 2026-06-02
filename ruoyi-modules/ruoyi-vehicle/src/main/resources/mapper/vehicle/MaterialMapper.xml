@@ -23,13 +23,13 @@
         <result property="vehicleTemplateId" column="vehicle_template_id"/>
         <result property="effectiveDate"       column="effective_date"       />
         <result property="tireResistanceGrade" column="tire_resistance_grade" />
+        <result property="factoryCode"         column="factory_code"          />
     </resultMap>
 
     <sql id="selectMaterialVo">
         SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.tire, m.weight, m.brand, m.sale_name,
-               m.create_time, m.create_by, m.update_time, m.update_by, m.remark,
-               m.vehicle_template_id, m.tire_resistance_grade,
-               vt.version, vt.is_last
+               m.create_time, m.create_by, m.update_time, m.update_by, m.remark, m.vehicle_template_id,
+               m.tire_resistance_grade, m.factory_code, vt.version, vt.is_last
         FROM material m
         LEFT JOIN vehicle_template vt ON vt.template_id = m.vehicle_template_id
     </sql>
@@ -37,15 +37,15 @@
     <select id="selectMaterialList" parameterType="Material" resultMap="MaterialResult">
         SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.tire, m.weight, m.brand, m.sale_name,
         m.create_time, m.create_by, m.update_time, m.update_by, vt.remark, m.vehicle_template_id,
-        m.tire_resistance_grade,
+        m.tire_resistance_grade, m.factory_code,
         ANY_VALUE(vt.version) AS version,
         ANY_VALUE(vt.is_last) AS is_last,
         ANY_VALUE(vt.effective_date) AS effective_date,
         (
-        SELECT max_vt.version
-        FROM vehicle_template max_vt
-        WHERE max_vt.uuid = ANY_VALUE(vt.uuid)
-        AND max_vt.is_last = 1
+            SELECT max_vt.version
+            FROM vehicle_template max_vt
+            WHERE max_vt.uuid = ANY_VALUE(vt.uuid)
+            AND max_vt.is_last = 1
         ) AS last_version
         FROM material m
         LEFT JOIN vehicle_template vt ON vt.template_id = m.vehicle_template_id
@@ -62,6 +62,27 @@
             </if>
             <if test="country != null and country != ''">
                 AND m.country = #{country}
+            </if>
+            <if test="vehicleType != null and  vehicleType != ''">
+                and vt.vehicle_type = #{vehicleType}
+            </if>
+            <if test="factoryCode != null and factoryCode != ''">
+                and m.factory_code = #{factoryCode}
+            </if>
+            <if test="cocTemplateNo != null and cocTemplateNo != ''">
+                AND vt.coc_template_no LIKE CONCAT('%', #{cocTemplateNo}, '%')
+            </if>
+            <if test="wvtaCocNo != null and wvtaCocNo != ''">
+                AND vt.wvta_coc_no LIKE CONCAT('%', #{wvtaCocNo}, '%')
+            </if>
+            <if test="version != null and version != ''" >
+                and vt.version = #{version}
+            </if>
+            <if test="generateAffirm != null">
+                and vt.generate_affirm = #{generateAffirm}
+            </if>
+            <if test="uploadAffirm != null">
+                and vt.upload_affirm = #{uploadAffirm}
             </if>
             <if test="isLast != null and isLast != ''">
                 AND vt.is_last = #{isLast}
@@ -94,6 +115,7 @@
             <if test="remark != null and remark != ''">remark,</if>
             <if test="vehicleTemplateId != null">vehicle_template_id,</if>
             <if test="tireResistanceGrade != null and tireResistanceGrade != ''">tire_resistance_grade,</if>
+            <if test="factoryCode != null and factoryCode != ''">factory_code,</if>
         </trim>
         <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
             <if test="name != null and name != ''">#{name},</if>
@@ -109,6 +131,7 @@
             <if test="remark != null and remark != ''">#{remark},</if>
             <if test="vehicleTemplateId != null">#{vehicleTemplateId},</if>
             <if test="tireResistanceGrade != null and tireResistanceGrade != ''">#{tireResistanceGrade},</if>
+            <if test="factoryCode != null and factoryCode != ''">#{factoryCode},</if>
         </trim>
     </insert>
 
@@ -128,6 +151,7 @@
             <if test="remark != null and remark != ''">remark = #{remark},</if>
             <if test="vehicleTemplateId != null">vehicle_template_id = #{vehicleTemplateId},</if>
             <if test="tireResistanceGrade != null and tireResistanceGrade != ''">tire_resistance_grade = #{tireResistanceGrade},</if>
+            <if test="factoryCode != null and factoryCode != ''">factory_code = #{factoryCode},</if>
         </trim>
         WHERE id = #{id}
     </update>
@@ -139,4 +163,10 @@
         </foreach>
     </delete>
 
+    <select id="selectByMaterialNo" resultMap="MaterialResult">
+        SELECT *
+        FROM material
+        WHERE material_no = #{materialNo}
+            LIMIT 1
+    </select>
 </mapper>

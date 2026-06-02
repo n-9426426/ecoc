@@ -212,6 +212,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setDeleted(0);
         vehicleInfo.setCreateTime(vehicleInfo.getCreateTime() == null ? DateUtils.getNowDate() : vehicleInfo.getCreateTime());
         vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null ? SecurityUtils.getUsername() : "MES To System");
+        vehicleInfo.setGenerateAffirm(template.getGenerateAffirm());
+        vehicleInfo.setUploadAffirm(template.getUploadAffirm());
         int insertRow = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
 
         // VehicleTemplate.json 已在模板导入阶段完成字段映射，直接使用
@@ -530,6 +532,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         }
         VehicleInfo vehicleInfo = new VehicleInfo();
         BeanUtils.copyProperties(vehicle, vehicleInfo);
+        vehicleInfo.setCustomerNo(vehicle.getCustomerNumber());
         vehicleInfo.setCreateTime(now);
         List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_model").getData();
         for (SysDictData dictData : sysDictData) {
@@ -654,8 +657,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 vehicleInfo.setUploadStatus(0);
                 vehicleInfo.setValidationResult(0);
                 vehicleInfo.setDeleted(0);
-                vehicleInfo.setGenerateAffirm(0);
-                vehicleInfo.setUploadAffirm(0);
+                vehicleInfo.setGenerateAffirm(template.getGenerateAffirm());
+                vehicleInfo.setUploadAffirm(template.getUploadAffirm());
                 vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null ? SecurityUtils.getUsername() : "MES To System");
                 vehicleInfo.setCreateTime(DateUtils.getNowDate());
 

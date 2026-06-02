@@ -29,6 +29,7 @@ import com.ruoyi.vehicle.service.IFirstVehicleCheckService;
 import com.ruoyi.vehicle.service.IVehicleTemplateService;
 import com.ruoyi.vehicle.service.IVehicleValidationService;
 import com.ruoyi.vehicle.utils.ExcelUtil;
+import org.apache.poi.ss.usermodel.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,6 +52,7 @@ import reactor.core.publisher.Sinks;
 import javax.annotation.PostConstruct;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -605,12 +607,39 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                             SysDictData::getDictValue,
                             (k1, k2) -> k1));
 
-            remoteDictService.getDictDataByType("vehicle_attribute").getData().stream()
+            // vehicle_attribute 字典：dictLabel -> keyMap，用于校验非配置列头的映射关系
+            Map<String, String> keyMapToLabelMap = remoteDictService
+                    .getDictDataByType("vehicle_attribute").getData().stream()
                     .filter(item -> item.getKeyMap() != null)
                     .collect(Collectors.toMap(
-                            SysDictData::getDictLabel,
                             SysDictData::getKeyMap,
+                            SysDictData::getDictLabel,
                             (k1, k2) -> k1));
+
+            // ===================== 新增：导入前预校验非配置列头 =====================
+            // ExcelUtil 会把未在 excel_column_config 中配置的列头写入每行的 json 字段，
+            // 取第一行的 json key 集合作为"额外列头"代表（所有行一致）
+            if (!vehicleTemplates.isEmpty()) {
+                String firstJson = vehicleTemplates.get(0).getJson();
+                if (firstJson != null && !firstJson.trim().isEmpty()) {
+                    Map<String, String> firstJsonMap = JSONObject.parseObject(
+                            firstJson, new TypeReference<Map<String, String>>() {});
+                    List<String> unmappedHeaders = firstJsonMap.keySet().stream()
+                            .filter(header -> !keyMapToLabelMap.containsKey(header))
+                            .collect(Collectors.toList());
+                    if (!unmappedHeaders.isEmpty()) {
+                        String errorMsg = "导入终止：以下列头在 数据字段 中未找到映射关系，请补充配置后重试："
+                                + String.join("、", unmappedHeaders);
+                        log.warn("导入预校验失败, taskId={}, 未映射列头={}", taskId, unmappedHeaders);
+                        pushEvent(sink, "error", String.format(
+                                "{\"message\":\"%s\"}", escapeJson(errorMsg)));
+                        sink.tryEmitComplete();
+                        sinks.remove(taskId);
+                        return;
+                    }
+                }
+            }
+            // ===================== 预校验结束 =====================
 
             int total = vehicleTemplates.size();
 
@@ -1001,6 +1030,38 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             result.add(templateMap);
         }
         return result;
+    }
+
+    @Override
+    public Map<String, String> getTemplateParams() {
+        Map<String, String> params = new LinkedHashMap<>();
+        String filePath = "/assets/COC导入模版.xlsx";
+        DataFormatter formatter = new DataFormatter();
+
+        try (InputStream is = getClass().getResourceAsStream(filePath)) {
+            if (is == null) {
+                throw new RuntimeException("模板文件未找到: " + filePath);
+            }
+
+            try (Workbook workbook = WorkbookFactory.create(is)) {
+                Sheet sheet = workbook.getSheetAt(0);
+                Row headerRow = sheet.getRow(0);
+
+                if (headerRow != null) {
+                    for (Cell cell : headerRow) {
+                        String header = formatter.formatCellValue(cell);
+                        if (!header.isEmpty()) {
+                            params.put(header, null);
+                        }
+                    }
+                }
+            }
+
+        } catch (IOException e) {
+            throw new RuntimeException("读取 Excel 模板文件失败: " + filePath, e);
+        }
+
+        return params;
     }
 
     /**

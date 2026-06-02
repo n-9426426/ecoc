@@ -10,8 +10,10 @@ import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.vehicle.domain.Material;
 import com.ruoyi.vehicle.service.IMaterialService;
 import io.swagger.v3.oas.annotations.Operation;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -20,6 +22,7 @@ import java.util.List;
  *
  * @author ruoyi
  */
+@Slf4j
 @RestController
 @RequestMapping("/material")
 public class MaterialController extends BaseController {
@@ -83,5 +86,18 @@ public class MaterialController extends BaseController {
     @DeleteMapping("/{ids}")
     public AjaxResult remove(@PathVariable Long[] ids) {
         return toAjax(materialService.deleteMaterialByIds(ids));
+    }
+
+    @PostMapping("/importData")
+    public AjaxResult importData(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "updateSupport", defaultValue = "false") boolean updateSupport) {
+        try {
+            String message = materialService.importMaterial(file, updateSupport);
+            return AjaxResult.success(message);
+        } catch (Exception e) {
+            log.error("物料号导入失败：{}", e.getMessage(), e);
+            return AjaxResult.error("导入失败：" + e.getMessage());
+        }
     }
 }

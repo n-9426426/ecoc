@@ -73,6 +73,9 @@ public class SysDictData extends BaseEntity
 
     private String cocOrder;
 
+    /** 值的来源系统、映射前的值、映射后的值组成的json */
+    private String valueConnection;
+
     private String tableName;
 
     private String excelColumnNameEnUs;

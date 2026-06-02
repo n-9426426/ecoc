@@ -72,8 +72,20 @@ public class Material extends BaseEntity {
 
     // -------------------- 关联/查询扩展字段 --------------------
 
+    private String vehicleType;
+
+    private String factoryCode;
+
+    private String cocTemplateNo;
+
+    private String wvtaCocNo;
+
     /** 模版版本号 */
     private String version;
+
+    private Integer generateAffirm;
+
+    private Integer uploadAffirm;
 
     /** 新版本号（用于版本升级） */
     private String newVersion;

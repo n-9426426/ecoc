@@ -70,8 +70,8 @@
 			   vi.material_confirmed_by, vi.material_confirmed_time, vi.template_confirmed_by, vi.template_confirmed_time,
 			   vi.generate_affirm_notice, vi.upload_affirm_notice, vi.sale_company_name
 		from vehicle_info vi
-				 left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
-				 left join (select template_id, filepath, coc_template_no, is_last, version from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
+		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
+		left join (select template_id, filepath, coc_template_no, is_last, version, model_no from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
 	</sql>
 
 	<select id="selectVehicleInfoById" parameterType="Long" resultMap="VehicleInfoResult">
@@ -95,12 +95,24 @@
 				</foreach>
 				)
 			</if>
+			<if test="cocTemplateNo != null and cocTemplateNo != ''">
+				and vt.coc_template_no like CONCAT('%', #{cocTemplateNo}, '%')
+			</if>
+			<if test="tvv != null and tvv != ''">
+				and tvv like concat('%', #{tvv}, '%')
+			</if>
 			<if test="materialNoList != null and materialNoList.size() > 0">
 				AND (
 				<foreach collection="materialNoList" item="m" separator=" OR ">
 					material_no LIKE CONCAT('%', #{m}, '%')
 				</foreach>
 				)
+			</if>
+			<if test="projectName != null and projectName != ''">
+				and project_name LIKE CONCAT('%', #{projectName}, '%')
+			</if>
+			<if test="modelNo != null and modelNo != ''">
+				and vt.model_no LIKE CONCAT('%', #{modelNo}, '%')
 			</if>
 			<if test="vehicleModelList != null and vehicleModelList.size() > 0">
 				AND (
@@ -112,9 +124,6 @@
 			<if test="factoryCode != null and factoryCode != ''">
 				AND factory_code like concat('%', #{factoryCode}, '%')
 			</if>
-			<if test="factoryName != null and factoryName != ''">
-				AND factory_name like concat('%', #{factoryName}, '%')
-			</if>
 			<if test="color != null and color != ''">
 				AND color like concat('%', #{color}, '%')
 			</if>
@@ -124,29 +133,71 @@
 			<if test="country != null and country != ''">
 				AND country like concat('%', #{country}, '%')
 			</if>
+			<if test="manufactureBeginTime != null">
+				AND manufacture_date >= #{manufactureBeginTime}
+			</if>
+			<if test="manufactureEndTime != null">
+				AND manufacture_date &lt;= #{manufactureEndTime}
+			</if>
 			<if test="issueDateBeginTime != null">
-				AND date_format(issue_date,'%y%m%d') &gt;= date_format(#{issueDateBeginTime},'%y%m%d')
+				AND issue_date &gt;= #{issueDateBeginTime}
 			</if>
 			<if test="issueDateEndTime != null">
-				AND date_format(issue_date,'%y%m%d') &lt;= date_format(#{issueDateEndTime},'%y%m%d')
+				AND issue_date &lt;= #{issueDateEndTime}
 			</if>
-			<if test="createdBeginTime != null">
-				AND date_format(create_time,'%y%m%d') &gt;= date_format(#{createdBeginTime},'%y%m%d')
+			<if test="engineNumber != null and engineNumber != ''">
+				and engine_number like concat('%', #{engineNumber}, '%')
 			</if>
-			<if test="createdEndTime != null">
-				AND date_format(create_time,'%y%m%d') &lt;= date_format(#{createdEndTime},'%y%m%d')
+			<if test="motorNumber != null and motorNumber != ''">
+				and motor_number like concat('%', #{motorNumber}, '%')
 			</if>
-			<if test="wvtaNo != null and wvtaNo != ''">
-				AND wvta_no like concat('%', #{wvtaNo}, '%')
+			<if test="tire != null and tire != ''">
+				and tire like concat('%', #{tire}, '%')
 			</if>
-			<if test="uploadStatus != null">
-				AND upload_status = #{uploadStatus}
+			<if test="brand != null and brand != ''">
+				and brand like concat('%', #{brand}, '%')
+			</if>
+			<if test="weight != null and weight != ''">
+				and weight like concat('%', #{weight}, '%')
+			</if>
+			<if test="saleName != null and saleName != ''">
+				and sale_name like concat('%', #{saleName}, '%')
+			</if>
+			<if test="tireResistanceGrade != null and tireResistanceGrade != ''">
+				and tire_resistance_grade like concat('%', #{tireResistanceGrade}, '%')
+			</if>
+			<if test="saleCompanyName != null and saleCompanyName != ''">
+				and sale_company_name like concat('%', #{saleCompanyName}, '%')
+			</if>
+			<if test="customerNo != null and customerNo != ''">
+				and customer_no like concat('%', #{customerNo}, '%')
+			</if>
+			<if test="status != null">
+				AND status = #{status}
 			</if>
 			<if test="validationResult != null">
 				AND validation_result = #{validationResult}
 			</if>
-			<if test="status != null">
-				AND status = #{status}
+			<if test="uploadStatus != null">
+				AND upload_status = #{uploadStatus}
+			</if>
+			<if test="generateAffirm != null">
+				and generate_affirm = #{generateAffirm}
+			</if>
+			<if test="uploadAffirm != null">
+				and upload_affirm = #{uploadAffirm}
+			</if>
+<!--			<if test="createdBeginTime != null">-->
+<!--				AND date_format(create_time,'%y%m%d') &gt;= date_format(#{createdBeginTime},'%y%m%d')-->
+<!--			</if>-->
+<!--			<if test="createdEndTime != null">-->
+<!--				AND date_format(create_time,'%y%m%d') &lt;= date_format(#{createdEndTime},'%y%m%d')-->
+<!--			</if>-->
+<!--			<if test="factoryName != null and factoryName != ''">-->
+<!--				AND factory_name like concat('%', #{factoryName}, '%')-->
+<!--			</if>-->
+			<if test="wvtaNo != null and wvtaNo != ''">
+				AND wvta_no like concat('%', #{wvtaNo}, '%')
 			</if>
 			<if test="cocTemplateNo != null and cocTemplateNo != ''">
 				AND coc_template_no like concat('%', #{cocTemplateNo}, '%')
@@ -157,38 +208,16 @@
 			<if test="reclaim == null or !reclaim">
 				AND deleted = 0
 			</if>
-			<if test="tvv != null and tvv != ''">
-				and tvv like concat('%', #{tvv}, '%')
-			</if>
 			<if test="breakpointTime != null">
 				AND DATE(breakpoint_time) = DATE(#{breakpointTime})
 			</if>
-			<if test="brand != null and brand != ''">
-				and brand like concat('%', #{brand}, '%')
-			</if>
-			<if test="saleName != null and saleName != ''">
-				and sale_name like concat('%', #{saleName}, '%')
-			</if>
-			<if test="saleCompanyName != null and saleCompanyName != ''">
-				and sale_company_name like concat('%', #{saleCompanyName}, '%')
-			</if>
-			<if test="engineNumber != null and engineNumber != ''">
-				and engine_number like concat('%', #{engineNumber}, '%')
-			</if>
-			<if test="manufactureBeginTime != null">
-				AND manufacture_date >= #{manufactureBeginTime}
-			</if>
-			<if test="manufactureEndTime != null">
-				AND manufacture_date &lt;= #{manufactureEndTime}
-			</if>
-
 			<if test="firstMaterialFlag != null">
 				AND vi.first_material_flag = #{firstMaterialFlag}
-				AND vi.generate_affirm = 0
+				AND vi.generate_affirm = #{firstMaterialFlag}
 			</if>
 			<if test="firstTemplateFlag != null">
 				AND vi.first_template_flag = #{firstTemplateFlag}
-				AND vi.upload_affirm = 0
+				AND vi.upload_affirm = #{firstTemplateFlag}
 			</if>
 			${params.dataScope}
 		</where>

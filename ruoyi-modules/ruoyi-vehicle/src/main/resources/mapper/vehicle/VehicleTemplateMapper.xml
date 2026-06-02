@@ -31,14 +31,16 @@
         <result property="brand"          column="brand"/>
         <result property="tire"           column="tire"/>
         <result property="weight"         column="weight"  />
-        <result property="saleName"       column="sale_name"/>
+        <result property="saleName"        column="sale_name"/>
+        <result property="generateAffirm"  column="generate_affirm"/>
+        <result property="uploadAffirm"    column="upload_affirm"/>
     </resultMap>
 
     <!-- ==================== 公共查询列 ==================== -->
     <sql id="selectVehicleTemplateVo">
         SELECT template_id, wvta_coc_no, coc_template_no, model_no, version, vehicle_type, status, validate_result, validate_time,
-            validate_msg, json, remark, create_by, create_time, update_by, update_time, filepath, is_last, overdue_date, template_version,
-            tvv, effective_date, uuid
+               validate_msg, json, remark, create_by, create_time, update_by, update_time, filepath, is_last, overdue_date, template_version,
+               tvv, effective_date, uuid, generate_affirm, upload_affirm
         FROM vehicle_template
     </sql>
 
@@ -46,39 +48,63 @@
     <select id="selectVehicleTemplateList" parameterType="com.ruoyi.vehicle.domain.VehicleTemplate" resultMap="VehicleTemplateResult">
         <include refid="selectVehicleTemplateVo"/>
         WHERE del_flag = '0'
-            <if test="isLast != null">
-                and is_last = #{isLast}
-            </if>
-            <if test="templateIds != null and templateIds.size() > 0">
-                AND template_id in
-                <foreach item="templateId" collection="templateIds" open="(" separator="," close=")">
-                    #{templateId}
-                </foreach>
-            </if>
-            <if test="wvtaCocNo != null and wvtaCocNo != ''">
-                AND wvta_coc_no LIKE CONCAT('%', #{wvtaCocNo}, '%')
-            </if>
-            <if test="cocTemplateNo != null and cocTemplateNo != ''">
-                AND coc_template_no LIKE CONCAT('%', #{cocTemplateNo}, '%')
-            </if>
-            <if test="modelNo != null and modelNo != ''">
-                AND model_no LIKE CONCAT('%', #{modelNo}, '%')
-            </if>
-            <if test="vehicleType != null and vehicleType != ''">
-                AND vehicle_type = #{vehicleType}
-            </if>
-            <if test="status != null and status != ''">
-                AND status = #{status}
-            </if>
-            <if test="uuid != null and uuid != ''" >
-                and uuid = #{uuid}
-            </if>
-            <if test="version != null and version != ''" >
-                and version = #{version}
-            </if>
-            <if test="validateResult != null and validateResult != ''">
-                AND validate_result = #{validateResult}
-            </if>
+        <if test="isLast != null">
+            and is_last = #{isLast}
+        </if>
+        <if test="templateIds != null and templateIds.size() > 0">
+            AND template_id in
+            <foreach item="templateId" collection="templateIds" open="(" separator="," close=")">
+                #{templateId}
+            </foreach>
+        </if>
+        <if test="cocTemplateNo != null and cocTemplateNo != ''">
+            AND coc_template_no LIKE CONCAT('%', #{cocTemplateNo}, '%')
+        </if>
+        <if test="wvtaCocNo != null and wvtaCocNo != ''">
+            AND wvta_coc_no LIKE CONCAT('%', #{wvtaCocNo}, '%')
+        </if>
+        <if test="version != null and version != ''" >
+            and version = #{version}
+        </if>
+        <if test="tvv != null and tvv != ''" >
+            and REPLACE(tvv, ',', '') like concat('%', #{tvv}, '%'}
+        </if>
+        <if test="modelNo != null and modelNo != ''">
+            AND model_no LIKE CONCAT('%', #{modelNo}, '%')
+        </if>
+        <if test="vehicleType != null and vehicleType != ''">
+            AND vehicle_type = #{vehicleType}
+        </if>
+        <if test="effectiveDateStart != null">
+            and effective_date &gt;= #{effectiveDateStart}
+        </if>
+        <if test="effectiveDateEnd != null">
+            and effective_date &lt;= #{effectiveDateEnd}
+        </if>
+        <if test="overdueDateStart != null">
+            and overdue_date &gt;= #{overdueDateStart}
+        </if>
+        <if test="overdueDateEnd != null">
+            and overdue_date &lt;= #{overdueDateEnd}
+        </if>
+        <if test="remark != null and remark != ''">
+            and remark like concat('%', #{remark}, '%'}
+        </if>
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+        <if test="validateResult != null and validateResult != ''">
+            AND validate_result = #{validateResult}
+        </if>
+        <if test="generateAffirm != null">
+            and generate_affirm = #{generateAffirm}
+        </if>
+        <if test="uploadAffirm != null">
+            and upload_affirm = #{uploadAffirm}
+        </if>
+        <if test="uuid != null and uuid != ''" >
+            and uuid = #{uuid}
+        </if>
         ORDER BY create_time DESC
     </select>
 
@@ -95,7 +121,7 @@
             resultMap="VehicleTemplateResult">
         <include refid="selectVehicleTemplateVo"/>
         WHERE del_flag = '0'
-            AND template_id = #{templateId}
+        AND template_id = #{templateId}
     </select>
 
     <!-- ==================== 新增 ==================== -->
@@ -104,9 +130,11 @@
             useGeneratedKeys="true"
             keyProperty="templateId">
         INSERT INTO vehicle_template (wvta_coc_no, coc_template_no,model_no, version, vehicle_type, status, validate_result, json,
-                                      remark, del_flag, create_by, create_time, uuid, overdue_date, template_version, tvv, effective_date)
+                                      remark, del_flag, create_by, create_time, uuid, overdue_date, template_version, tvv, effective_date,
+                                      generate_affirm, upload_affirm)
         VALUES (#{wvtaCocNo}, #{cocTemplateNo}, #{modelNo}, #{version}, #{vehicleType}, #{status}, #{validateResult}, #{json}, #{remark},
-                '0', #{createBy}, #{createTime}, #{uuid}, #{overdueDate}, #{templateVersion}, #{tvv}, #{effectiveDate})
+                '0', #{createBy}, #{createTime}, #{uuid}, #{overdueDate}, #{templateVersion}, #{tvv}, #{effectiveDate},
+                #{generateAffirm}, #{uploadAffirm})
     </insert>
 
     <!-- ==================== 修改 ==================== -->
@@ -147,6 +175,12 @@
             <if test="effectiveDate != null">
                 effective_date = #{effectiveDate}
             </if>
+            <if test="generateAffirm != null">
+                generate_affirm = #{generateAffirm},
+            </if>
+            <if test="uploadAffirm != null">
+                upload_affirm = #{uploadAffirm},
+            </if>
             <if test="updateBy != null">
                 update_by = #{updateBy},
             </if>
@@ -171,8 +205,8 @@
     <update id="updateStatus">
         UPDATE vehicle_template
         SET
-        status      = #{status},
-        update_time = SYSDATE()
+            status      = #{status},
+            update_time = SYSDATE()
         WHERE template_id = #{templateId}
     </update>
 
@@ -180,9 +214,9 @@
     <update id="updateValidateResult">
         UPDATE vehicle_template
         SET
-        validate_result = #{validateResult},
-        validate_msg= #{validateMsg},
-        validate_time   = SYSDATE()
+            validate_result = #{validateResult},
+            validate_msg= #{validateMsg},
+            validate_time   = SYSDATE()
         WHERE template_id = #{templateId}
     </update>
 
@@ -212,7 +246,7 @@
         FROM vehicle_template
         WHERE uuid = #{uuid}
         ORDER BY cast(version as UNSIGNED) desc
-        limit 1
+            limit 1
     </select>
 
     <update id="updateAllTemplateNotIsLast">
@@ -223,16 +257,16 @@
     <!-- ==================== 查询即将过期的模板 ==================== -->
     <select id="selectExpiringTemplates" resultMap="VehicleTemplateResult">
         SELECT vt.template_id, vt.wvta_coc_no, vt.coc_template_no, vt.model_no, vt.version, vt.vehicle_type, vt.status, vt.validate_result,
-            vt.validate_time, vt.validate_msg, vt.json, vt.remark, vt.create_by, vt.create_time, vt.update_by, vt.update_time, vt.filepath,
-            vt.is_last, vt.uuid, vt.overdue_date, vt.template_version, vt.effective_date, vt.tvv
+        vt.validate_time, vt.validate_msg, vt.json, vt.remark, vt.create_by, vt.create_time, vt.update_by, vt.update_time, vt.filepath,
+        vt.is_last, vt.uuid, vt.overdue_date, vt.template_version, vt.effective_date, vt.tvv
         FROM vehicle_template vt
         INNER JOIN sys_dict_data sdd ON sdd.dict_type = 'reminder_time' AND sdd.status = '0' and dict_sort = 0
         WHERE vt.del_flag = '0' AND vt.overdue_date IS NOT NULL
-           <if test="needExpiredNotice != null">
-               and expired_notice = #{needExpiredNotice}
-           </if>
-            AND TIMESTAMPDIFF(MICROSECOND, NOW(), vt.overdue_date) / 1000 &lt;= CAST(sdd.dict_value AS SIGNED)
-            AND vt.overdue_date > NOW()
+        <if test="needExpiredNotice != null">
+            and expired_notice = #{needExpiredNotice}
+        </if>
+        AND TIMESTAMPDIFF(MICROSECOND, NOW(), vt.overdue_date) / 1000 &lt;= CAST(sdd.dict_value AS SIGNED)
+        AND vt.overdue_date > NOW()
     </select>
 
     <!-- ==================== 查询即将生效的模板 ==================== -->
@@ -285,7 +319,7 @@
     <update id="updateStatusByEffectiveDate">
         update vehicle_template set status = '0'
         where status = '1' and effective_date &lt;= NOW()
-            AND (SELECT dict_value FROM sys_dict_data WHERE dict_type = 'auto_status' AND dict_sort = 0) = '1';
+        AND (SELECT dict_value FROM sys_dict_data WHERE dict_type = 'auto_status' AND dict_sort = 0) = '1';
     </update>
 
     <select id="selectVehicleTemplateOverdueButNoNextVersion" resultMap="VehicleTemplateResult">
@@ -295,12 +329,12 @@
         FROM vehicle_template vt
                  INNER JOIN sys_dict_data sdd ON sdd.dict_type = 'reminder_time' AND sdd.status = '0' and dict_sort = 0
         WHERE vt.del_flag = '0' and vt.overdue_date is not null and vt.no_next_version_notice = 0
-            AND DATE_SUB(vt.overdue_date, INTERVAL CAST(sdd.dict_value AS SIGNED) * 1000 MICROSECOND) &lt; NOW()
-            AND CAST(vt.version AS DECIMAL(10, 4)) = (
-                SELECT MAX(CAST(t2.version AS DECIMAL(10, 4)))
-                FROM vehicle_template t2
-                WHERE t2.uuid = vt.uuid AND t2.del_flag = '0'
-            )
+          AND DATE_SUB(vt.overdue_date, INTERVAL CAST(sdd.dict_value AS SIGNED) * 1000 MICROSECOND) &lt; NOW()
+          AND CAST(vt.version AS DECIMAL(10, 4)) = (
+            SELECT MAX(CAST(t2.version AS DECIMAL(10, 4)))
+            FROM vehicle_template t2
+            WHERE t2.uuid = vt.uuid AND t2.del_flag = '0'
+        )
     </select>
 
     <update id="updateVehicleTemplateNoNextVersion">

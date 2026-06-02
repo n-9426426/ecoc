@@ -265,7 +265,7 @@ public class VehicleInfoController extends BaseController {
 
     @GetMapping("/download/template")
     public void downloadTemplate(HttpServletResponse response) throws IOException {
-        download("车辆信息模版.xlsx", response);
+        download("车辆信导入息模版.xlsx", response);
     }
 
     private void download(String fileName, HttpServletResponse response) throws IOException {
