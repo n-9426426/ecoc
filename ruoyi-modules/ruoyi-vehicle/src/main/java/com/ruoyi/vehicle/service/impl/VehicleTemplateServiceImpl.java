@@ -885,7 +885,10 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                                     ? lines[lineIdx].trim() : "";
                             String converted = applyChain(lineValue, singleChain, fieldName);
                             String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                            if (StringUtils.isNotBlank(converted)) {
+                            // ★ 修改：EMPTY_SENTINEL 写入 null，否则非空才写入
+                            if (ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
+                                result.put(targetLabel, null);
+                            } else if (StringUtils.isNotBlank(converted)) {
                                 result.put(targetLabel, converted);
                             }
                         }
@@ -894,10 +897,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                         List<SysDictData> singleChain = chains.get(0);
                         String converted = applyChain(rawValue, singleChain, fieldName);
                         String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                        if (converted != null && converted.contains("\n")) {
-                            converted = converted.replace("\n", "|");
-                        }
-                        if (StringUtils.isNotBlank(converted)) {
+                        if (ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
+                            result.put(targetLabel, null);
+                        } else if (StringUtils.isNotBlank(converted)) {
                             result.put(targetLabel, converted);
                         }
                     } else {
@@ -905,7 +907,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                         for (List<SysDictData> singleChain : chains) {
                             String converted = applyChain(rawValue, singleChain, fieldName);
                             String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                            if (StringUtils.isNotBlank(converted)) {
+                            if (ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
+                                result.put(targetLabel, null);
+                            } else if (StringUtils.isNotBlank(converted)) {
                                 result.put(targetLabel, converted);
                             }
                         }
@@ -913,7 +917,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 }
 
                 // ── 第四步：执行多 key_map 链 ────────────────────────────────
-                // 多 key_map 链里每一段都独立写到自己的 dictLabel
                 for (List<SysDictData> multiChain : multiKeyChainMap.values()) {
                     multiChain.sort(Comparator.comparingLong(SysDictData::getDictCode));
 
@@ -936,7 +939,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                             continue;
                         }
 
-                        // key_map 为空时，rawValue = null，后续逻辑正常处理（convert/EMPTY_SENTINEL等）
                         Object rawObj = StringUtils.isNotBlank(rule.getKeyMap())
                                 ? map.get(rule.getKeyMap()) : null;
                         String rawValue = rawObj == null ? null : String.valueOf(rawObj);
@@ -945,6 +947,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                         if (StringUtils.isNotBlank(rule.getValueMap())) {
                             String stepped = ValueMappingParser.convert(rawValue, rule.getValueMap());
                             if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
+                                if (!result.containsKey(rule.getDictLabel())) {
+                                    result.put(rule.getDictLabel(), null);
+                                }
                                 continue;
                             }
                             if (stepped != null) {

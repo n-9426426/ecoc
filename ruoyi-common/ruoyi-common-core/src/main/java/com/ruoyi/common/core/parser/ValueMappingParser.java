@@ -49,6 +49,7 @@ import java.util.regex.Pattern;
  *  RIM_SPEC:BOTH                     提取轮毂规格235/50R19 103V 19x7J ET47 6.28N/kN C1
  *                                              215/55R18 99H 18x7 1/2J ET33 5.96N/kN C1
  *                                    输出示例：19,7  /  18,7.5
+ *  管道链式执行：PIPE:{rule1}|{rule2}|  将多个 value_map 规则串联，前一步输出作为下一步输入
  * </pre>
  *
  * <h2>数据库存储约定（value_map 列 ≤ 100 字符）</h2>
@@ -374,7 +375,7 @@ public class ValueMappingParser {
                     }
                     String part1 = m.group(g1);
                     String part2 = m.group(g2).trim();
-                    return part1.toLowerCase() + sep + part2.toLowerCase();
+                    return part1 + sep + part2;
                 }
 
                 // ── 字典查找 ──────────────────────────────────────
@@ -443,6 +444,26 @@ public class ValueMappingParser {
 
                     log.warn("[ValueMappingParser] RIM_SPEC 不支持的 part: {}", parts[1]);
                     return null;
+                }
+
+                // ── 管道链式执行：PIPE:{rule1}|{rule2}|... ───────────────────
+                // 将多个 value_map 规则串联，前一步输出作为下一步输入
+                // 注意：规则内部的 | 需用 \x7C 转义
+                case "PIPE": {
+                    if (parts.length < 2) return raw;
+                    // 还原被 safeDescriptor 处理前的完整参数段
+                    String pipeLine = descriptor.substring("PIPE:".length());
+                    String[] steps = pipeLine.split("\\|", -1);
+                    String current = raw;
+                    for (String step : steps) {
+                        if (current == null) return null;
+                        step = step.trim()
+                                .replace("\\x7C", "|")   // 还原转义的竖线
+                                .replace("\u0001", ":");  // 还原 \x3A
+                        current = convert(current, step);
+                        if (EMPTY_SENTINEL.equals(current)) return EMPTY_SENTINEL;
+                    }
+                    return current;
                 }
 
                 default:

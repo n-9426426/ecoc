@@ -118,6 +118,8 @@ public class VehicleInfo extends BaseEntity {
 
     private String saleName;
 
+    private String saleCompanyName;
+
     private String tire;
 
     /** 生成确认 */

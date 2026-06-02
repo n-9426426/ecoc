@@ -56,6 +56,7 @@
 		<result property="templateConfirmedTime"  column="template_confirmed_time"  />
 		<result property="generateAffirmNotice" column="generate_affirm_notice" />
 		<result property="uploadAffirmNotice"   column="upload_affirm_notice"   />
+		<result property="saleCompanyName"      column="sale_company_name"      />
 	</resultMap>
 
 	<sql id="selectVehicleInfoVo">
@@ -66,12 +67,11 @@
 			   engine_number, motor_number, brand, weight, sale_name, tire, battery_number, tvv, breakpoint_time,
 			   sdd.dict_label as vehicle_model_str, vt.filepath as vehicle_template_filepath, vt.coc_template_no as coc_template_no,
 			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade,   vi.first_material_flag, vi.first_template_flag,
-			   vi.material_confirmed_by, vi.material_confirmed_time,
-			   vi.template_confirmed_by, vi.template_confirmed_time,
-			   vi.generate_affirm_notice, vi.upload_affirm_notice
+			   vi.material_confirmed_by, vi.material_confirmed_time, vi.template_confirmed_by, vi.template_confirmed_time,
+			   vi.generate_affirm_notice, vi.upload_affirm_notice, vi.sale_company_name
 		from vehicle_info vi
-		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
-		left join (select template_id, filepath, coc_template_no, is_last, version from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
+				 left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
+				 left join (select template_id, filepath, coc_template_no, is_last, version from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
 	</sql>
 
 	<select id="selectVehicleInfoById" parameterType="Long" resultMap="VehicleInfoResult">
@@ -169,6 +169,9 @@
 			<if test="saleName != null and saleName != ''">
 				and sale_name like concat('%', #{saleName}, '%')
 			</if>
+			<if test="saleCompanyName != null and saleCompanyName != ''">
+				and sale_company_name like concat('%', #{saleCompanyName}, '%')
+			</if>
 			<if test="engineNumber != null and engineNumber != ''">
 				and engine_number like concat('%', #{engineNumber}, '%')
 			</if>
@@ -220,6 +223,7 @@
 		<if test="brand != null and brand != ''">brand,</if>
 		<if test="weight != null and weight != ''">weight,</if>
 		<if test="saleName != null and saleName != ''">sale_name,</if>
+		<if test="saleCompanyName != null and saleCompanyName != ''">sale_company_name,</if>
 		<if test="tire != null and tire != ''">tire,</if>
 		<if test="tvv != null and tvv != ''">tvv,</if>
 		<if test="breakpointTime != null">breakpoint_time,</if>
@@ -259,6 +263,7 @@
 		<if test="brand != null and brand != ''">#{brand},</if>
 		<if test="weight != null and weight != ''">#{weight},</if>
 		<if test="saleName != null and saleName != ''">#{saleName},</if>
+		<if test="saleCompanyName != null and saleCompanyName != ''">#{saleCompanyName},</if>
 		<if test="tire != null and tire != ''">#{tire},</if>
 		<if test="tvv != null and tvv != ''">#{tvv},</if>
 		<if test="breakpointTime != null">#{breakpointTime},</if>
@@ -305,6 +310,7 @@
 			<if test="brand != null and brand != ''">brand = #{brand},</if>
 			<if test="weight != null and weight != ''">weight = #{weight},</if>
 			<if test="saleName != null and saleName != ''">sale_name = #{saleName},</if>
+			<if test="saleCompanyName != null and saleCompanyName != ''">sale_company_name = #{saleCompanyName},</if>
 			<if test="tire != null and tire != ''">tire = #{tire},</if>
 			<if test="tvv != null and tvv != ''">tvv = #{tvv},</if>
 			<if test="breakpointTime != null">breakpoint_time = #{breakpointTime},</if>
