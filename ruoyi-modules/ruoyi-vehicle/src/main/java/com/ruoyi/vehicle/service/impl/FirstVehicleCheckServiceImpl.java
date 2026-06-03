@@ -210,6 +210,8 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
         params.put("country", vehicleInfo.getCountry());
         params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
         params.put("materialNo", vehicleInfo.getMaterialNo());
+        params.put("wvtaNo", vehicleInfo.getWvtaNo());
+        params.put("cocTemplateNo", vehicleInfo.getCocTemplateNo());
         SysNotice sysNotice = new SysNotice();
         sysNotice.setModel(SysNoticeModel.VEHICLE_TEMPLATE.getModel());
         sysNotice.setQueryParams(JSON.toJSONString(params));
