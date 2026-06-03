@@ -1,13 +1,19 @@
 package com.ruoyi.vehicle.service.impl;
 
-import com.ruoyi.system.api.domain.SysDictData;
-import com.ruoyi.system.api.RemoteDictService;
+import com.alibaba.fastjson2.JSON;
 import com.ruoyi.common.core.domain.R;
+import com.ruoyi.common.core.utils.DateUtils;
+import com.ruoyi.system.api.RemoteDictService;
+import com.ruoyi.system.api.RemoteNoticeService;
+import com.ruoyi.system.api.domain.SysDictData;
+import com.ruoyi.system.api.domain.SysNotice;
+import com.ruoyi.system.api.enums.SysNoticeModel;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
 import com.ruoyi.vehicle.service.IFirstVehicleCheckService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,7 +64,11 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
     private static final String KEY_TEMPLATE_MODIFIED = "template_modified";
 
     private final VehicleInfoMapper vehicleInfoMapper;
+
     private final RemoteDictService remoteDictService;
+
+    @Autowired
+    private RemoteNoticeService remoteNoticeService;
 
     // ===================================================================
     //  对外接口实现
@@ -190,7 +200,28 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void confirmMaterial(Long vehicleId, String confirmedBy) {
+
         vehicleInfoMapper.confirmMaterialFlag(vehicleId, confirmedBy);
+        VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
+        Map<String, String> params = new HashMap<>();
+        params.put("vin", vehicleInfo.getVin());
+        params.put("vehicleModel", vehicleInfo.getVehicleModel());
+        params.put("factoryCode", vehicleInfo.getFactoryCode());
+        params.put("country", vehicleInfo.getCountry());
+        params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+        params.put("materialNo", vehicleInfo.getMaterialNo());
+        SysNotice sysNotice = new SysNotice();
+        sysNotice.setModel(SysNoticeModel.VEHICLE_TEMPLATE.getModel());
+        sysNotice.setQueryParams(JSON.toJSONString(params));
+        sysNotice.setIsRead(false);
+        sysNotice.setStatus("0");
+        sysNotice.setNoticeType("1");
+        sysNotice.setNoticeTitle("车辆生成确认通知");
+        sysNotice.setNoticeContent("物料号为 " + vehicleInfo.getMaterialNo() + " 的物料号生成已确认，现已可以生成XML文件");
+        sysNotice.setCreateBy("自动提醒");
+        sysNotice.setCreateTime(new Date());
+        sysNotice.setSorts(Arrays.asList(18, 19));
+        remoteNoticeService.innerAdd(sysNotice);
         log.info("[首台车] 物料号确认（可生成）vehicleId={} by={}", vehicleId, confirmedBy);
     }
 
@@ -198,6 +229,28 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
     @Transactional(rollbackFor = Exception.class)
     public void confirmTemplate(Long vehicleId, String confirmedBy) {
         vehicleInfoMapper.confirmTemplateFlag(vehicleId, confirmedBy);
+        VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
+        Map<String, String> params = new HashMap<>();
+        params.put("vin", vehicleInfo.getVin());
+        params.put("vehicleModel", vehicleInfo.getVehicleModel());
+        params.put("factoryCode", vehicleInfo.getFactoryCode());
+        params.put("country", vehicleInfo.getCountry());
+        params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+        params.put("materialNo", vehicleInfo.getMaterialNo());
+        params.put("wvtaNo", vehicleInfo.getWvtaNo());
+        params.put("cocTemplateNo", vehicleInfo.getCocTemplateNo());
+        SysNotice sysNotice = new SysNotice();
+        sysNotice.setModel(SysNoticeModel.VEHICLE_TEMPLATE.getModel());
+        sysNotice.setQueryParams(JSON.toJSONString(params));
+        sysNotice.setIsRead(false);
+        sysNotice.setStatus("0");
+        sysNotice.setNoticeType("1");
+        sysNotice.setNoticeTitle("车辆上传确认通知");
+        sysNotice.setNoticeContent("WVTA编号为 " + vehicleInfo.getWvtaNo() + "、COC模版号为 " +vehicleInfo.getCocTemplateNo() + " 的车辆模版上传已确认，现已可以上传XML文件");
+        sysNotice.setCreateBy("自动提醒");
+        sysNotice.setCreateTime(new Date());
+        sysNotice.setSorts(Arrays.asList(20, 21));
+        remoteNoticeService.innerAdd(sysNotice);
         log.info("[首台车] 模版确认（可上传）vehicleId={} by={}", vehicleId, confirmedBy);
     }
 
