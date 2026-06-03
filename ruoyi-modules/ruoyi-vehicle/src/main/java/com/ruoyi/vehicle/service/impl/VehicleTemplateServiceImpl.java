@@ -604,7 +604,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
         try {
             List<VehicleTemplate> vehicleTemplates = excelUtil.importExcel(
-                    new ByteArrayInputStream(fileBytes), "vehicle_template", VehicleTemplate.class, lang, 1);
+                    new ByteArrayInputStream(fileBytes), "vehicle_template", VehicleTemplate.class, lang, 3);
 
             Map<String, String> labelToCodeMap = remoteDictService
                     .getDictDataByType("vehicle_model").getData().stream()
