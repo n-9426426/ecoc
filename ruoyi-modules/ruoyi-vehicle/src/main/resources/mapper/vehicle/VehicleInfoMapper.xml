@@ -61,15 +61,15 @@
 	</resultMap>
 
 	<sql id="selectVehicleInfoVo">
-		select vehicle_id, vin, vehicle_model, factory_code, factory_name, material_no,
-			   upload_status, validation_result, status, country, color, secondary_color, vi.temp_version,
-			   certificate_version, wvta_no, manufacture_date, issue_date, json, xml_template_id, vehicle_template_id,
-			   deleted, create_by, create_time, update_by, update_time, remark, validation_report_json, vt.version as version,
-			   engine_number, motor_number, brand, weight, sale_name, tire, battery_number, vt.tvv, breakpoint_time,
+		select vi.vehicle_id, vi.vin, vi.factory_code, vi.factory_name, vi.material_no, vi.vehicle_model,
+			   vi.upload_status, vi.validation_result, vi.status, country, vi.color, vi.secondary_color, vi.temp_version,
+			   vi.certificate_version, vi.wvta_no, vi.manufacture_date, vi.issue_date, vi.json, vi.xml_template_id, vi.vehicle_template_id,
+			   vi.deleted, vi.create_by, vi.create_time, vi.update_by, vi.update_time, vi.remark, vi.validation_report_json, vt.version as version,
+			   vi.engine_number, vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire, vi.battery_number, vt.tvv, vi.breakpoint_time,
 			   sdd.dict_label as vehicle_model_str, vt.filepath as vehicle_template_filepath, vt.coc_template_no as coc_template_no,
-			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade,   vi.first_material_flag, vi.first_template_flag,
-			   vi.material_confirmed_by, vi.material_confirmed_time, vi.template_confirmed_by, vi.template_confirmed_time,
-			   vi.generate_affirm_notice, vi.upload_affirm_notice, vi.sale_company_name, vi.model_no
+			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade,   vi.first_material_flag,
+			   vi.first_template_flag, vi.material_confirmed_by, vi.material_confirmed_time, vi.template_confirmed_by,
+			   vi.template_confirmed_time, vi.generate_affirm_notice, vi.upload_affirm_notice, vi.sale_company_name, vi.model_no
 		from vehicle_info vi
 		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
 		left join (select template_id, filepath, coc_template_no, is_last, version, model_no, tvv from vehicle_template) vt on vi.vehicle_template_id = vt.template_id

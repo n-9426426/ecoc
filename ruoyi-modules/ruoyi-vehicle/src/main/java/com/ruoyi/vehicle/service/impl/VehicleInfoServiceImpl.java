@@ -710,6 +710,19 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                         }
 
                         vehicleInfo.setCreateBy(createBy);
+                        Map<String, String> countryLabelToValueMap = remoteDictService
+                                .getDictDataByType("country")   // dict_type 替换为实际值
+                                .getData().stream()
+                                .collect(Collectors.toMap(
+                                        SysDictData::getDictLabel,
+                                        SysDictData::getDictValue,
+                                        (k1, k2) -> k1));
+                        String countryLabel = vehicleInfo.getCountry();
+                        String countryValue = countryLabelToValueMap.get(countryLabel);
+                        if (countryValue == null) {
+                            throw new IllegalArgumentException("国家[" + countryLabel + "]在字典中未找到对应值");
+                        }
+                        vehicleInfo.setCountry(countryValue);
                         // 每行独立事务插入
                         self.insertSingleVehicleInfoRow(vehicleInfo, template, materialList.get(0));
                         importedList.add(vehicleInfo);
@@ -797,6 +810,13 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setDeleted(0);
         vehicleInfo.setGenerateAffirm(template.getGenerateAffirm());
         vehicleInfo.setUploadAffirm(template.getUploadAffirm());
+        vehicleInfo.setVehicleModel(material.getVehicleModel());
+        vehicleInfo.setProjectName(material.getName());
+        vehicleInfo.setBrand(material.getBrand());
+        vehicleInfo.setTireResistanceGrade(material.getTireResistanceGrade());
+        vehicleInfo.setSaleName(material.getSaleName());
+        vehicleInfo.setWeight(material.getWeight());
+        vehicleInfo.setTire(material.getTire());
         // createBy 由调用方（doImportVehicleInfo/insertVehicleInfo）在请求线程设置，
         // 此处异步线程 SecurityContext 可能已失效，兜底取已设置的值
         if (StringUtils.isBlank(vehicleInfo.getCreateBy())) {
@@ -815,6 +835,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
         validateVehicleInfo(Collections.singletonList(vehicleInfo.getVehicleId()));
     }
+
     /**
      * 批量修改关联模版
      * 规则：所选车辆必须属于同一整车物料号（material_no），否则拒绝操作

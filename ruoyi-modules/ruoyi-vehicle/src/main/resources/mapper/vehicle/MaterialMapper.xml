@@ -26,6 +26,8 @@
         <result property="factoryCode"         column="factory_code"          />
         <result property="vehicleModel"         column="vehicle_model"         />
         <result property="status"               column="status"                />
+        <result property="cocTemplateNo"    column="coc_template_no"/>
+        <result property="wvtaCocNo"        column="wvta_coc_no"/>
     </resultMap>
 
     <sql id="selectMaterialVo">
@@ -48,7 +50,7 @@
             FROM vehicle_template max_vt
             WHERE max_vt.uuid = ANY_VALUE(vt.uuid)
             AND max_vt.is_last = 1
-        ) AS last_version
+        ) AS last_version, vt.coc_template_no, vt.wvta_coc_no
         FROM material m
         LEFT JOIN vehicle_template vt ON vt.template_id = m.vehicle_template_id
         <where>

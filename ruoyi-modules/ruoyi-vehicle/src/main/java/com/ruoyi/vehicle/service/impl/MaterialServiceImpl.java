@@ -290,9 +290,7 @@ public class MaterialServiceImpl implements IMaterialService {
                 }
 
                 try {
-                    material.setCreateBy(createBy);
                     Material existing = materialMapper.selectByMaterialNo(material.getMaterialNo());
-
                     if (existing == null) {
                         // 新增
                         insertMaterial(material, createBy);
