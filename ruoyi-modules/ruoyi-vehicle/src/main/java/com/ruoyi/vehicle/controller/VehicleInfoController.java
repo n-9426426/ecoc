@@ -85,7 +85,7 @@ public class VehicleInfoController extends BaseController {
             throw new ServiceException(loginResult.getMsg());
         }
 
-        String token = (String) loginResult.getData();
+        String token = ((LinkedHashMap<String, String>)loginResult.getData()).get("access_token");
         SysUser sysUser = new SysUser();
         sysUser.setUserId(Long.valueOf(JwtUtils.getUserId(token)));
         sysUser.setUserName(JwtUtils.getUserName(token));
@@ -112,6 +112,7 @@ public class VehicleInfoController extends BaseController {
                 resultItem.put("recordId", null);
                 resultItem.put("receiveTime", DateUtils.format(now, "yyyy-MM-dd HH:mm:ss"));
                 resultItem.put("cause", e.getMessage());
+                result.add(resultItem);
             }
         }
         return AjaxResult.success(result);

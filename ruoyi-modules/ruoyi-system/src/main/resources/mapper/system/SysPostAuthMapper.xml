@@ -19,10 +19,12 @@
     <select id="selectByPostIds" resultMap="SysPostAuthResult">
         SELECT post_id, factory_code, country, vehicle_model
         FROM sys_post_auth
-        WHERE post_id IN
-        <foreach collection="postIds" item="id" open="(" separator="," close=")">
-            #{id}
-        </foreach>
+        <if test="postIds != null and postIds.size() > 0">
+            WHERE post_id IN
+            <foreach collection="postIds" item="id" open="(" separator="," close=")">
+                #{id}
+            </foreach>
+        </if>
     </select>
 
     <insert id="insertBatch">

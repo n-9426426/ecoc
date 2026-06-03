@@ -245,7 +245,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleLifecycle.setResult(0);
         vehicleLifecycleMapper.insert(vehicleLifecycle);
 
-        validateVehicleInfo(Collections.singletonList(vehicleInfo.getVehicleId()));
+        self.validateVehicleInfo(Collections.singletonList(vehicleInfo.getVehicleId()));
         if (insertRow > 0) {
             // 新增：触发首台车标识检查
             firstVehicleCheckService.handleAfterInsert(Collections.singletonList(vehicleInfo));
@@ -544,9 +544,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> getVehicleInfoFromMes(VehicleDto.Vehicle vehicle, Date now, LoginUser loginUser) throws JsonProcessingException {
-        // 直接用传进来的 loginUser，不从 SecurityContext 取
         Set<String> permissions = loginUser.getPermissions();
         if (!permissions.contains("vehicle:info:toSystem")) {
             throw new ServiceException("没有权限执行此操作");
@@ -565,8 +563,18 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         if (vehicleInfo.getVehicleModel() == null) {
             throw new RuntimeException("车型代码不存在");
         }
-        insertVehicleInfo(vehicleInfo);
-        // 新增后触发首台车打标逻辑
+
+        try {
+            self.insertVehicleInfo(vehicleInfo);  // ← 走代理，事务独立
+        } catch (Exception e) {
+            // 剥出根因，确保 message 不丢失
+            Throwable cause = e;
+            while (cause.getCause() != null && cause.getMessage() == null) {
+                cause = cause.getCause();
+            }
+            throw new RuntimeException(cause.getMessage() != null ? cause.getMessage() : e.toString(), e);
+        }
+
         firstVehicleCheckService.handleAfterInsert(Collections.singletonList(vehicleInfo));
 
         Map<String, Object> result = new LinkedHashMap<>();
