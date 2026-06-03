@@ -667,7 +667,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setTvv(template.getTvv().replace(",", ""));
         vehicleInfo.setWvtaNo(template.getWvtaCocNo());
         vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
-        vehicleInfo.setJson(template.getJson());
+        // 只保留 vehicle_attribute 字典中 dict_label 对应的键，其余键删除
+        vehicleInfo.setJson(filterJsonByVehicleAttribute(template.getJson()));
         vehicleInfo.setVehicleTemplateId(String.valueOf(template.getTemplateId()));
 
         // 补充系统字段
@@ -976,6 +977,45 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
 // ========== 工具方法 ==========
 
+    /**
+     * 过滤 JSON 字符串，只保留 sys_data 中 dict_type='vehicle_attribute' 的 dict_label 所对应的键，
+     * 其余顶层键一律删除。
+     *
+     * @param json 原始 JSON 字符串（来自 VehicleTemplate）
+     * @return 过滤后的 JSON 字符串；若获取字典失败或 JSON 解析失败则返回原始 json
+     */
+    private String filterJsonByVehicleAttribute(String json) {
+        if (StringUtils.isBlank(json)) {
+            return json;
+        }
+        try {
+            // 1. 从远程字典服务获取 vehicle_attribute 的所有 dict_label，构成白名单 Set
+            com.ruoyi.common.core.domain.R<List<SysDictData>> dictResult =
+                    remoteDictService.getDictDataByType("vehicle_attribute");
+            if (dictResult == null || dictResult.getData() == null) {
+                log.warn("filterJsonByVehicleAttribute: 获取 vehicle_attribute 字典失败，跳过过滤，返回原始 JSON");
+                return json;
+            }
+            Set<String> allowedKeys = dictResult.getData().stream()
+                    .map(SysDictData::getDictLabel)
+                    .filter(StringUtils::isNotBlank)
+                    .collect(Collectors.toSet());
+
+            // 2. 解析 JSON，删除不在白名单中的顶层键
+            Map<String, Object> jsonMap = objectMapper.readValue(
+                    json,
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+
+            jsonMap.keySet().retainAll(allowedKeys);
+
+            // 3. 序列化回 JSON 字符串
+            return objectMapper.writeValueAsString(jsonMap);
+        } catch (Exception e) {
+            log.error("filterJsonByVehicleAttribute: JSON 过滤异常，返回原始 JSON", e);
+            return json;
+        }
+    }
+
     private String getCellStringValue(Cell cell) {
         if (cell == null) return "";
         switch (cell.getCellType()) {
@@ -1023,7 +1063,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 // 根据字段名进行替换
                 switch (fieldName) {
                     case "RollingResistanceClass":
-                        List<SysDictData> tireResistanceGradeData = remoteDictService.getDictDataByType("tire_resistance_grade").getData();
+                        List<SysDictData> tireResistanceGradeData = remoteDictService.getDictDataByType("rolling_resistance_class").getData();
                         Map<String, String> tireResistanceGradeMap = tireResistanceGradeData.stream()
                                 .collect(Collectors.toMap(SysDictData::getDictLabel, SysDictData::getDictValue, (a, b) -> a));
                         if (material.getTireResistanceGrade() != null) {
