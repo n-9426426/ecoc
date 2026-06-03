@@ -665,7 +665,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 if (StringUtils.isBlank(template.getWvtaCocNo()))     missingFields.add("WVTA-COC No.");
                 if (StringUtils.isBlank(template.getVersion()))       missingFields.add("Version");
                 if (StringUtils.isBlank(template.getVehicleType()))   missingFields.add("Vehicle category");
-                if (template.getOverdueDate() == null)                missingFields.add("Effective date");
+                if (template.getEffectiveDate() == null)              missingFields.add("Effective date");
 
                 if (!missingFields.isEmpty()) {
                     failCount++;
