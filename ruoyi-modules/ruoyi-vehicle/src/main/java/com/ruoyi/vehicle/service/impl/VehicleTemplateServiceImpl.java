@@ -215,9 +215,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                             for (String key : jsonMap.keySet()) {
                                 SysDictData dictData = dictLabelMap.get(key);
                                 Map<String, String> labels = new HashMap<>();
-                                labels.put("otherLabel",       dictData != null ? dictData.getOtherLabel()       : null);
-                                labels.put("otherLabelSystem", dictData != null ? dictData.getOtherLabelSystem() : null);
                                 labels.put("cocOrder", dictData != null ? dictData.getCocOrder() : null);
+                                labels.put("originalSystemConnection", dictData != null ? dictData.getOriginalSystemConnection() : null);
+                                labels.put("valueConnection", dictData != null ? dictData.getValueConnection() : null);
                                 jsonDictMap.put(key, labels);
                             }
                             template.setOtherSystem(jsonDictMap);
@@ -721,7 +721,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                     template.setCreateTime(DateUtils.getNowDate());
 
                     String mappedJson = jsonConvertFromTemplateJson(template.getJson());
-                    template.setJson(mappedJson);
+                    template.setJson(filterJsonByVehicleAttribute(mappedJson));
                     Map<String, String> jsonMap = JSONObject.parseObject(
                             mappedJson, new TypeReference<Map<String, String>>() {});
                     template.setTvv(jsonMap.get("Type") + "," + jsonMap.get("Variant") + "," + jsonMap.get("Version"));
@@ -1154,6 +1154,45 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
         converted = "N/A".equals(converted) ? "" : converted;
         return converted;
+    }
+
+    /**
+     * 过滤 JSON 字符串，只保留 sys_data 中 dict_type='vehicle_attribute' 的 dict_label 所对应的键，
+     * 其余顶层键一律删除。
+     *
+     * @param json 原始 JSON 字符串（来自 VehicleTemplate）
+     * @return 过滤后的 JSON 字符串；若获取字典失败或 JSON 解析失败则返回原始 json
+     */
+    private String filterJsonByVehicleAttribute(String json) {
+        if (StringUtils.isBlank(json)) {
+            return json;
+        }
+        try {
+            // 1. 从远程字典服务获取 vehicle_attribute 的所有 dict_label，构成白名单 Set
+            com.ruoyi.common.core.domain.R<List<SysDictData>> dictResult =
+                    remoteDictService.getDictDataByType("vehicle_attribute");
+            if (dictResult == null || dictResult.getData() == null) {
+                log.warn("filterJsonByVehicleAttribute: 获取 vehicle_attribute 字典失败，跳过过滤，返回原始 JSON");
+                return json;
+            }
+            Set<String> allowedKeys = dictResult.getData().stream()
+                    .map(SysDictData::getDictLabel)
+                    .filter(StringUtils::isNotBlank)
+                    .collect(Collectors.toSet());
+
+            // 2. 解析 JSON，删除不在白名单中的顶层键
+            Map<String, Object> jsonMap = objectMapper.readValue(
+                    json,
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+
+            jsonMap.keySet().retainAll(allowedKeys);
+
+            // 3. 序列化回 JSON 字符串
+            return objectMapper.writeValueAsString(jsonMap);
+        } catch (Exception e) {
+            log.error("filterJsonByVehicleAttribute: JSON 过滤异常，返回原始 JSON", e);
+            return json;
+        }
     }
 }
 

@@ -145,9 +145,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                         for (String key : jsonMap.keySet()) {
                             SysDictData dictData = dictLabelMap.get(key);
                             Map<String, String> labels = new HashMap<>();
-                            labels.put("otherLabel",       dictData != null ? dictData.getOtherLabel()       : null);
-                            labels.put("otherLabelSystem", dictData != null ? dictData.getOtherLabelSystem() : null);
                             labels.put("cocOrder", dictData != null ? dictData.getCocOrder() : null);
+                            labels.put("originalSystemConnection", dictData != null ? dictData.getOriginalSystemConnection() : null);
+                            labels.put("valueConnection", dictData != null ? dictData.getValueConnection() : null);
                             jsonDictMap.put(key, labels);
                         }
                         vehicle.setOtherSystem(jsonDictMap);
