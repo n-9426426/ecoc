@@ -67,7 +67,7 @@
             and version = #{version}
         </if>
         <if test="tvv != null and tvv != ''" >
-            and REPLACE(tvv, ',', '') like concat('%', #{tvv}, '%'}
+            and REPLACE(tvv, ',', '') like concat('%', #{tvv}, '%')
         </if>
         <if test="modelNo != null and modelNo != ''">
             AND model_no LIKE CONCAT('%', #{modelNo}, '%')
@@ -88,7 +88,7 @@
             and overdue_date &lt;= #{overdueDateEnd}
         </if>
         <if test="remark != null and remark != ''">
-            and remark like concat('%', #{remark}, '%'}
+            and remark like concat('%', #{remark}, '%')
         </if>
         <if test="status != null and status != ''">
             AND status = #{status}

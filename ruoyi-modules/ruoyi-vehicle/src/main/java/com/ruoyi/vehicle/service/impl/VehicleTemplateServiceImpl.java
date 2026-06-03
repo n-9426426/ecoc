@@ -1108,6 +1108,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
                 if (headerRow != null) {
                     for (Cell cell : headerRow) {
+                        if (cell.getColumnIndex() < 13) continue;
                         String header = formatter.formatCellValue(cell);
                         if (!header.isEmpty()) {
                             params.put(header, null);
@@ -1119,7 +1120,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         } catch (IOException e) {
             throw new RuntimeException("读取 Excel 模板文件失败: " + filePath, e);
         }
-
         return params;
     }
 

@@ -1504,9 +1504,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 buildUnprocessedNodes(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, rootAttrPath);
             }
 
-
-
-// 13. 移除空结构节点
+            // 13. 移除空结构节点
             removeEmptyStructNodes(root, attrList, dictCodeMap);
 
             // 14. 生成XML字符串（不输出 <?xml ...?> 声明头）
@@ -2756,7 +2754,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
      */
     private XmlTemplate matchTemplate(VehicleInfo vehicle) {
         List<XmlTemplate> templates = xmlTemplateMapper.selectTemplateAll();
-        if (templates == null || templates.isEmpty()) return null;
+        if (templates.isEmpty()) return null;
 
         for (XmlTemplate template : templates) {
             if (!Objects.equals(template.getModelDictCode(), vehicle.getVehicleModel())) {

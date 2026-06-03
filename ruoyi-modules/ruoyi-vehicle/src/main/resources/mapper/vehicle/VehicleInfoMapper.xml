@@ -65,7 +65,7 @@
 			   vi.upload_status, vi.validation_result, vi.status, country, vi.color, vi.secondary_color, vi.temp_version,
 			   vi.certificate_version, vi.wvta_no, vi.manufacture_date, vi.issue_date, vi.json, vi.xml_template_id, vi.vehicle_template_id,
 			   vi.deleted, vi.create_by, vi.create_time, vi.update_by, vi.update_time, vi.remark, vi.validation_report_json, vt.version as version,
-			   vi.engine_number, vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire, vi.battery_number, vt.tvv, vi.breakpoint_time,
+			   vi.engine_number, vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire, vi.battery_number, vi.tvv, vi.breakpoint_time,
 			   sdd.dict_label as vehicle_model_str, vt.filepath as vehicle_template_filepath, vt.coc_template_no as coc_template_no,
 			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade,   vi.first_material_flag,
 			   vi.first_template_flag, vi.material_confirmed_by, vi.material_confirmed_time, vi.template_confirmed_by,
@@ -100,7 +100,7 @@
 				and vt.coc_template_no like CONCAT('%', #{cocTemplateNo}, '%')
 			</if>
 			<if test="tvv != null and tvv != ''">
-				and vt.tvv like concat('%', #{tvv}, '%')
+				and vi.tvv like concat('%', #{tvv}, '%')
 			</if>
 			<if test="materialNoList != null and materialNoList.size() > 0">
 				AND (
@@ -610,8 +610,8 @@
 
 	<!--
         首台车待确认列表（物料号维度 / 模版维度统一查询）
-        dimension = 'material' : first_material_flag=1 AND generate_affirm=0
-        dimension = 'template' : first_template_flag=1 AND upload_affirm=0
+        dimension = 'material' : first_material_flag=0 AND generate_affirm=0
+        dimension = 'template' : first_template_flag=0 AND upload_affirm=0
 
         其余字段复用 vehicleInfo 对象的查询条件，与 selectVehicleInfoList 保持一致
     -->
@@ -623,11 +623,11 @@
 			<!-- 维度过滤 -->
 			<choose>
 				<when test="dimension == 'material'">
-					AND vi.first_material_flag = 1
+					AND vi.first_material_flag = 0
 					AND vi.generate_affirm = 0
 				</when>
 				<when test="dimension == 'template'">
-					AND vi.first_template_flag = 1
+					AND vi.first_template_flag = 0
 					AND vi.upload_affirm = 0
 				</when>
 			</choose>
