@@ -1,7 +1,9 @@
 package com.ruoyi.common.core.executor;
 
 import com.ruoyi.common.core.enums.CompareOperator;
+import com.ruoyi.common.core.enums.RuleItemType;
 import com.ruoyi.common.core.model.*;
+import com.ruoyi.common.core.parser.FinalRuleParser;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -13,17 +15,37 @@ import java.util.regex.Pattern;
 /**
  * 规则执行器
  * 负责对单个字段执行所有 RuleItem 校验，返回 FieldValidationResult
+ *
+ * <h3>多值字段支持</h3>
+ * <p>对于 rangeRule 产生的范围类规则（NUMERIC_RANGE / LENGTH_RANGE / MAX_LENGTH /
+ * MIN_LENGTH / TOTAL_DIGITS / FRACTION_DIGITS），若字段值包含 {@code ;} 或 {@code |}
+ * 分隔符，则先通过 {@link FinalRuleParser#splitMultiValue(String)} 拆分为子值列表，
+ * 再对每个子值独立执行校验。违规报告中会明确标注是哪个子值（以及原始完整值）不符合规则。
+ *
+ * <p>非范围类规则（如 VALUE_IN、VALUE_REGEX 等）不做拆分，仍以原始完整值参与校验。
  */
 public class FinalRuleExecutor {
+
+    /**
+     * 范围类规则类型集合，这些规则需要对多值字段逐个子值校验
+     */
+    private static final java.util.Set<RuleItemType> RANGE_RULE_TYPES = java.util.EnumSet.of(
+            RuleItemType.NUMERIC_RANGE,
+            RuleItemType.LENGTH_RANGE,
+            RuleItemType.MAX_LENGTH,
+            RuleItemType.MIN_LENGTH,
+            RuleItemType.TOTAL_DIGITS,
+            RuleItemType.FRACTION_DIGITS
+    );
 
     /**
      * 执行字段校验
      *
      * @param fieldName   字段名
-     * @param actualValue 字段实际值
+     * @param actualValue 字段实际值（多值字段可含 | 或 ; 分隔符）
      * @param rules       规则列表（由 FinalRuleParser 解析）
      * @param context     当前报文上下文（key=字段名, value=字段值）
-     * @return FieldValidationResult
+     * @return FieldValidationResult，含所有子值违规明细
      */
     public static FieldValidationResult execute(
             String fieldName,
@@ -34,9 +56,33 @@ public class FinalRuleExecutor {
         List<RuleViolation> violations = new ArrayList<>();
 
         for (RuleItem rule : rules) {
-            RuleViolation violation = checkRule(fieldName, actualValue, rule, context);
-            if (violation != null) {
-                violations.add(violation);
+            if (RANGE_RULE_TYPES.contains(rule.getType()) && !isAbsent(actualValue)) {
+                // ---- 范围类规则：拆分多值逐一校验 ----
+                String rawStr = String.valueOf(actualValue);
+                String[] parts = FinalRuleParser.splitMultiValue(rawStr);
+
+                if (parts.length > 1) {
+                    // 真正的多值字段：对每个子值单独校验
+                    for (String part : parts) {
+                        RuleViolation v = checkRule(fieldName, part, rule, context);
+                        if (v != null) {
+                            // 在 violation 中补充"哪个子值 / 原始完整值"信息
+                            violations.add(enrichWithSubValue(v, part, rawStr));
+                        }
+                    }
+                } else {
+                    // 单值字段：走原有逻辑
+                    RuleViolation v = checkRule(fieldName, actualValue, rule, context);
+                    if (v != null) {
+                        violations.add(v);
+                    }
+                }
+            } else {
+                // ---- 非范围类规则：原有逻辑，整体值参与校验 ----
+                RuleViolation violation = checkRule(fieldName, actualValue, rule, context);
+                if (violation != null) {
+                    violations.add(violation);
+                }
             }
         }
 
@@ -45,6 +91,39 @@ public class FinalRuleExecutor {
                 .value(actualValue)
                 .valid(violations.isEmpty())
                 .violations(violations)
+                .build();
+    }
+
+    /**
+     * 对子值校验产生的违规报告进行二次加工，在消息中注明具体子值及原始完整值。
+     *
+     * <p>例如：原始值为 {@code "1.23;456.789;0.1"}，其中子值 {@code "456.789"} 不符合
+     * totalDigits=5 限制，则：
+     * <ul>
+     *   <li>messageEn → "… [sub-value='456.789', raw='1.23;456.789;0.1']"</li>
+     *   <li>messageZh → "… [子值='456.789'，原始值='1.23;456.789;0.1']"</li>
+     * </ul>
+     *
+     * @param original 原始违规对象
+     * @param subValue 不符合规则的子值
+     * @param rawValue 字段的原始完整值
+     * @return 消息已补充子值信息的新违规对象
+     */
+    private static RuleViolation enrichWithSubValue(
+            RuleViolation original, String subValue, String rawValue) {
+
+        String suffixEn = " [sub-value='" + subValue + "', raw='" + rawValue + "']";
+        String suffixZh = " [子值='" + subValue + "'，原始值='" + rawValue + "']";
+
+        return RuleViolation.builder()
+                .ruleId(original.getRuleId())
+                .fieldName(original.getFieldName())
+                .actualValue(original.getActualValue())   // 保留子值作为 actualValue（已由 checkRule 设置）
+                .messageEn(original.getMessageEn() + suffixEn)
+                .messageZh(original.getMessageZh() + suffixZh)
+                .rawRule(original.getRawRule())
+                .ruleType(original.getRuleType())
+                .ruleTypeLabel(original.getRuleTypeLabel())
                 .build();
     }
 
@@ -359,7 +438,6 @@ public class FinalRuleExecutor {
                 }
                 break;
             default:
-                // 未知嵌套操作符：封装为报告，不打 log
                 return buildViolation(rule, fieldName, actualValue,
                         "Unknown nested condition operator: " + nested.getOperator(),
                         "嵌套条件未知操作符: " + nested.getOperator());
@@ -371,15 +449,6 @@ public class FinalRuleExecutor {
     // 列表连续编号校验
     // ==========================================
 
-    /**
-     * VALUE_IS_NUMBERED：校验列表中当前字段的值必须从 1 开始连续编号（1, 2, 3 … N），不允许重复或跳号。
-     *
-     * <p>上下文约定：context 中以 listFieldName 为 key 存放 {@code List<Map<String,Object>>}，
-     * 每个 Map 对应列表中的一行，其中以校验字段名（fieldName）为 key 存放该行的序号值。
-     *
-     * <p>示例规则：{@code ManufacturerTable=>VALUE IS NUMBERED}
-     * 对应 context key = "ManufacturerTable"，每行 Map 包含 "ManufacturerStageNumber" 字段。
-     */
     private static RuleViolation checkValueIsNumbered(
             String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
 
@@ -392,7 +461,6 @@ public class FinalRuleExecutor {
 
         Object listObj = context.get(listField);
         if (!(listObj instanceof List)) {
-            // 列表不存在或为空时跳过校验（存在性由其他规则保证）
             return null;
         }
 
@@ -401,7 +469,6 @@ public class FinalRuleExecutor {
             return null;
         }
 
-        // 收集列表中每行的序号值
         java.util.List<Integer> numbers = new java.util.ArrayList<>();
         for (Object item : list) {
             if (!(item instanceof Map)) continue;
@@ -422,7 +489,6 @@ public class FinalRuleExecutor {
             }
         }
 
-        // 排序后校验是否从 1 开始连续
         java.util.Collections.sort(numbers);
         for (int i = 0; i < numbers.size(); i++) {
             int expected = i + 1;
@@ -440,14 +506,6 @@ public class FinalRuleExecutor {
     // 跨字段值比较校验
     // ==========================================
 
-    /**
-     * VALUE_FIELD_COMPARE：将当前字段值与 context 中另一字段做数值比较。
-     *
-     * <p>示例规则：{@code VALUE != @Version}、{@code VALUE < @TechnicallyPermissibleMaximumLadenMass}
-     *
-     * <p>仅支持数值比较（=, !=, >, <, >=, <=）。若任一侧无法转换为数字则降级为字符串
-     * EQ/NEQ 比较；其他运算符降级失败时返回违规。
-     */
     private static RuleViolation checkValueFieldCompare(
             String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
 
@@ -459,8 +517,6 @@ public class FinalRuleExecutor {
         }
 
         Object targetValue = context.get(targetField);
-
-        // 目标字段为空时跳过（由其他规则保证目标字段必填）
         if (isAbsent(targetValue)) {
             return null;
         }
@@ -474,7 +530,6 @@ public class FinalRuleExecutor {
                     "VALUE_FIELD_COMPARE 未知运算符: " + rule.getOperator());
         }
 
-        // 优先尝试数值比较
         try {
             double actual = toDouble(actualValue);
             double target = toDouble(targetValue);
@@ -487,7 +542,6 @@ public class FinalRuleExecutor {
             }
             return null;
         } catch (Exception e) {
-            // 数值转换失败，降级字符串 EQ/NEQ
             String actualStr = actualValue == null ? null : actualValue.toString();
             String targetStr = targetValue.toString();
             boolean result;
@@ -514,15 +568,6 @@ public class FinalRuleExecutor {
     // COUNT_AS_VALUE / LIST_COUNT 聚合校验
     // ==========================================
 
-    /**
-     * COUNT_AS_VALUE：列表中满足 (field IN [enumValues]) 条件的行数必须等于当前字段值。
-     *
-     * <p>规则格式：{@code COUNT(@listField, @condField IN [vals]) = VALUE}
-     * <p>用途：[103]-[106] NumberOfAxles* 类字段
-     *
-     * <p>上下文约定：context 以 listField 为 key 存放 {@code List<Map<String,Object>>}，
-     * 每行 Map 包含 condField 字段。
-     */
     private static RuleViolation checkCountAsValue(
             String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
 
@@ -535,7 +580,6 @@ public class FinalRuleExecutor {
 
         Object listObj = context.get(af.getListField());
         if (!(listObj instanceof List)) {
-            // 列表不存在时跳过（存在性由其他规则保证）
             return null;
         }
 
@@ -551,7 +595,6 @@ public class FinalRuleExecutor {
                     Object val = row.get(condField);
                     if (val == null) return false;
                     String strVal = val.toString();
-                    // 支持枚举白名单匹配（allowed 为 null 时统计所有行）
                     return allowed == null || allowed.contains(strVal);
                 })
                 .count();
@@ -567,15 +610,6 @@ public class FinalRuleExecutor {
         return null;
     }
 
-    /**
-     * LIST_COUNT：在列表上下文中，当前字段值在白名单内的行数必须满足阈值条件。
-     *
-     * <p>规则格式：{@code @TableName=>COUNT(VALUE IN [vals]) op N}
-     * <p>用途：[233] TyreFittedProductionIndicator
-     *
-     * <p>上下文约定：context 以 listField 为 key 存放 {@code List<Map<String,Object>>}，
-     * 每行 Map 包含以 fieldName 为 key 的本字段值。
-     */
     private static RuleViolation checkListCount(
             String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
 
@@ -619,15 +653,9 @@ public class FinalRuleExecutor {
     }
 
     // ==========================================
-    // 条件型规则（A/B/C）
+    // 条件型规则（CONDITIONAL_*）
     // ==========================================
 
-    /**
-     * CONDITIONAL_REGEX：条件满足时对 VALUE 做正则校验。
-     *
-     * <p>规则格式：{@code VALUE = /regex/ IF ALL <conditions>}
-     * <p>用途：[463] TestFamilyIdentifierValue
-     */
     private static RuleViolation checkConditionalRegex(
             String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
 
@@ -636,7 +664,7 @@ public class FinalRuleExecutor {
             return null;
         }
         if (isAbsent(actualValue)) {
-            return null; // 存在性由其他规则保证
+            return null;
         }
         String strVal = String.valueOf(actualValue);
         String pattern = rule.getRegexPattern();
@@ -648,12 +676,6 @@ public class FinalRuleExecutor {
         return null;
     }
 
-    /**
-     * CONDITIONAL_VALUE_COMPARE：条件满足时对 VALUE 做数值比较。
-     *
-     * <p>规则格式：{@code VALUE op N IF ALL <conditions>}
-     * <p>用途：[127][130][129][132][133] Length/Width/Height 系列
-     */
     private static RuleViolation checkConditionalValueCompare(
             String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
 
@@ -674,12 +696,6 @@ public class FinalRuleExecutor {
         return null;
     }
 
-    /**
-     * CONDITIONAL_FIELD_COMPARE：条件满足时将 VALUE 与另一字段做比较。
-     *
-     * <p>规则格式：{@code VALUE op @fieldName IF ALL <conditions>}
-     * <p>用途：[90] PreviousStageVersion
-     */
     private static RuleViolation checkConditionalFieldCompare(
             String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
 
@@ -697,7 +713,7 @@ public class FinalRuleExecutor {
 
         Object targetValue = context.get(targetField);
         if (isAbsent(targetValue)) {
-            return null; // 目标字段为空时跳过
+            return null;
         }
 
         CompareOperator op;
@@ -744,23 +760,14 @@ public class FinalRuleExecutor {
     }
 
     // ==========================================
-    // 列表成员检查 / 唯一性校验（D/E）
+    // 列表成员检查 / 唯一性校验
     // ==========================================
 
-    /**
-     * VALUE_IN_LIST_FIELD：当前字段值必须等于某列表中任意一行的指定字段值。
-     *
-     * <p>规则格式：{@code VALUE = ANY @listField.fieldName}
-     * <p>用途：[169] MechanicalCouplingNumberVerticalMass, [242] AxleNumberCombination
-     *
-     * <p>上下文约定：context 以 listField 为 key 存放 {@code List<Map<String,Object>>}，
-     * 每行 Map 以 compareValue（fieldName）为 key 存放目标值。
-     */
     private static RuleViolation checkValueInListField(
             String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
 
         if (isAbsent(actualValue)) {
-            return null; // 存在性由其他规则保证
+            return null;
         }
 
         String listField = rule.getRefFieldName();
@@ -774,7 +781,7 @@ public class FinalRuleExecutor {
 
         Object listObj = context.get(listField);
         if (!(listObj instanceof List)) {
-            return null; // 列表不存在时跳过
+            return null;
         }
 
         String actualStr = String.valueOf(actualValue);
@@ -797,15 +804,6 @@ public class FinalRuleExecutor {
         return null;
     }
 
-    /**
-     * LIST_UNIQUE：列表中当前字段的值必须全部唯一，不允许重复。
-     *
-     * <p>规则格式：{@code @TableName=>VALUE IS UNIQUE}
-     * <p>用途：[252] Colour
-     *
-     * <p>上下文约定：context 以 listField 为 key 存放 {@code List<Map<String,Object>>}，
-     * 每行 Map 以 fieldName 为 key 存放本字段值。
-     */
     private static RuleViolation checkListUnique(
             String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
 
@@ -848,7 +846,7 @@ public class FinalRuleExecutor {
     }
 
     // ==========================================
-    // 范围校验
+    // 范围校验（供 checkRule 分发调用，也供多值拆分后子值校验使用）
     // ==========================================
 
     private static RuleViolation checkNumericRange(String fieldName, Object actualValue, RuleItem rule) {

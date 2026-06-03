@@ -7,9 +7,10 @@ import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
 import com.ruoyi.vehicle.domain.vo.VehicleJsonKeyVo;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.multipart.MultipartFile;
+import reactor.core.publisher.Flux;
 
-import java.io.IOException;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -87,7 +88,9 @@ public interface IVehicleInfoService {
 
     VehicleInfo selectVehicleInfoByVin(String vin);
 
-    void importVehicleInfoFromExcel(MultipartFile file) throws IOException;
+    String submitImportTask(MultipartFile file);
+
+    Flux<ServerSentEvent<String>> getImportFlux(String taskId);
 
     /**
      * 批量修改关联模版（只允许同一整车物料号下的车辆）

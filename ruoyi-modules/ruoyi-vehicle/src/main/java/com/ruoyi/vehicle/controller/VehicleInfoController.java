@@ -34,8 +34,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import reactor.core.publisher.Flux;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -237,14 +240,20 @@ public class VehicleInfoController extends BaseController {
     }
 
     @RequiresPermissions("vehicle:info:import")
-    @PostMapping("/upload/excel")
-    public R<Void> importExcel(@RequestParam("file") MultipartFile file) throws Exception {
+    @PostMapping("/import/excel")
+    public R<String> importExcel(@RequestParam("file") MultipartFile file) {
         if (file.isEmpty()) {
             return R.fail("上传文件不能为空");
         }
-        vehicleInfoService.importVehicleInfoFromExcel(file);
-        return R.ok();
+        String taskId = vehicleInfoService.submitImportTask(file);
+        return R.ok(taskId);
     }
+
+    @GetMapping(value = "/import/excel/{taskId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> importFlux(@PathVariable("taskId") String taskId) {
+        return vehicleInfoService.getImportFlux(taskId);
+    }
+
 
     @RequiresPermissions("vehicle:info:export")
     @PostMapping("/export/excel")

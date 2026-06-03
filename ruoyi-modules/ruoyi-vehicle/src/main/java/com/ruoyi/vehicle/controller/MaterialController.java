@@ -14,8 +14,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import reactor.core.publisher.Flux;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -93,17 +96,34 @@ public class MaterialController extends BaseController {
         return toAjax(materialService.deleteMaterialByIds(ids));
     }
 
+    /**
+     * 提交物料 Excel 导入任务，立即返回 taskId。
+     * 前端拿到 taskId 后，连接 /import/{taskId} 订阅进度。
+     *
+     * @param file          上传的 Excel 文件
+     * @param updateSupport 是否允许覆盖已存在的物料号（true=覆盖，false=跳过）
+     */
+    @RequiresPermissions("vehicle:material:import")
     @PostMapping("/import")
-    public AjaxResult importData(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "updateSupport", defaultValue = "false") boolean updateSupport) {
-        try {
-            String message = materialService.importMaterial(file, updateSupport);
-            return AjaxResult.success(message);
-        } catch (Exception e) {
-            log.error("物料号导入失败：{}", e.getMessage(), e);
-            return AjaxResult.error("导入失败：" + e.getMessage());
+    public AjaxResult importMaterial(@RequestParam("file") MultipartFile file,
+                                    @RequestParam(value = "updateSupport", defaultValue = "false") boolean updateSupport) {
+        if (file.isEmpty()) {
+            return AjaxResult.error("上传文件不能为空");
         }
+        String taskId = materialService.submitImportTask(file, updateSupport);
+        return AjaxResult.success(taskId);
+    }
+
+    /**
+     * 通过 SSE 实时订阅物料导入进度。
+     * 事件类型：
+     *   progress → {"row":N,"total":T,"status":"success"/"update"/"skip"/"fail","reason":"..."}
+     *   complete → {"successCount":N,"updateCount":U,"skipCount":S,"failCount":F,"errorDetails":["..."]}
+     *   error    → {"message":"..."}
+     */
+    @GetMapping(value = "/import/{taskId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> importFlux(@PathVariable("taskId") String taskId) {
+        return materialService.getImportFlux(taskId);
     }
 
     @GetMapping("/download/template")

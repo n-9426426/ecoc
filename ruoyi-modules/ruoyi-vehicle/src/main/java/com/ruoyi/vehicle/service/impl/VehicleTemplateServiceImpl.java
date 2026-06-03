@@ -625,13 +625,20 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             // ===================== 新增：导入前预校验非配置列头 =====================
             // ExcelUtil 会把未在 excel_column_config 中配置的列头写入每行的 json 字段，
             // 取第一行的 json key 集合作为"额外列头"代表（所有行一致）
+            // 加载需要跳过校验的列头白名单（dict_type='excel_skip_column' 的所有 dict_value）
+            Set<String> skipHeaders = remoteDictService
+                    .getDictDataByType("excel_skip_column").getData().stream()
+                    .map(SysDictData::getDictValue)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
             if (!vehicleTemplates.isEmpty()) {
                 String firstJson = vehicleTemplates.get(0).getJson();
                 if (firstJson != null && !firstJson.trim().isEmpty()) {
                     Map<String, String> firstJsonMap = JSONObject.parseObject(
                             firstJson, new TypeReference<Map<String, String>>() {});
                     List<String> unmappedHeaders = firstJsonMap.keySet().stream()
-                            .filter(header -> !keyMapToLabelMap.containsKey(header))
+                            .filter(header -> !skipHeaders.contains(header))        // 白名单内直接跳过
+                            .filter(header -> !keyMapToLabelMap.containsKey(header)) // 再校验是否有映射
                             .collect(Collectors.toList());
                     if (!unmappedHeaders.isEmpty()) {
                         String errorMsg = "导入终止：以下列头在 数据字段 中未找到映射关系，请补充配置后重试："
@@ -652,6 +659,23 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             for (int i = 0; i < total; i++) {
                 VehicleTemplate template = vehicleTemplates.get(i);
                 int rowNum = i + 2;
+
+                List<String> missingFields = new ArrayList<>();
+                if (StringUtils.isBlank(template.getCocTemplateNo())) missingFields.add("COC Template No.");
+                if (StringUtils.isBlank(template.getWvtaCocNo()))     missingFields.add("WVTA-COC No.");
+                if (StringUtils.isBlank(template.getVersion()))       missingFields.add("Version");
+                if (StringUtils.isBlank(template.getVehicleType()))   missingFields.add("Vehicle category");
+                if (template.getOverdueDate() == null)                missingFields.add("Effective date");
+
+                if (!missingFields.isEmpty()) {
+                    failCount++;
+                    String reason = String.join("、", missingFields) + " 不能为空";
+                    errorDetails.add("第" + rowNum + "行：" + reason);
+                    pushEvent(sink, "progress", String.format(
+                            "{\"row\":%d,\"total\":%d,\"status\":\"fail\",\"reason\":\"%s\"}",
+                            rowNum, total, escapeJson(reason)));
+                    continue;
+                }
 
                 try {
                     String vehicleType = template.getVehicleType();

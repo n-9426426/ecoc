@@ -40,13 +40,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 
-import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service("vehicleInfoService")
@@ -99,6 +103,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     private VehicleInfoServiceImpl self;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    /** SSE sink 注册表，taskId -> sink，与 VehicleTemplate 保持一致 */
+    private final Map<String, Sinks.Many<ServerSentEvent<String>>> sinks = new ConcurrentHashMap<>();
 
     /**
      * 查询车辆信息
@@ -576,83 +583,188 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     }
 
     /**
-     * Excel 导入入口：无大事务，每行通过 self.insertSingleVehicleInfoRow() 独立提交，
-     * 避免多线程并发批量导入时产生死锁。
+     * Excel 导入入口（异步 SSE 模式）：
+     * 提交任务后立即返回 taskId，前端通过 getImportFlux 订阅进度推送，
+     * 与 VehicleTemplate 的导入反馈机制保持一致。
      */
     @Override
-    public void importVehicleInfoFromExcel(MultipartFile file) throws IOException {
+    public String submitImportTask(MultipartFile file) {
+        String taskId = com.ruoyi.common.core.utils.uuid.UUID.randomUUID().toString();
+        Sinks.Many<ServerSentEvent<String>> sink = Sinks.many().unicast().onBackpressureBuffer();
+        sinks.put(taskId, sink);
+
+        // 在请求线程提前读取文件内容和用户信息，避免异步线程中上下文丢失
+        byte[] fileBytes;
+        try {
+            fileBytes = file.getBytes();
+        } catch (Exception e) {
+            sinks.remove(taskId);
+            throw new com.ruoyi.common.core.exception.ServiceException("文件读取失败: " + e.getMessage());
+        }
+        String currentUser = SecurityUtils.getUsername();
         String lang = excelUtil.resolveCurrentLang();
 
-        List<VehicleInfo> vehicleInfoList;
+        CompletableFuture.runAsync(() -> doImportVehicleInfo(taskId, fileBytes, currentUser, lang));
+        return taskId;
+    }
+
+    /**
+     * 订阅导入进度 SSE 流。
+     */
+    @Override
+    public Flux<ServerSentEvent<String>> getImportFlux(String taskId) {
+        Sinks.Many<ServerSentEvent<String>> sink = sinks.get(taskId);
+        if (sink == null) {
+            return Flux.just(ServerSentEvent.<String>builder()
+                    .event("error")
+                    .data("{\"message\":\"任务不存在或已过期\"}")
+                    .build());
+        }
+        return sink.asFlux()
+                .doOnCancel(() -> {
+                    log.info("客户端断开连接, taskId={}", taskId);
+                    sinks.remove(taskId);
+                })
+                .doOnComplete(() -> {
+                    log.info("SSE 完成, taskId={}", taskId);
+                    sinks.remove(taskId);
+                });
+    }
+
+    /**
+     * 实际导入逻辑，在异步线程中执行。
+     * 每行独立事务（REQUIRES_NEW）：锁及时释放，避免大事务死锁。
+     * 逐行通过 SSE 推送 progress/complete/error 事件，与 VehicleTemplate 保持一致。
+     */
+    private void doImportVehicleInfo(String taskId, byte[] fileBytes, String createBy, String lang) {
+        Sinks.Many<ServerSentEvent<String>> sink = sinks.get(taskId);
+        if (sink == null) return;
+
+        int successCount = 0;
+        int failCount = 0;
+        List<String> errorDetails = new ArrayList<>();
+        List<VehicleInfo> importedList = new ArrayList<>();
+
         try {
-            vehicleInfoList = excelUtil.importExcel(
-                    file.getInputStream(),
+            List<VehicleInfo> vehicleInfoList = excelUtil.importExcel(
+                    new java.io.ByteArrayInputStream(fileBytes),
                     "vehicle_info",
                     VehicleInfo.class,
                     lang,
                     2   // 跳过列头后的 2 行（原逻辑从 rowIndex=3 开始）
             );
-        } catch (Exception e) {
-            throw new RuntimeException("Excel 解析失败：" + e.getMessage(), e);
-        }
 
-        if (vehicleInfoList.isEmpty()) {
-            throw new RuntimeException("Excel中没有数据行");
-        }
-
-        List<String> errorMsgs = new ArrayList<>();
-        List<VehicleInfo> importedList = new ArrayList<>();
-
-        for (int i = 0; i < vehicleInfoList.size(); i++) {
-            int excelRowNum = i + 4;
-            VehicleInfo vehicleInfo = vehicleInfoList.get(i);
-
-            String vin = vehicleInfo.getVin();
-            if (StringUtils.isBlank(vin)) continue;
-
-            try {
-                VehicleInfo existing = vehicleInfoMapper.selectVehicleInfoByVin(vin);
-                if (existing != null) {
-                    errorMsgs.add("第" + excelRowNum + "行：VIN[" + vin + "]已存在，覆盖");
-                    vehicleInfoMapper.deleteVehicleInfoByIds(new Long[]{existing.getVehicleId()});
-                }
-
-                // 查物料
-                Material query = new Material();
-                query.setMaterialNo(vehicleInfo.getMaterialNo());
-                query.setStatus(0);
-                List<Material> materialList = materialMapper.selectMaterialList(query);
-                if (materialList.isEmpty()) {
-                    errorMsgs.add("第" + excelRowNum + "行：物料号[" + vehicleInfo.getMaterialNo() + "]无对应可用模板，跳过");
-                    continue;
-                }
-                Long templateId = materialList.get(0).getVehicleTemplateId();
-
-                // 查模板
-                VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(templateId);
-                if (template == null) {
-                    errorMsgs.add("第" + excelRowNum + "行：模板ID[" + templateId + "]不存在，跳过");
-                    continue;
-                }
-
-                // 每行独立事务插入，锁及时释放，避免大事务死锁
-                self.insertSingleVehicleInfoRow(vehicleInfo, template);
-                importedList.add(vehicleInfo);
-
-            } catch (Exception e) {
-                log.error("导入第{}行异常：{}", excelRowNum, e.getMessage(), e);
-                errorMsgs.add("第" + excelRowNum + "行：导入异常，" + e.getMessage());
+            if (vehicleInfoList.isEmpty()) {
+                pushEvent(sink, "error", "{\"message\":\"Excel中没有数据行\"}");
+                sink.tryEmitComplete();
+                sinks.remove(taskId);
+                return;
             }
+
+            int total = vehicleInfoList.size();
+
+            for (int i = 0; i < total; i++) {
+                int rowNum = i + 4; // 与原逻辑 excelRowNum 保持一致
+                VehicleInfo vehicleInfo = vehicleInfoList.get(i);
+                String vin = vehicleInfo.getVin();
+
+                List<String> missingFields = new ArrayList<>();
+                if (StringUtils.isBlank(vehicleInfo.getVin()))          missingFields.add("VIN");
+                if (StringUtils.isBlank(vehicleInfo.getMaterialNo()))   missingFields.add("Material No");
+                if (StringUtils.isBlank(vehicleInfo.getFactoryCode()))  missingFields.add("Factory Code");
+                if (StringUtils.isBlank(vehicleInfo.getColor()))        missingFields.add("Color");
+                if (StringUtils.isBlank(vehicleInfo.getCountry()))      missingFields.add("Country");
+                if (vehicleInfo.getManufactureDate() == null)           missingFields.add("Manufacture Date");
+                if (vehicleInfo.getIssueDate() == null)                 missingFields.add("Issue Date");
+
+                if (!missingFields.isEmpty()) {
+                    failCount++;
+                    String reason = String.join("、", missingFields) + " 不能为空";
+                    errorDetails.add("第" + rowNum + "行：" + reason);
+                    pushEvent(sink, "progress", String.format(
+                            "{\"row\":%d,\"total\":%d,\"status\":\"fail\",\"reason\":\"%s\"}",
+                            rowNum, total, escapeJson(reason)));
+                    continue;
+                }
+
+                try {
+                    // VIN 已存在则覆盖
+                    VehicleInfo existing = vehicleInfoMapper.selectVehicleInfoByVin(vin);
+                    if (existing != null) {
+                        deleteVehicleInfoByIds(new Long[]{existing.getVehicleId()});
+                        log.info("导入覆盖：VIN[{}] 原记录已删除", vin);
+                    }
+
+                    // 查物料
+                    Material query = new Material();
+                    query.setMaterialNo(vehicleInfo.getMaterialNo());
+                    query.setStatus(0);
+                    List<Material> materialList = materialMapper.selectMaterialList(query);
+                    if (!materialList.isEmpty()) {
+                        Long templateId = materialList.get(0).getVehicleTemplateId();
+
+                        // 查模板
+                        VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(templateId);
+                        if (template == null) {
+                            throw new IllegalArgumentException("模板ID[" + templateId + "]不存在");
+                        }
+
+                        vehicleInfo.setCreateBy(createBy);
+                        // 每行独立事务插入
+                        self.insertSingleVehicleInfoRow(vehicleInfo, template, materialList.get(0));
+                        importedList.add(vehicleInfo);
+                        successCount++;
+
+                        pushEvent(sink, "progress", String.format(
+                                "{\"row\":%d,\"total\":%d,\"status\":\"success\"}", rowNum, total));
+                    } else {
+                        vehicleInfo.setCreateBy(createBy);
+                        vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+                        importedList.add(vehicleInfo);
+                        successCount++;
+                        pushEvent(sink, "progress", String.format(
+                                "{\"row\":%d,\"total\":%d,\"status\":\"success\"}", rowNum, total));
+                    }
+                } catch (Exception rowEx) {
+                    failCount++;
+                    String errorMsg = String.format("第%d行: %s", rowNum, rowEx.getMessage());
+                    errorDetails.add(errorMsg);
+                    log.warn("导入第{}行失败: {}", rowNum, rowEx.getMessage());
+
+                    pushEvent(sink, "progress", String.format(
+                            "{\"row\":%d,\"total\":%d,\"status\":\"fail\",\"reason\":\"%s\"}",
+                            rowNum, total, escapeJson(rowEx.getMessage())));
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("文件导入失败, taskId={}", taskId, e);
+            pushEvent(sink, "error", String.format(
+                    "{\"message\":\"文件解析失败: %s\"}", escapeJson(e.getMessage())));
+            sink.tryEmitComplete();
+            sinks.remove(taskId);
+            return;
         }
 
         // 所有行处理完后，批量触发首台车打标
         if (!importedList.isEmpty()) {
-            firstVehicleCheckService.handleAfterInsert(importedList);
+            try {
+                firstVehicleCheckService.handleAfterInsert(importedList);
+            } catch (Exception e) {
+                log.error("首台车打标失败, taskId={}", taskId, e);
+            }
         }
 
-        if (!errorMsgs.isEmpty()) {
-            throw new RuntimeException("部分数据导入失败：\n" + String.join("\n", errorMsgs));
-        }
+        String detailJson = errorDetails.stream()
+                .map(s -> "\"" + escapeJson(s) + "\"")
+                .collect(Collectors.joining(",", "[", "]"));
+
+        pushEvent(sink, "complete", String.format(
+                "{\"successCount\":%d,\"failCount\":%d,\"errorDetails\":%s}",
+                successCount, failCount, detailJson));
+
+        sink.tryEmitComplete();
+        sinks.remove(taskId);
     }
 
     /**
@@ -660,7 +772,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
      * 与其他并发导入事务不形成循环等待，根治死锁问题。
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
-    public void insertSingleVehicleInfoRow(VehicleInfo vehicleInfo, VehicleTemplate template) {
+    public void insertSingleVehicleInfoRow(VehicleInfo vehicleInfo, VehicleTemplate template, Material material) {
         String vin = vehicleInfo.getVin();
 
         // 补充模板关联字段
@@ -669,6 +781,14 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
         // 只保留 vehicle_attribute 字典中 dict_label 对应的键，其余键删除
         vehicleInfo.setJson(filterJsonByVehicleAttribute(template.getJson()));
+        try {
+            JsonNode rootNode = objectMapper.readTree(vehicleInfo.getJson());
+            // 扁平化并替换字段值
+            replaceFieldValues(rootNode, material);
+            vehicleInfo.setJson(objectMapper.writeValueAsString(rootNode));
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("动态参数替换失败");
+        }
         vehicleInfo.setVehicleTemplateId(String.valueOf(template.getTemplateId()));
 
         // 补充系统字段
@@ -677,7 +797,11 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setDeleted(0);
         vehicleInfo.setGenerateAffirm(template.getGenerateAffirm());
         vehicleInfo.setUploadAffirm(template.getUploadAffirm());
-        vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null ? SecurityUtils.getUsername() : "MES To System");
+        // createBy 由调用方（doImportVehicleInfo/insertVehicleInfo）在请求线程设置，
+        // 此处异步线程 SecurityContext 可能已失效，兜底取已设置的值
+        if (StringUtils.isBlank(vehicleInfo.getCreateBy())) {
+            vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null ? SecurityUtils.getUsername() : "Import");
+        }
         vehicleInfo.setCreateTime(DateUtils.getNowDate());
 
         vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
@@ -975,6 +1099,27 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         return vehicleTemplateMapper.updateVehicleTemplateId(vin, templateId);
     }
 
+// ========== SSE 工具方法（与 VehicleTemplateServiceImpl 保持一致）==========
+
+    private void pushEvent(Sinks.Many<ServerSentEvent<String>> sink, String eventType, String data) {
+        Sinks.EmitResult result = sink.tryEmitNext(
+                ServerSentEvent.<String>builder()
+                        .event(eventType)
+                        .data(data)
+                        .build());
+        if (result.isFailure()) {
+            log.warn("SSE 推送失败, event={}, result={}", eventType, result);
+        }
+    }
+
+    private String escapeJson(String raw) {
+        if (raw == null) return "";
+        return raw.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+    }
+
 // ========== 工具方法 ==========
 
     /**
@@ -1067,7 +1212,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                         Map<String, String> tireResistanceGradeMap = tireResistanceGradeData.stream()
                                 .collect(Collectors.toMap(SysDictData::getDictLabel, SysDictData::getDictValue, (a, b) -> a));
                         if (material.getTireResistanceGrade() != null) {
-                            String tireResistanceGradeValue = tireResistanceGradeMap.get(material.getTireResistanceGrade());
+                            // 去掉单位：取数字部分（如 "5.96N/kN" -> "5.96"）
+                            String rawGrade = material.getTireResistanceGrade().replaceAll("[^\\d.].*$", "").trim();
+                            String tireResistanceGradeValue = tireResistanceGradeMap.get(rawGrade);
                             objectNode.put(fieldName, tireResistanceGradeValue != null ? tireResistanceGradeValue : fieldValue.asText());
                         }
                         break;
