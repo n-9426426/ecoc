@@ -79,12 +79,16 @@ public class MaterialServiceImpl implements IMaterialService {
      */
     @Override
     public int insertMaterial(Material material) {
+        LoginUser loginUser = SecurityUtils.getLoginUser();
+        return insertMaterial(material, loginUser.getUsername());
+    }
+
+    private int insertMaterial(Material material, String createBy) {
         Material existMaterial = materialMapper.selectByMaterialNo(material.getMaterialNo());
         if (existMaterial != null) {
             throw new RuntimeException("该物料号已经定义过版本，无法继续定义");
         }
-        LoginUser loginUser = SecurityUtils.getLoginUser();
-        material.setCreateBy(loginUser.getUsername());
+        material.setCreateBy(createBy);
         material.setCreateTime(new Date());
         material.setRemark(StringUtils.isBlank(material.getSwitchRemark()) ? null : material.getSwitchRemark());
         List<VehicleTemplate> templates = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(null,
@@ -291,7 +295,7 @@ public class MaterialServiceImpl implements IMaterialService {
 
                     if (existing == null) {
                         // 新增
-                        insertMaterial(material);
+                        insertMaterial(material, createBy);
                         successCount++;
                         pushEvent(sink, "progress", String.format(
                                 "{\"row\":%d,\"total\":%d,\"status\":\"success\"}", rowNum, total));
