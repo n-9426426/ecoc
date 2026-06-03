@@ -677,6 +677,20 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 if (vehicleInfo.getManufactureDate() == null)           missingFields.add("Manufacture Date");
                 if (vehicleInfo.getIssueDate() == null)                 missingFields.add("Issue Date");
 
+                Map<String, String> countryLabelToValueMap = remoteDictService
+                        .getDictDataByType("country")   // dict_type 替换为实际值
+                        .getData().stream()
+                        .collect(Collectors.toMap(
+                                SysDictData::getDictLabel,
+                                SysDictData::getDictValue,
+                                (k1, k2) -> k1));
+                String countryLabel = vehicleInfo.getCountry();
+                String countryValue = countryLabelToValueMap.get(countryLabel);
+                if (countryValue == null) {
+                    throw new IllegalArgumentException("国家[" + countryLabel + "]在字典中未找到对应值");
+                }
+                vehicleInfo.setCountry(countryValue);
+
                 if (!missingFields.isEmpty()) {
                     failCount++;
                     String reason = String.join("、", missingFields) + " 不能为空";
@@ -710,19 +724,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                         }
 
                         vehicleInfo.setCreateBy(createBy);
-                        Map<String, String> countryLabelToValueMap = remoteDictService
-                                .getDictDataByType("country")   // dict_type 替换为实际值
-                                .getData().stream()
-                                .collect(Collectors.toMap(
-                                        SysDictData::getDictLabel,
-                                        SysDictData::getDictValue,
-                                        (k1, k2) -> k1));
-                        String countryLabel = vehicleInfo.getCountry();
-                        String countryValue = countryLabelToValueMap.get(countryLabel);
-                        if (countryValue == null) {
-                            throw new IllegalArgumentException("国家[" + countryLabel + "]在字典中未找到对应值");
-                        }
-                        vehicleInfo.setCountry(countryValue);
                         // 每行独立事务插入
                         self.insertSingleVehicleInfoRow(vehicleInfo, template, materialList.get(0));
                         importedList.add(vehicleInfo);
