@@ -895,6 +895,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     .sorted(Comparator.comparingInt(a -> a.getAttrPath().split("\\.").length))
                     .collect(Collectors.toList());
             Map<String, Boolean> tagPathIsLoop = new LinkedHashMap<>();
+            // tagPath → is_required（true=必须，false=非必须）
+            Map<String, Boolean> tagPathIsRequired = new HashMap<>();
             Map<String, String> attrPathToTagPath = new HashMap<>();
             for (XmlTemplateAttribute attr : sortedAttrList) {
                 String attrPath = attr.getAttrPath();
@@ -915,11 +917,14 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 attrPathToTagPath.put(attrPath, tagPath);
                 boolean isLoop = loopContainerPaths.contains(attrPath);
                 tagPathIsLoop.put(tagPath, isLoop);
+                // 记录 is_required：同一 tagPath 只要有一个 required=1 则为必须
+                boolean required = attr.getIsRequired() != null && attr.getIsRequired() == 1;
+                tagPathIsRequired.merge(tagPath, required, (a, b) -> a || b);
             }
 
             // 6. 对XML DOM做DFS遍历，按层级路径逐节点与模板比对
             Element root = doc.getDocumentElement();
-            checkElementStructure(root, "", tagPathIsLoop, results);
+            checkElementStructure(root, "", tagPathIsLoop, tagPathIsRequired, results);
 
         } catch (Exception e) {
             results.add(buildStructureFieldResult("STRUCTURE",
@@ -931,15 +936,18 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     /**
      * 递归校验Element是否在模板定义的tagPath集合中。
-     * @param element       当前DOM节点
-     * @param parentPath    当前节点的父级tagPath（空字符串表示在根之上）
-     * @param tagPathIsLoop 模板tagPath → 是否循环容器
-     * @param results       校验结果收集列表
+     * @param element          当前DOM节点
+     * @param parentPath       当前节点的父级tagPath（空字符串表示在根之上）
+     * @param tagPathIsLoop    模板tagPath → 是否循环容器
+     * @param tagPathIsRequired 模板tagPath → is_required（true=必须存在，false=非必须）
+     * @param results          校验结果收集列表
      * ★ 改造：遇到未定义标签不再提前 return，继续处理其余兄弟节点，
      *         确保同级所有问题全部写入报告；三类错误均包含完整路径信息，双语输出。
+     * ★ is_required=0 的模板节点在XML中缺失时视为通过（不报错）。
      */
     private void checkElementStructure(Element element, String parentPath,
                                        Map<String, Boolean> tagPathIsLoop,
+                                       Map<String, Boolean> tagPathIsRequired,
                                        List<FieldValidationResult> results) {
         String tagName = element.getTagName();
         String currentPath = parentPath.isEmpty() ? tagName : parentPath + "/" + tagName;
@@ -1016,6 +1024,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 String expectedChildTag = remainder;
                 if (!childTagCount.containsKey(expectedChildTag)) {
                     boolean childIsLoop = Boolean.TRUE.equals(entry.getValue());
+                    // ★ 判断该子节点是否为 is_required=1
+                    boolean childIsRequired = Boolean.TRUE.equals(tagPathIsRequired.get(templateChildPath));
                     if (childIsLoop) {
                         // 循环节点缺失：valid=true，仅作警告记录
                         RuleViolation warnViolation = RuleViolation.builder()
@@ -1034,12 +1044,30 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                 .valid(true)
                                 .violations(Collections.singletonList(warnViolation))
                                 .build());
+                    } else if (!childIsRequired) {
+                        // ★ is_required=0 的非循环节点缺失 → 视为通过，仅作可选节点信息记录
+                        RuleViolation optionalViolation = RuleViolation.builder()
+                                .ruleId("STRUCTURE_OPTIONAL_ABSENT")
+                                .fieldName("STRUCTURE_OPTIONAL_ABSENT")
+                                .messageEn(String.format(
+                                        "Optional tag <%s> is absent under \"%s\" (path: \"%s\") — validation passed (is_required=0)",
+                                        expectedChildTag, currentPath, currentPath + "/" + expectedChildTag))
+                                .messageZh(String.format(
+                                        "可选标签 <%s> 在父节点 \"%s\" 下不存在（路径：%s）——校验通过（is_required=0）",
+                                        expectedChildTag, currentPath, currentPath + "/" + expectedChildTag))
+                                .build();
+                        results.add(FieldValidationResult.builder()
+                                .fieldName("STRUCTURE_OPTIONAL_ABSENT")
+                                .value(null)
+                                .valid(true)
+                                .violations(Collections.singletonList(optionalViolation))
+                                .build());
                     } else {
-                        // 非循环节点缺失 → 校验失败
+                        // is_required=1 的非循环节点缺失 → 校验失败
                         results.add(buildStructureFieldResult("STRUCTURE",
                                 String.format("Missing required tag <%s> under \"%s\" (expected path: \"%s\")",
                                         expectedChildTag, currentPath, currentPath + "/" + expectedChildTag),
-                                String.format("缺少模板要求的标签 <%s>，父节点路径：%s（期望完整路径：%s）",
+                                String.format("缺少必须的标签 <%s>，父节点路径：%s（期望完整路径：%s，is_required=1）",
                                         expectedChildTag, currentPath, currentPath + "/" + expectedChildTag)));
                     }
                 }
@@ -1048,7 +1076,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
         // ★ 递归处理全部子节点
         for (Element childEl : childElements) {
-            checkElementStructure(childEl, currentPath, tagPathIsLoop, results);
+            checkElementStructure(childEl, currentPath, tagPathIsLoop, tagPathIsRequired, results);
         }
     }
 
@@ -2017,7 +2045,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 // ★ 改动：直接使用 dictLabel 匹配 jsonMap
                 Object raw = jsonMap.get(dict.getDictLabel());
                 String value = getValueOrDefault(raw, attr.getDefaultValue());
-                addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
+                boolean required = attr.getIsRequired() != null && attr.getIsRequired() == 1;
+                addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value, required);
             }
         }
     }
@@ -2516,9 +2545,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
             } else if (StringUtils.isNotBlank(dict.getDictLabel())) {
                 String value = getValueByRow(jsonMap, dict.getDictLabel(),
                         attr.getDefaultValue(), rowIndex);
-                if (StringUtils.isNotBlank(value)) {
+                boolean required = attr.getIsRequired() != null && attr.getIsRequired() == 1;
+                if (StringUtils.isNotBlank(value) || required) {
                     addElement(doc, parentElement,
-                            sanitizeXmlTagName(dict.getDictLabel()), value);
+                            sanitizeXmlTagName(dict.getDictLabel()), value, required);
                 }
             }
         }
@@ -2774,17 +2804,24 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     /**
      * 添加XML子元素
-     * ★修改：若 textContent 为空则不创建该元素（移除无值标签）
+     * ★修改：若 textContent 为空且非必须（required=false）则不创建该元素（移除无值标签）；
+     *        required=true 时即使无值也生成空标签，满足 is_required=1 语义。
      */
     private void addElement(Document doc, Element parent, String tagName, String textContent) {
-        if (StringUtils.isBlank(textContent)) {
-            // 无值则不添加该标签
+        addElement(doc, parent, tagName, textContent, false);
+    }
+
+    private void addElement(Document doc, Element parent, String tagName, String textContent, boolean required) {
+        if (StringUtils.isBlank(textContent) && !required) {
+            // 无值且非必须则不添加该标签
             return;
         }
         // 与根节点保持命名空间一致，避免混用 createElement/createElementNS 导致序列化异常
         String nsUri = (doc.getDocumentElement() != null) ? doc.getDocumentElement().getNamespaceURI() : null;
         Element element = (nsUri != null) ? doc.createElementNS(nsUri, tagName) : doc.createElement(tagName);
-        element.setTextContent(textContent);
+        if (StringUtils.isNotBlank(textContent)) {
+            element.setTextContent(textContent);
+        }
         parent.appendChild(element);
     }
 
@@ -2800,26 +2837,68 @@ public class XmlFileServiceImpl implements IXmlFileService {
     }
 
     /**
-     * 递归移除空节点（深度优先）：
-     * - addElement 已在值为空时不创建叶子节点，所以底层空叶子不会出现在 DOM 中。
-     * - 本方法只需：递归清理子孙后，若某 Element 的 childNodes 已为 0，则删除该节点。
-     * - 当结构节点下所有叶子都因无值未被添加时，childNodes.length 自然为 0，向上级联删除。
+     * 递归移除空节点（深度优先），感知 is_required 标志：
+     * - is_required=1 的节点：无论有无值、有无子标签，均保留（强制生成）。
+     * - is_required=0（默认）的节点：无值且无有效子标签时删除。
+     *
+     * 实现思路：
+     *   1. 先按 tagName 反向查找该节点对应的模板属性，取得 is_required。
+     *   2. 深度优先递归，先清理子孙，再决定当前节点去留。
      */
     private void removeEmptyStructNodes(Element element, List<XmlTemplateAttribute> attrList,
                                         Map<String, SysDictData> dictCodeMap) {
+        // 构建 tagName → isRequired 快查表（同一 tagName 只要有一个 required=1 即视为必须保留）
+        Map<String, Boolean> tagRequiredMap = buildTagRequiredMap(attrList, dictCodeMap);
+
+        removeEmptyStructNodesInternal(element, attrList, dictCodeMap, tagRequiredMap);
+    }
+
+    /**
+     * 构建 XML 标签名（sanitized dictLabel）→ is_required 的映射。
+     * 同一标签名若在模板中有多条记录，只要任意一条 is_required=1 则整体视为必须。
+     */
+    private Map<String, Boolean> buildTagRequiredMap(List<XmlTemplateAttribute> attrList,
+                                                     Map<String, SysDictData> dictCodeMap) {
+        Map<String, Boolean> map = new HashMap<>();
+        for (XmlTemplateAttribute attr : attrList) {
+            String[] parts = attr.getAttrPath().split("\\.");
+            SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
+            if (dict == null || StringUtils.isBlank(dict.getDictLabel())) continue;
+            String tagName = sanitizeXmlTagName(dict.getDictLabel());
+            boolean required = attr.getIsRequired() != null && attr.getIsRequired() == 1;
+            // 只要有一条 required=1 就标记为必须
+            map.merge(tagName, required, (existing, newVal) -> existing || newVal);
+        }
+        return map;
+    }
+
+    /**
+     * 内部递归实现，接收预构建的 tagRequiredMap 避免重复计算。
+     */
+    private void removeEmptyStructNodesInternal(Element element, List<XmlTemplateAttribute> attrList,
+                                                Map<String, SysDictData> dictCodeMap,
+                                                Map<String, Boolean> tagRequiredMap) {
         NodeList children = element.getChildNodes();
         for (int i = children.getLength() - 1; i >= 0; i--) {
             Node child = children.item(i);
             if (child instanceof Element) {
                 Element childElement = (Element) child;
                 // 先递归处理子节点（深度优先）
-                removeEmptyStructNodes(childElement, attrList, dictCodeMap);
-                // 递归后若该节点已无任何子节点，说明其下所有叶子均无值，删除该节点
-                int _childCount = childElement.getChildNodes().getLength();
-                if (_childCount == 0) {
-                    element.removeChild(childElement);
-                } else if (!hasNonEmptyDescendantText(childElement)) {
-                    // 结构节点（有子元素但全为空）→ 移除
+                removeEmptyStructNodesInternal(childElement, attrList, dictCodeMap, tagRequiredMap);
+
+                // 判断该节点是否标记为 is_required=1
+                String childTag = childElement.getLocalName() != null
+                        ? childElement.getLocalName() : childElement.getTagName();
+                boolean isRequired = Boolean.TRUE.equals(tagRequiredMap.get(childTag));
+
+                if (isRequired) {
+                    // is_required=1：无论有无内容，强制保留，不做任何删除
+                    continue;
+                }
+
+                // is_required=0（或未配置）：无值 / 无有效子孙时删除
+                int childCount = childElement.getChildNodes().getLength();
+                if (childCount == 0 || !hasNonEmptyDescendantText(childElement)) {
                     element.removeChild(childElement);
                 }
             }

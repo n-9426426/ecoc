@@ -192,8 +192,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     @Transactional(rollbackFor = Exception.class)
     public int insertVehicleInfo(VehicleInfo vehicleInfo) {
         // VIN判重
-        if (vehicleInfoMapper.selectVehicleInfoByVin(vehicleInfo.getVin()) != null) {
-            throw new RuntimeException("VIN[" + vehicleInfo.getVin() + "]已存在");
+        VehicleInfo existing = vehicleInfoMapper.selectVehicleInfoByVin(vehicleInfo.getVin());
+        if (existing != null) {
+            vehicleInfo.setVehicleId(existing.getVehicleId());
         }
 
         // 查模板
@@ -202,39 +203,41 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         query.setStatus(0);
         List<Material> materialList = materialMapper.selectMaterialList(query);
         Long vehicleTemplateId;
-        if (materialList.isEmpty()) {
-            throw new RuntimeException("该物料号无对应的可用车辆模板");
-        }
-        Material material = materialList.get(0);
-        vehicleTemplateId = material.getVehicleTemplateId();
+        if (!materialList.isEmpty()) {
+            Material material = materialList.get(0);
+            vehicleTemplateId = material.getVehicleTemplateId();
+            // 查模板详情，自动填充关联字段
+            VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(vehicleTemplateId);
+            if (template == null) {
+                throw new RuntimeException("模板不存在，templateId=" + vehicleTemplateId);
+            }
 
-        // 查模板详情，自动填充关联字段
-        VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(vehicleTemplateId);
-        if (template == null) {
-            throw new RuntimeException("模板不存在，templateId=" + vehicleTemplateId);
+            String json = "";
+            try {
+                JsonNode rootNode = objectMapper.readTree(template.getJson());
+                // 扁平化并替换字段值
+                replaceFieldValues(rootNode, material);
+                json = objectMapper.writeValueAsString(rootNode);
+            } catch (JsonProcessingException e) {
+                throw new RuntimeException("动态参数替换失败");
+            }
+            vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
+            vehicleInfo.setWvtaNo(template.getWvtaCocNo());
+            vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
+            vehicleInfo.setJson(json);
+            vehicleInfo.setGenerateAffirm(template.getGenerateAffirm());
+            vehicleInfo.setUploadAffirm(template.getUploadAffirm());
         }
-
-        String json = "";
-        try {
-            JsonNode rootNode = objectMapper.readTree(template.getJson());
-            // 扁平化并替换字段值
-            replaceFieldValues(rootNode, material);
-            json = objectMapper.writeValueAsString(rootNode);
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("动态参数替换失败");
-        }
-        vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
-        vehicleInfo.setWvtaNo(template.getWvtaCocNo());
-        vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
-        vehicleInfo.setJson(json);
         vehicleInfo.setUploadStatus(0);
         vehicleInfo.setValidationResult(0);
         vehicleInfo.setDeleted(0);
         vehicleInfo.setCreateTime(vehicleInfo.getCreateTime() == null ? DateUtils.getNowDate() : vehicleInfo.getCreateTime());
         vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null ? SecurityUtils.getUsername() : "MES To System");
-        vehicleInfo.setGenerateAffirm(template.getGenerateAffirm());
-        vehicleInfo.setUploadAffirm(template.getUploadAffirm());
+        if (vehicleInfo.getVehicleId() != null) {
+            vehicleInfoMapper.deleteVehicleInfoByIds(new Long[]{vehicleInfo.getVehicleId()});
+        }
         int insertRow = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+
 
         // VehicleTemplate.json 已在模板导入阶段完成字段映射，直接使用
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
@@ -279,7 +282,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             remoteNoticeService.innerAdd(sysNotice);
         }
 
-        if (vehicleInfo.getGenerateAffirm().equals(0)) {
+        if (Integer.valueOf(0).equals(vehicleInfo.getGenerateAffirm())) {
             String sb =
                     "物料号 " +
                             vehicleInfo.getMaterialNo() +
@@ -306,7 +309,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             remoteNoticeService.innerAdd(sysNotice);
         }
 
-        if (vehicleInfo.getUploadAffirm().equals(0)) {
+        if (Integer.valueOf(0).equals(vehicleInfo.getUploadAffirm())) {
             String sb =
                     "物料号 " +
                             vehicleInfo.getMaterialNo() +

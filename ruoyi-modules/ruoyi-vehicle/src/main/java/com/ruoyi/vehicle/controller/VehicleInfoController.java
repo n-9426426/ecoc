@@ -3,7 +3,6 @@ package com.ruoyi.vehicle.controller;
 import com.alibaba.fastjson2.util.DateUtils;
 import com.ruoyi.common.core.domain.R;
 import com.ruoyi.common.core.exception.ServiceException;
-import com.ruoyi.common.core.utils.JwtUtils;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
@@ -18,7 +17,6 @@ import com.ruoyi.system.api.RemoteLoginService;
 import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.domain.LoginBody;
-import com.ruoyi.system.api.domain.SysUser;
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.dto.BatchUpdateJsonFieldsDto;
@@ -41,6 +39,7 @@ import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
 
 import javax.servlet.http.HttpServletResponse;
+import javax.validation.ConstraintViolation;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.util.*;
@@ -69,6 +68,8 @@ public class VehicleInfoController extends BaseController {
     @Autowired
     private ExcelUtil excelUtil;
 
+    @Autowired
+    private javax.validation.Validator validator;
 
     @Autowired
     private IFirstVehicleCheckService firstVehicleCheckService;
@@ -77,6 +78,15 @@ public class VehicleInfoController extends BaseController {
     @Log(title = "数据推送", businessType = BusinessType.INSERT)
     @PostMapping("/to-system")
     public AjaxResult MesToSystem(@RequestBody VehicleDto vehicleDto) {
+        // 校验 VehicleDto 本身（username、password、vehicles）
+        Set<ConstraintViolation<VehicleDto>> dtoViolations = validator.validate(vehicleDto);
+        if (!dtoViolations.isEmpty()) {
+            String cause = dtoViolations.stream()
+                    .map(v -> v.getPropertyPath() + ": " + v.getMessage())
+                    .collect(Collectors.joining("; "));
+            return AjaxResult.error(cause);
+        }
+
         LoginBody body = new LoginBody();
         body.setUsername(vehicleDto.getUsername());
         body.setPassword(vehicleDto.getPassword());
@@ -86,24 +96,28 @@ public class VehicleInfoController extends BaseController {
         }
 
         String token = ((LinkedHashMap<String, String>)loginResult.getData()).get("access_token");
-        SysUser sysUser = new SysUser();
-        sysUser.setUserId(Long.valueOf(JwtUtils.getUserId(token)));
-        sysUser.setUserName(JwtUtils.getUserName(token));
-        LoginUser loginUser = new LoginUser();
-        loginUser.setSysUser(sysUser);
-
-        // 从 token 里或远程加载权限
-        // ruoyi 的 TokenService 可以根据 token 拿到完整的 LoginUser
         LoginUser fullLoginUser = tokenService.getLoginUser(token);
         if (fullLoginUser == null) {
             throw new ServiceException("登录信息获取失败");
         }
 
         // 用完整的 loginUser 往下传
-        List<Map<String, Object>> result = new LinkedList<>();
         Date now = new Date();
+        List<Map<String, Object>> result = new LinkedList<>();
         for (VehicleDto.Vehicle vehicle : vehicleDto.getVehicles()) {
             Map<String, Object> resultItem = new LinkedHashMap<>();
+            Set<ConstraintViolation<VehicleDto.Vehicle>> violations = validator.validate(vehicle);
+            if (!violations.isEmpty()) {
+                String cause = violations.stream()
+                        .map(v -> v.getPropertyPath() + " " + v.getMessage())
+                        .collect(Collectors.joining("; "));
+                resultItem.put("vin", vehicle.getVin());
+                resultItem.put("recordId", null);
+                resultItem.put("receiveTime", DateUtils.format(now, "yyyy-MM-dd HH:mm:ss"));
+                resultItem.put("cause", cause);
+                result.add(resultItem);
+                continue;
+            }
             try {
                 resultItem = vehicleInfoService.getVehicleInfoFromMes(vehicle, now, fullLoginUser);
                 result.add(resultItem);
