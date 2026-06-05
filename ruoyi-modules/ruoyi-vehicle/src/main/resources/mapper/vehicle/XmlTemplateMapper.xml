@@ -57,7 +57,7 @@
     <!-- 根据ID查询 -->
     <select id="selectById" resultMap="XmlTemplateResult">
         SELECT * FROM xml_template
-        WHERE template_id = #{templateId} AND deleted = 0 and status = 1
+        WHERE template_id = #{templateId} AND deleted = 0
     </select>
 
     <!-- 插入 -->

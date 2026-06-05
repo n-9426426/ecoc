@@ -26,5 +26,7 @@ public class CalendarDayDetailVo {
         private String operate;
         /** operate 中文名称（从字典取） */
         private String operateName;
+
+        private Integer result;
     }
 }

@@ -37,6 +37,7 @@ public class VehicleUploadAffirmNoticeTask {
             msg.append("物料号 ").append(vehicleInfo.getMaterialNo())
                     .append(" 上传待确认");
             Map<String, String> params = new HashMap<>();
+            params.put("id", String.valueOf(vehicleInfo.getVehicleId()));
             params.put("vin", vehicleInfo.getVin());
             params.put("vehicleModel", vehicleInfo.getVehicleModel());
             params.put("factoryCode", vehicleInfo.getFactoryCode());

@@ -2,13 +2,19 @@ package com.ruoyi.vehicle.service.impl;
 
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.security.utils.SecurityUtils;
+import com.ruoyi.vehicle.domain.Material;
 import com.ruoyi.vehicle.domain.MaterialBlacklist;
 import com.ruoyi.vehicle.mapper.MaterialBlacklistMapper;
 import com.ruoyi.vehicle.service.IMaterialBlacklistService;
+import com.ruoyi.vehicle.service.IMaterialService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 物料黑名单 Service 实现
@@ -18,6 +24,9 @@ import java.util.List;
 public class MaterialBlacklistServiceImpl implements IMaterialBlacklistService {
 
     private final MaterialBlacklistMapper materialBlacklistMapper;
+
+    @Autowired
+    private IMaterialService materialService;
 
     @Override
     public List<MaterialBlacklist> selectMaterialBlacklistList(MaterialBlacklist materialBlacklist) {
@@ -74,5 +83,39 @@ public class MaterialBlacklistServiceImpl implements IMaterialBlacklistService {
         update.setUpdateBy(SecurityUtils.getUsername());
         materialBlacklistMapper.updateMaterialBlacklistStatus(update);
         return update;
+    }
+
+    @Override
+    public Map<String, Object> removeToMaterial(Long[] ids) {
+        int count = ids.length;
+        if (count == 0) {
+            throw new RuntimeException("选择的数据为空");
+        }
+        int fail = 0;
+        int success = 0;
+        List<String> materialNos = new LinkedList<>();
+        for (Long id : ids) {
+            MaterialBlacklist materialBlacklist = materialBlacklistMapper.selectMaterialBlacklistById(id);
+            if (materialBlacklist == null) {
+                fail++;
+                continue;
+            }
+            Material material = new Material();
+            material.setMaterialNo(materialBlacklist.getMaterialNo());
+            material.setBrand(materialBlacklist.getBrand());
+            int row = materialService.insertMaterial(material);
+            if (row == 0) {
+                fail++;
+                materialNos.add(material.getMaterialNo());
+            } else {
+                success++;
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("count", count);
+        result.put("fail", fail);
+        result.put("success", success);
+        result.put("materialNos", materialNos);
+        return result;
     }
 }

@@ -43,4 +43,8 @@ public interface MaterialBlacklistMapper {
      * 更新物料黑名单状态
      */
     int updateMaterialBlacklistStatus(MaterialBlacklist materialBlacklist);
+
+    MaterialBlacklist selectMaterialBlacklistByCustomerNo(String customerNo);
+
+    MaterialBlacklist selectMaterialBlacklistByBrand(String brand);
 }

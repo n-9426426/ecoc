@@ -48,6 +48,7 @@ public class VehicleTempleOverdueTask {
                     .append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(vehicleTemplate.getOverdueDate()))
                     .append(" 到期, 到期后该模版将没有更新版本使用");
             Map<String, String> params = new HashMap<>();
+            params.put("id", String.valueOf(vehicleTemplate.getTemplateId()));
             params.put("wvtaCocNo", vehicleTemplate.getWvtaCocNo());
             params.put("cocTemplateNo", vehicleTemplate.getCocTemplateNo());
             params.put("modelNo", vehicleTemplate.getModelNo());

@@ -366,10 +366,15 @@
         ORDER BY count DESC
     </select>
 
-    <select id="selectDistinctOperateByDateRange" resultType="java.lang.String">
-        SELECT DISTINCT operate
+    <select id="selectDistinctOperateByDateRange" resultType="com.ruoyi.vehicle.domain.vo.CalendarDayDetailVo$OperateItem">
+        SELECT
+            operate,
+            MAX(result) AS result
         FROM vehicle_lifecycle
-        WHERE time &gt;= #{startTime} AND time &lt;= #{endTime}
+        WHERE time &gt;= #{startTime}
+          AND time &lt;= #{endTime}
+        GROUP BY operate
+        HAVING MAX(result) = 1
         ORDER BY CAST(operate AS UNSIGNED)
     </select>
 </mapper>

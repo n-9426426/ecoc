@@ -97,6 +97,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     @Autowired
     private IFirstVehicleCheckService firstVehicleCheckService;
 
+    @Autowired
+    private MaterialBlacklistMapper materialBlacklistMapper;
+
     // @Lazy 打破循环依赖，同时保证拿到的是带事务代理的 self
     @Lazy
     @Autowired
@@ -234,10 +237,10 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setCreateTime(vehicleInfo.getCreateTime() == null ? DateUtils.getNowDate() : vehicleInfo.getCreateTime());
         vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null ? SecurityUtils.getUsername() : "MES To System");
         if (vehicleInfo.getVehicleId() != null) {
-            vehicleInfoMapper.deleteVehicleInfoByIds(new Long[]{vehicleInfo.getVehicleId()});
+            deleteVehicleInfoByIds(new Long[]{vehicleInfo.getVehicleId()});
         }
         int insertRow = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
-
+        checkMaterialInBlacklist(vehicleInfo);
 
         // VehicleTemplate.json 已在模板导入阶段完成字段映射，直接使用
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
@@ -262,6 +265,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                             DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getBreakpointTime()) +
                             System.lineSeparator();
             Map<String, String> params = new HashMap<>();
+            params.put("id", String.valueOf(vehicleInfo.getVehicleId()));
             params.put("vin", vehicleInfo.getVin());
             params.put("vehicleModel", vehicleInfo.getVehicleModel());
             params.put("factoryCode", vehicleInfo.getFactoryCode());
@@ -289,6 +293,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                             " 生成待确认" +
                             System.lineSeparator();
             Map<String, String> params = new HashMap<>();
+            params.put("id", String.valueOf(vehicleInfo.getVehicleId()));
             params.put("vin", vehicleInfo.getVin());
             params.put("vehicleModel", vehicleInfo.getVehicleModel());
             params.put("factoryCode", vehicleInfo.getFactoryCode());
@@ -316,6 +321,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                             " 上传待确认" +
                             System.lineSeparator();
             Map<String, String> params = new HashMap<>();
+            params.put("id", String.valueOf(vehicleInfo.getVehicleId()));
             params.put("vin", vehicleInfo.getVin());
             params.put("vehicleModel", vehicleInfo.getVehicleModel());
             params.put("factoryCode", vehicleInfo.getFactoryCode());
@@ -516,6 +522,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             }
 
             Map<String, String> params = new HashMap<>();
+            params.put("id", String.valueOf(vehicleInfo.getVehicleId()));
             params.put("vin", vehicleInfo.getVin());
             params.put("vehicleModel", vehicleInfo.getVehicleModel());
             params.put("factoryCode", vehicleInfo.getFactoryCode());
@@ -569,6 +576,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
         try {
             self.insertVehicleInfo(vehicleInfo);  // ← 走代理，事务独立
+            checkMaterialInBlacklist(vehicleInfo);
         } catch (Exception e) {
             // 剥出根因，确保 message 不丢失
             Throwable cause = e;
@@ -745,6 +753,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                     } else {
                         vehicleInfo.setCreateBy(createBy);
                         vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+                        checkMaterialInBlacklist(vehicleInfo);
                         importedList.add(vehicleInfo);
                         successCount++;
                         pushEvent(sink, "progress", String.format(
@@ -829,14 +838,13 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setSaleName(material.getSaleName());
         vehicleInfo.setWeight(material.getWeight());
         vehicleInfo.setTire(material.getTire());
-        // createBy 由调用方（doImportVehicleInfo/insertVehicleInfo）在请求线程设置，
-        // 此处异步线程 SecurityContext 可能已失效，兜底取已设置的值
         if (StringUtils.isBlank(vehicleInfo.getCreateBy())) {
             vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null ? SecurityUtils.getUsername() : "Import");
         }
         vehicleInfo.setCreateTime(DateUtils.getNowDate());
 
         vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+        checkMaterialInBlacklist(vehicleInfo);
 
         VehicleLifecycle lifecycle = new VehicleLifecycle();
         lifecycle.setTime(new Date());
@@ -1284,6 +1292,60 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             for (JsonNode arrayElement : node) {
                 replaceFieldValues(arrayElement, material);
             }
+        }
+    }
+
+    private void checkMaterialInBlacklist(VehicleInfo vehicleInfo) {
+        if (vehicleInfo == null || vehicleInfo.getJson() == null) {
+            return;
+        }
+
+        // 1. 先按 materialNo 查
+        MaterialBlacklist materialBlacklist = materialBlacklistMapper
+                .selectMaterialBlacklistByMaterialNo(vehicleInfo.getMaterialNo());
+
+        // 2. 查不到再按 customerNo 查
+        if (materialBlacklist == null) {
+            materialBlacklist = materialBlacklistMapper
+                    .selectMaterialBlacklistByCustomerNo(vehicleInfo.getCustomerNo());
+        }
+
+        if (materialBlacklist == null) {
+            try {
+                JsonNode jsonObj = new ObjectMapper().readTree(vehicleInfo.getJson());
+                JsonNode customerNoNode = jsonObj.get("CommercialName");
+                if (customerNoNode != null && StringUtils.isNotBlank(customerNoNode.asText())) {
+                    materialBlacklist = materialBlacklistMapper
+                            .selectMaterialBlacklistByCustomerNo(customerNoNode.asText());
+                }
+            } catch (Exception e) {
+                log.warn("checkMaterialInBlacklist: json 解析失败, vehicleId={}",
+                        vehicleInfo.getVehicleId(), e);
+            }
+        }
+
+        // 3. 还查不到再按 brand 查（从 json 取 Make 字段）
+        if (materialBlacklist == null) {
+            try {
+                JsonNode jsonObj = new ObjectMapper().readTree(vehicleInfo.getJson());
+                JsonNode makeNode = jsonObj.get("Make");
+                if (makeNode != null && StringUtils.isNotBlank(makeNode.asText())) {
+                    materialBlacklist = materialBlacklistMapper
+                            .selectMaterialBlacklistByBrand(makeNode.asText());
+                }
+            } catch (Exception e) {
+                log.warn("checkMaterialInBlacklist: json 解析失败, vehicleId={}",
+                        vehicleInfo.getVehicleId(), e);
+            }
+        }
+
+        // 4. 任意一步查到即命中，更新 deleted = 2
+        if (materialBlacklist != null) {
+            VehicleInfo update = new VehicleInfo();
+            update.setVehicleId(vehicleInfo.getVehicleId());
+            update.setDeleted(2);
+            vehicleInfoMapper.updateVehicleInfo(update);
+            vehicleInfo.setDeleted(2);
         }
     }
 }

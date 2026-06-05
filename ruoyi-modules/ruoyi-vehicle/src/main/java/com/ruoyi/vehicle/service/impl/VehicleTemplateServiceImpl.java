@@ -457,6 +457,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 updateList.add(update);
 
                 Map<String, String> params = new HashMap<>();
+                params.put("id", String.valueOf(template.getTemplateId()));
                 params.put("wvtaCocNo", template.getWvtaCocNo());
                 params.put("cocTemplateNo", template.getCocTemplateNo());
                 params.put("modelNo", template.getModelNo());

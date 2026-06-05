@@ -712,6 +712,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
 
             Map<String, String> params = new HashMap<>();
+            params.put("id", String.valueOf(xmlFile.getId()));
             params.put("vin", xmlFile.getVin());
             params.put("modelCode", xmlFile.getModelCode());
             params.put("factoryCode", xmlFile.getFactoryCode());
@@ -1189,8 +1190,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 }
             }
 
-            // keyMap → [tagLabel, rule, rangeRule]（用于后续补充violation消息）
-            // ★ 从全量字典构建，支持 List（同一 keyMap 对应多个字段）
             Map<String, List<String[]>> keyMapMeta = buildKeyMapMeta(dictCodeMap);
 
             // 提取 vehicleCategory / stageOfCompletion
@@ -1205,14 +1204,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 stageOfCompletion = v != null ? v.toString() : null;
             }
 
-            // ★ 先构建"非循环节点"的基础 jsonMap（上下文字段，所有校验都带上）
-            Map<String, Object> baseJsonMap = new LinkedHashMap<>();
-
-            // ★ 修复：按"父节点实例 + tagName"统计，正确识别真正的循环节点。
-            //   原来用 getElementsByTagName("*") 全文档计数，导致同名标签在不同父节点下
-            //   各出现一次也会被误判为循环节点（如 VehicleIdentificationNumber 出现在3个
-            //   不同结构节点下，count=3，被错误地校验3遍）。
-            //   修复后：只有同一父节点下出现多次的兄弟节点才视为循环节点。
+            // ── 第一步：识别循环节点（与原逻辑相同）──────────────────────────
             NodeList allNodes = doc.getElementsByTagName("*");
             Map<String, Integer> parentTagCount = new LinkedHashMap<>();
             Set<String> loopTagNames = new HashSet<>();
@@ -1220,32 +1212,95 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 Element element = (Element) allNodes.item(i);
                 String tagName = element.getTagName();
                 Node parent = element.getParentNode();
-                // 用父节点对象的内存标识区分不同父节点实例
                 String key = System.identityHashCode(parent) + "#" + tagName;
                 int count = parentTagCount.merge(key, 1, Integer::sum);
                 if (count > 1) {
-                    // 该 tagName 在某个父节点下出现了多次，才是真正的循环节点
                     loopTagNames.add(tagName);
                 }
             }
 
+            // ── 第二步：构建非循环节点的 baseJsonMap（与原逻辑相同）───────────
+            Map<String, Object> baseJsonMap = new LinkedHashMap<>();
             for (int i = 0; i < allNodes.getLength(); i++) {
                 Element element = (Element) allNodes.item(i);
                 String tagName  = element.getTagName();
                 SysDictData dict = labelToDictMap.get(tagName);
                 if (dict == null || isStructNode(dict) || StringUtils.isBlank(dict.getKeyMap())) continue;
 
-                // 只把非循环节点放入 baseJsonMap
                 if (!loopTagNames.contains(tagName)) {
                     baseJsonMap.put(dict.getKeyMap(),
                             StringUtils.defaultString(element.getTextContent()));
                 }
             }
 
-            // ★ 用于汇总所有校验结果
-            ValidationReport mergedReport = null;
+            // ── ★ 第三步（新增）：将循环节点收集为列表，注入 baseJsonMap ──────
+            //
+            // 目标结构（以 AxleGroup 为例）：
+            //   baseJsonMap.put("AxleGroup", [
+            //       {"AxleOfNumber": "2"},
+            //       {"AxleOfNumber": "2"},
+            //       {"AxleOfNumber": "2"}
+            //   ])
+            //
+            // key 规则：
+            //   - 循环节点本身是结构节点（isStructNode），以其 dictLabel（即 tagName）为 key
+            //   - 这与 VehicleFieldParser.parseListFieldsFromMap 期望的 key 一致
+            //
+            // 遍历思路：
+            //   找出所有「结构型循环节点」（即 isStructNode 且在 loopTagNames 中），
+            //   对每个实例，将其直接子叶子节点的 keyMap→textContent 收集为一个 Map，
+            //   所有实例聚合为 List<Map<String,Object>>。
 
-            // 非循环节点：整体校验一次
+            // 收集结构型循环节点的 tagName 集合（AxleGroup、TyreAxleGroup 等）
+            Set<String> processedStructLoopTags = new HashSet<>();
+            for (int i = 0; i < allNodes.getLength(); i++) {
+                Element element = (Element) allNodes.item(i);
+                String tagName = element.getTagName();
+
+                // 只处理：① 在 loopTagNames 中 ② 是结构节点 ③ 字典有记录
+                if (!loopTagNames.contains(tagName)) continue;
+                SysDictData dict = labelToDictMap.get(tagName);
+                if (dict == null || !isStructNode(dict)) continue;
+                if (processedStructLoopTags.contains(tagName)) continue;
+                processedStructLoopTags.add(tagName);
+
+                // 收集该 tagName 的所有实例
+                NodeList instances = doc.getElementsByTagName(tagName);
+                List<Map<String, Object>> rowList = new ArrayList<>();
+
+                for (int j = 0; j < instances.getLength(); j++) {
+                    Element instance = (Element) instances.item(j);
+                    Map<String, Object> rowMap = new LinkedHashMap<>();
+
+                    // 遍历该实例的直接子节点，取叶子字段
+                    NodeList children = instance.getChildNodes();
+                    for (int k = 0; k < children.getLength(); k++) {
+                        Node child = children.item(k);
+                        if (child.getNodeType() != Node.ELEMENT_NODE) continue;
+                        Element childEl = (Element) child;
+                        String childTagName = childEl.getTagName();
+                        SysDictData childDict = labelToDictMap.get(childTagName);
+                        if (childDict == null || isStructNode(childDict)
+                                || StringUtils.isBlank(childDict.getKeyMap())) continue;
+
+                        rowMap.put(childDict.getKeyMap(),
+                                StringUtils.defaultString(childEl.getTextContent()));
+                    }
+
+                    if (!rowMap.isEmpty()) {
+                        rowList.add(rowMap);
+                    }
+                }
+
+                if (!rowList.isEmpty()) {
+                    // key 使用 tagName（即 dictLabel），与 VehicleFieldParser 期望一致
+                    baseJsonMap.put(tagName, rowList);
+                    log.debug("★ 注入循环列表到 baseJsonMap: key={}, size={}", tagName, rowList.size());
+                }
+            }
+
+            // ── 第四步：非循环节点整体校验（带上循环列表上下文）────────────────
+            ValidationReport mergedReport = null;
             if (!baseJsonMap.isEmpty()) {
                 String jsonStr = new ObjectMapper().writeValueAsString(baseJsonMap);
                 ValidationReport report = vehicleValidationService.validate(
@@ -1253,26 +1308,23 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 mergedReport = enrichAndMerge(mergedReport, report, keyMapMeta);
             }
 
-            // 循环节点：每个元素单独校验
-            // 找出所有循环 tagName（去重，保证每种只处理一次）
+            // ── 第五步：循环节点逐个校验（与原逻辑相同）────────────────────────
             Set<String> processedLoopTags = new HashSet<>();
             for (int i = 0; i < allNodes.getLength(); i++) {
                 Element element = (Element) allNodes.item(i);
                 String tagName  = element.getTagName();
-                if (!loopTagNames.contains(tagName)) continue;       // ★ 非循环节点跳过
-                if (processedLoopTags.contains(tagName)) continue;   // 已处理过跳过
+                if (!loopTagNames.contains(tagName)) continue;
+                if (processedLoopTags.contains(tagName)) continue;
                 processedLoopTags.add(tagName);
 
                 SysDictData dict = labelToDictMap.get(tagName);
                 if (dict == null || isStructNode(dict) || StringUtils.isBlank(dict.getKeyMap())) continue;
 
-                // 取出该 tagName 的所有节点，逐个校验
                 NodeList loopNodes = doc.getElementsByTagName(tagName);
                 for (int j = 0; j < loopNodes.getLength(); j++) {
                     String value = StringUtils.defaultString(
                             loopNodes.item(j).getTextContent());
 
-                    // 以 baseJsonMap 为上下文，覆盖当前循环字段的值
                     Map<String, Object> singleJsonMap = new LinkedHashMap<>(baseJsonMap);
                     singleJsonMap.put(dict.getKeyMap(), value);
 
@@ -1280,7 +1332,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     ValidationReport report = vehicleValidationService.validate(
                             jsonStr, vehicleCategory, stageOfCompletion);
 
-                    // ★ 在violation消息里标注是第几个循环节点，便于定位
                     if (report != null && report.getFieldResults() != null) {
                         final int index = j + 1;
                         for (FieldValidationResult fr : report.getFieldResults()) {
@@ -1623,6 +1674,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             msg.append("成功");
             Map<String, String> params = new HashMap<>();
+            params.put("id", String.valueOf(xmlFile.getId()));
             params.put("vin", xmlFile.getVin());
             params.put("modelCode", xmlFile.getModelCode());
             params.put("factoryCode", xmlFile.getFactoryCode());
@@ -3260,6 +3312,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     private Map<String, String> getVehicleParams(VehicleInfo vehicle) {
         Map<String, String> params = new HashMap<>();
+        params.put("id", String.valueOf(vehicle.getVehicleId()));
         params.put("vin", vehicle.getVin());
         params.put("vehicleModel", vehicle.getVehicleModel());
         params.put("factoryCode", vehicle.getFactoryCode());

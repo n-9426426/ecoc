@@ -1,5 +1,7 @@
 package com.ruoyi.vehicle.service.impl;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.utils.uuid.UUID;
@@ -123,6 +125,42 @@ public class MaterialServiceImpl implements IMaterialService {
         Map.Entry<String, VehicleTemplate> firstEntry = templateMap.entrySet().iterator().next();
         String version = firstEntry.getKey();
         VehicleTemplate template = firstEntry.getValue();
+        try {
+            JsonNode templateJson = new ObjectMapper().readTree(template.getJson());
+
+            // Make → brand
+            String makeStr = getJsonText(templateJson, "Make");
+            List<String> makeList = splitBySemicolon(makeStr);
+            if (StringUtils.isBlank(material.getBrand()) && makeList.size() > 1) {
+                throw new RuntimeException("Make存在多个值，请指定品牌");
+            }
+
+            // ActualMass → weight
+            String massStr = getJsonText(templateJson, "ActualMass");
+            List<String> massList = splitBySemicolon(massStr);
+            if (StringUtils.isBlank(material.getWeight()) && massList.size() > 1) {
+                throw new RuntimeException("ActualMass存在多个值，请指定重量");
+            }
+
+            // CommercialName → saleName
+            String commercialStr = getJsonText(templateJson, "CommercialName");
+            List<String> commercialList = splitBySemicolon(commercialStr);
+            if (StringUtils.isBlank(material.getSaleName()) && commercialList.size() > 1) {
+                throw new RuntimeException("CommercialName存在多个值，请指定销售名称");
+            }
+
+            // TyreSize → tire
+            String tyreSizeStr = getJsonText(templateJson, "TyreSize");
+            List<String> tyreSizeList = splitBySemicolon(tyreSizeStr);
+            if (StringUtils.isBlank(material.getTire()) && tyreSizeList.size() > 1) {
+                throw new RuntimeException("TyreSize存在多个值，请指定轮胎");
+            }
+
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("insertMaterial: template json 解析失败, templateId={}", template.getTemplateId(), e);
+        }
         material.setVersion(template.getVersion());
         material.setVehicleTemplateId(template.getTemplateId());
         return materialMapper.insertMaterial(material);
@@ -372,5 +410,20 @@ public class MaterialServiceImpl implements IMaterialService {
                 .replace("\"", "\\\"")
                 .replace("\n", "\\n")
                 .replace("\r", "\\r");
+    }
+
+    private String getJsonText(JsonNode node, String field) {
+        JsonNode target = node.get(field);
+        return (target == null || target.isNull()) ? null : target.asText();
+    }
+
+    private List<String> splitBySemicolon(String value) {
+        if (StringUtils.isBlank(value)) {
+            return Collections.emptyList();
+        }
+        return Arrays.stream(value.split(";"))
+                .map(String::trim)
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toList());
     }
 }

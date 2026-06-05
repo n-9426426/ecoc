@@ -204,6 +204,7 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
         vehicleInfoMapper.confirmMaterialFlag(vehicleId, confirmedBy);
         VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
         Map<String, String> params = new HashMap<>();
+        params.put("id", String.valueOf(vehicleInfo.getVehicleId()));
         params.put("vin", vehicleInfo.getVin());
         params.put("vehicleModel", vehicleInfo.getVehicleModel());
         params.put("factoryCode", vehicleInfo.getFactoryCode());
@@ -233,6 +234,7 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
         vehicleInfoMapper.confirmTemplateFlag(vehicleId, confirmedBy);
         VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
         Map<String, String> params = new HashMap<>();
+        params.put("id", String.valueOf(vehicleInfo.getVehicleId()));
         params.put("vin", vehicleInfo.getVin());
         params.put("vehicleModel", vehicleInfo.getVehicleModel());
         params.put("factoryCode", vehicleInfo.getFactoryCode());

@@ -2,6 +2,7 @@ package com.ruoyi.vehicle.mapper;
 
 import com.ruoyi.vehicle.domain.dto.ChartDataStatisticsDto;
 import com.ruoyi.vehicle.domain.vo.AbnormalStatisticsVo;
+import com.ruoyi.vehicle.domain.vo.CalendarDayDetailVo;
 import com.ruoyi.vehicle.domain.vo.ChartDataXmlTotalVo;
 import com.ruoyi.vehicle.domain.vo.VehicleModelVo;
 import org.apache.ibatis.annotations.Param;
@@ -35,5 +36,5 @@ public interface ChartDataMapper {
 
     List<AbnormalStatisticsVo> selectStatisticsAbnormal(ChartDataStatisticsDto statisticsDto);
 
-    List<String> selectDistinctOperateByDateRange(@Param("startTime") LocalDateTime startTime, @Param("endTime")   LocalDateTime endTime);
+    List<CalendarDayDetailVo.OperateItem> selectDistinctOperateByDateRange(@Param("startTime") LocalDateTime startTime, @Param("endTime") LocalDateTime endTime);
 }

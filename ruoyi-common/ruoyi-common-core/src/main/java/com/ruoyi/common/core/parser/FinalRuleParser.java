@@ -42,7 +42,7 @@ import java.util.regex.Pattern;
  * 21.  VALUE op N IF ALL &lt;conditions&gt;                                    → CONDITIONAL_VALUE_COMPARE
  * 22.  VALUE = ANY @listField.fieldName                                   → VALUE_IN_LIST_FIELD
  * 23.  @TableName=&gt;VALUE IS UNIQUE                                        → LIST_UNIQUE
- * 24.  VALUE IS PRESENT|ABSENT IF [@preCond AND] COUNT(f WITHIN [v]) op N → CONDITIONAL_COUNT_AGGREGATE  ★新增
+ * 24.  VALUE IS PRESENT|ABSENT IF [@preCond AND] COUNT(f IN [v]) op N     → CONDITIONAL_COUNT_AGGREGATE  ★新增
  * </pre>
  */
 public class FinalRuleParser {
@@ -139,13 +139,13 @@ public class FinalRuleParser {
             Pattern.compile("VALUE\\s+(>=|<=|>|<|=|!=)\\s+([A-Z][\\w.]*\\??)",
                     Pattern.CASE_INSENSITIVE);
 
-    // ===== VALUE = COUNT(field WITHIN [vals])（带条件的列表计数赋值）=====
-    // 格式: VALUE = COUNT(FieldName WITHIN ['val1', 'val2'])
-    // 用途: NumberOfPoweredAxles → VALUE = COUNT(PoweredAxleIndicator WITHIN ['Y'])
+    // ===== VALUE = COUNT(field IN [vals])（带条件的列表计数赋值）=====
+    // 格式: VALUE = COUNT(FieldName IN ['val1', 'val2'])
+    // 用途: NumberOfPoweredAxles → VALUE = COUNT(PoweredAxleIndicator IN ['Y'])
     // 注意: 必须在 VALUE_COUNT_SIMPLE 和 VALUE_COMPARE 之前匹配
     private static final Pattern VALUE_COUNT_WITHIN_PATTERN =
             Pattern.compile(
-                    "VALUE\\s*=\\s*COUNT\\s*\\(\\s*(\\w+)\\s+WITHIN\\s+\\[([^\\]]+)\\]\\s*\\)",
+                    "VALUE\\s*=\\s*COUNT\\s*\\(\\s*(\\w+)\\s+IN\\s+\\[([^\\]]+)\\]\\s*\\)",
                     Pattern.CASE_INSENSITIVE);
 
     // ===== VALUE = COUNT(field)（简单列表计数赋值）=====
@@ -214,18 +214,18 @@ public class FinalRuleParser {
                     "^@([\\w.]+)\\s*=>\\s*VALUE\\s+IS\\s+UNIQUE$",
                     Pattern.CASE_INSENSITIVE);
 
-    // ===== ★ F. 带前置字段条件的 COUNT WITHIN 存在性校验（CONDITIONAL_COUNT_AGGREGATE）=====
+    // ===== ★ F. 带前置字段条件的 COUNT IN 存在性校验（CONDITIONAL_COUNT_AGGREGATE）=====
     //
     // 支持两种格式，用同一个 Pattern 统一匹配，运行时通过 group(2) 是否为空判断格式：
     //
     // 格式 A（前置字段条件 + COUNT，AND 连接）：
-    //   VALUE IS PRESENT|ABSENT IF @field IS PRESENT|ABSENT AND COUNT(listField WITHIN ['val']) op N
+    //   VALUE IS PRESENT|ABSENT IF @field IS PRESENT|ABSENT AND COUNT(listField IN ['val']) op N
     //   示例: VALUE IS PRESENT IF @ConsolidatedMaximum30MinutesPower IS ABSENT
-    //                          AND COUNT(EnergySource WITHIN ['95']) > 1
+    //                          AND COUNT(EnergySource IN ['95']) > 1
     //
     // 格式 B（纯 COUNT 条件，无前置字段条件）：
-    //   VALUE IS PRESENT|ABSENT IF COUNT(listField WITHIN ['val']) op N
-    //   示例: VALUE IS ABSENT IF COUNT(EnergySource WITHIN ['95']) < 2
+    //   VALUE IS PRESENT|ABSENT IF COUNT(listField IN ['val']) op N
+    //   示例: VALUE IS ABSENT IF COUNT(EnergySource IN ['95']) < 2
     //
     // ⚠️ 设计要点：
     //   - 原先拆分为两个 Pattern（格式A用 (.+?) 懒匹配，格式B独立）
@@ -235,7 +235,7 @@ public class FinalRuleParser {
     //       group(1) = "IS PRESENT" | "IS ABSENT"          → VALUE 存在性要求
     //       group(2) = 前置条件字符串（可为空串""）             → 非空则传给 ConditionChain.parseAll()
     //       group(3) = COUNT 的列表字段名（如 EnergySource）  → aggregateFunction.listField
-    //       group(4) = WITHIN 枚举值字符串（如 '95'）          → aggregateFunction.enumValues
+    //       group(4) = IN 枚举值字符串（如 '95'）             → aggregateFunction.enumValues
     //       group(5) = COUNT 比较运算符（>, <, =, >=, <=, !=）→ aggregateFunction.operator
     //       group(6) = 阈值（整数，如 1、2）                   → aggregateFunction.threshold
     //   - group(2) 匹配"COUNT( 之前、IF 之后的所有字符"（含末尾的 "AND "，解析时 trim + 去尾 AND）
@@ -251,7 +251,7 @@ public class FinalRuleParser {
             Pattern.compile(
                     "VALUE\\s+(IS\\s+PRESENT|IS\\s+ABSENT)\\s+IF\\s+" +
                             "((?:(?!COUNT\\().)*?)" +
-                            "COUNT\\(\\s*@?(\\w+)\\s+WITHIN\\s+\\[([^\\[]+)]\\s*\\)" +
+                            "COUNT\\(\\s*@?(\\w+)\\s+IN\\s+\\[([^\\[]+)]\\s*\\)" +
                             "\\s*(>=|<=|>|<|=|!=)\\s*(\\d+)\\s*$",
                     Pattern.CASE_INSENSITIVE);
 
@@ -467,7 +467,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 12-a. VALUE = COUNT(field WITHIN [vals])（带条件列表计数，必须在VALUE_COMPARE前）
+            // 12-a. VALUE = COUNT(field IN [vals])（带条件列表计数，必须在VALUE_COMPARE前）
             m = VALUE_COUNT_WITHIN_PATTERN.matcher(body);
             if (m.matches()) {
                 String listField = m.group(1).trim();
@@ -647,10 +647,10 @@ public class FinalRuleParser {
     // ==========================================
 
     /**
-     * 解析格式A：前置字段条件 + COUNT WITHIN 存在性校验
+     * 解析格式A：前置字段条件 + COUNT IN 存在性校验
      *
      * <p>示例：
-     * {@code VALUE IS PRESENT IF @ConsolidatedMaximum30MinutesPower IS ABSENT AND COUNT(EnergySource WITHIN ['95']) > 1}
+     * {@code VALUE IS PRESENT IF @ConsolidatedMaximum30MinutesPower IS ABSENT AND COUNT(EnergySource IN ['95']) > 1}
      *
      * <p>构建的 RuleItem 字段：
      * <ul>
@@ -668,16 +668,16 @@ public class FinalRuleParser {
      *   <li>group(1) = "IS PRESENT" | "IS ABSENT"  → VALUE 存在性要求，标准化为 IS_PRESENT/IS_ABSENT</li>
      *   <li>group(2) = 前置条件字符串（可为空串）      → 非空则去尾 "AND" 后传给 ConditionChain.parseAll()</li>
      *   <li>group(3) = COUNT 列表字段名              → aggregateFunction.listField</li>
-     *   <li>group(4) = WITHIN 枚举值字符串           → aggregateFunction.enumValues</li>
+     *   <li>group(4) = IN 枚举值字符串               → aggregateFunction.enumValues</li>
      *   <li>group(5) = COUNT 比较运算符              → aggregateFunction.operator</li>
      *   <li>group(6) = 阈值（整数）                  → aggregateFunction.threshold</li>
      * </ul>
      *
      * <p>格式A示例（group(2) 非空）：
-     * {@code VALUE IS PRESENT IF @ConsolidatedMaximum30MinutesPower IS ABSENT AND COUNT(EnergySource WITHIN ['95']) > 1}
+     * {@code VALUE IS PRESENT IF @ConsolidatedMaximum30MinutesPower IS ABSENT AND COUNT(EnergySource IN ['95']) > 1}
      *
      * <p>格式B示例（group(2) 为空串）：
-     * {@code VALUE IS ABSENT IF COUNT(EnergySource WITHIN ['95']) < 2}
+     * {@code VALUE IS ABSENT IF COUNT(EnergySource IN ['95']) < 2}
      */
     private static RuleItem parseConditionalCountAgg(Matcher m, String rawLine) {
         String presence   = normalizePresence(m.group(1).trim());

@@ -44,6 +44,7 @@ public class VehicleTemplateExpiredTask {
                     .append(TimeUtils.getDateDiffDesc(new Date(), vehicleTemplate.getOverdueDate()))
                     .append("到期");
             Map<String, String> params = new HashMap<>();
+            params.put("id", String.valueOf(vehicleTemplate.getTemplateId()));
             params.put("wvtaCocNo", vehicleTemplate.getWvtaCocNo());
             params.put("cocTemplateNo", vehicleTemplate.getCocTemplateNo());
             params.put("modelNo", vehicleTemplate.getModelNo());

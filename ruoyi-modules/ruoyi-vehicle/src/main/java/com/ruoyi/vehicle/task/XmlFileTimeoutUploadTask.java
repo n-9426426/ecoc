@@ -51,6 +51,7 @@ public class XmlFileTimeoutUploadTask {
                     .append(overdueTime)
                     .append("未上传");
             Map<String, String> params = new HashMap<>();
+            params.put("id", String.valueOf(xmlFile.getId()));
             params.put("vin", xmlFile.getVin());
             params.put("modelCode", xmlFile.getModelCode());
             params.put("factoryCode", xmlFile.getFactoryCode());

@@ -9,6 +9,7 @@ import com.ruoyi.vehicle.domain.vo.*;
 import com.ruoyi.vehicle.mapper.ChartDataMapper;
 import com.ruoyi.vehicle.mapper.VehicleLifecycleMapper;
 import com.ruoyi.vehicle.service.IChartDataService;
+import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -273,29 +274,30 @@ public class ChartDataServiceImpl implements IChartDataService {
 
     @Override
     public CalendarDayDetailVo getCalendarOfDay(LocalDate date) {
-        // 1. 计算当天起止时间
         LocalDateTime dayStart = date.atStartOfDay();
         LocalDateTime dayEnd   = date.atTime(23, 59, 59, 999_999_999);
 
-        // 2. 查询当天 vehicle_lifecycle 中去重的 operate 列表（不限 vin）
-        List<String> operates = chartDataMapper.selectDistinctOperateByDateRange(dayStart, dayEnd);
+        List<CalendarDayDetailVo.OperateItem> operates =
+                chartDataMapper.selectDistinctOperateByDateRange(dayStart, dayEnd);
 
-        // 3. 从字典查 operate 名称
+        if (CollectionUtils.isEmpty(operates)) {
+            return CalendarDayDetailVo.builder()
+                    .date(date.toString())
+                    .operates(Collections.emptyList())
+                    .build();
+        }
+
         List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_lifecycle").getData();
         Map<String, String> dictMap = dictDataList.stream()
                 .collect(Collectors.toMap(SysDictData::getDictValue, SysDictData::getDictLabel));
 
-        // 4. 组装结果
-        List<CalendarDayDetailVo.OperateItem> items = operates.stream()
-                .map(op -> CalendarDayDetailVo.OperateItem.builder()
-                        .operate(op)
-                        .operateName(dictMap.getOrDefault(op, op))   // 查不到则回退到原始值
-                        .build())
-                .collect(Collectors.toList());
+        operates.forEach(item ->
+                item.setOperateName(dictMap.getOrDefault(item.getOperate(), item.getOperate()))
+        );
 
         return CalendarDayDetailVo.builder()
                 .date(date.toString())
-                .operates(items)
+                .operates(operates)
                 .build();
     }
 

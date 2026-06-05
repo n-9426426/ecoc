@@ -38,6 +38,7 @@ public class VehicleInfoUseOldTemplateTask {
                     .append(" 生成车辆信息时使用的车辆模版不是最新版本的车辆模版");
             vehicleInfoMapper.updateVehicleInfoOldTemplate(Collections.singletonList(vehicleInfo.getVehicleId()), 1);
             Map<String, String> params = new HashMap<>();
+            params.put("id", String.valueOf(vehicleInfo.getVehicleId()));
             params.put("vin", vehicleInfo.getVin());
             params.put("vehicleModel", vehicleInfo.getVehicleModel());
             params.put("factoryCode", vehicleInfo.getFactoryCode());
