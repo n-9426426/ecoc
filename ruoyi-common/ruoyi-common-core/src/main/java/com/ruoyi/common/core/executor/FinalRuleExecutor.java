@@ -23,6 +23,14 @@ import java.util.regex.Pattern;
  * 再对每个子值独立执行校验。违规报告中会明确标注是哪个子值（以及原始完整值）不符合规则。
  *
  * <p>非范围类规则（如 VALUE_IN、VALUE_REGEX 等）不做拆分，仍以原始完整值参与校验。
+ *
+ * <h3>新增：CONDITIONAL_COUNT_AGGREGATE</h3>
+ * <p>对应 {@link RuleItemType#CONDITIONAL_COUNT_AGGREGATE}，执行三步逻辑：
+ * <ol>
+ *   <li>评估前置字段条件链（{@code conditionChain}，可为 null）——全部满足才继续</li>
+ *   <li>从 context 取列表字段，对每行统计满足 WITHIN 枚举值的条目数</li>
+ *   <li>COUNT 比较通过 → 检查 VALUE 的存在性（IS_PRESENT / IS_ABSENT）</li>
+ * </ol>
  */
 public class FinalRuleExecutor {
 
@@ -62,16 +70,13 @@ public class FinalRuleExecutor {
                 String[] parts = FinalRuleParser.splitMultiValue(rawStr);
 
                 if (parts.length > 1) {
-                    // 真正的多值字段：对每个子值单独校验
                     for (String part : parts) {
                         RuleViolation v = checkRule(fieldName, part, rule, context);
                         if (v != null) {
-                            // 在 violation 中补充"哪个子值 / 原始完整值"信息
                             violations.add(enrichWithSubValue(v, part, rawStr));
                         }
                     }
                 } else {
-                    // 单值字段：走原有逻辑
                     RuleViolation v = checkRule(fieldName, actualValue, rule, context);
                     if (v != null) {
                         violations.add(v);
@@ -96,18 +101,6 @@ public class FinalRuleExecutor {
 
     /**
      * 对子值校验产生的违规报告进行二次加工，在消息中注明具体子值及原始完整值。
-     *
-     * <p>例如：原始值为 {@code "1.23;456.789;0.1"}，其中子值 {@code "456.789"} 不符合
-     * totalDigits=5 限制，则：
-     * <ul>
-     *   <li>messageEn → "… [sub-value='456.789', raw='1.23;456.789;0.1']"</li>
-     *   <li>messageZh → "… [子值='456.789'，原始值='1.23;456.789;0.1']"</li>
-     * </ul>
-     *
-     * @param original 原始违规对象
-     * @param subValue 不符合规则的子值
-     * @param rawValue 字段的原始完整值
-     * @return 消息已补充子值信息的新违规对象
      */
     private static RuleViolation enrichWithSubValue(
             RuleViolation original, String subValue, String rawValue) {
@@ -118,7 +111,7 @@ public class FinalRuleExecutor {
         return RuleViolation.builder()
                 .ruleId(original.getRuleId())
                 .fieldName(original.getFieldName())
-                .actualValue(original.getActualValue())   // 保留子值作为 actualValue（已由 checkRule 设置）
+                .actualValue(original.getActualValue())
                 .messageEn(original.getMessageEn() + suffixEn)
                 .messageZh(original.getMessageZh() + suffixZh)
                 .rawRule(original.getRawRule())
@@ -141,7 +134,7 @@ public class FinalRuleExecutor {
             String strVal;
             switch (rule.getType()) {
                 case NULL: return null;
-                // 规则解析失败时直接转化为校验违规，消息已在解析阶段写好
+
                 case PARSE_ERROR:
                     return buildViolation(rule, fieldName, actualValue,
                             rule.getErrorMessageEn(),
@@ -149,13 +142,15 @@ public class FinalRuleExecutor {
 
                 case VALUE_IS_PRESENT:
                     if (isAbsent(actualValue)) {
-                        return buildViolation(rule, fieldName, actualValue, "Field is required", "必填字段不能为空");
+                        return buildViolation(rule, fieldName, actualValue,
+                                "Field is required", "必填字段不能为空");
                     }
                     return null;
 
                 case VALUE_IS_ABSENT:
                     if (!isAbsent(actualValue)) {
-                        return buildViolation(rule, fieldName, actualValue, "Field must be absent", "该字段在此场景下必须为空");
+                        return buildViolation(rule, fieldName, actualValue,
+                                "Field must be absent", "该字段在此场景下必须为空");
                     }
                     return null;
 
@@ -163,7 +158,8 @@ public class FinalRuleExecutor {
                     strVal = String.valueOf(actualValue);
                     if (rule.getEnumValues() == null || !rule.getEnumValues().contains(strVal)) {
                         return buildViolation(rule, fieldName, actualValue,
-                                "Value not in allowed list: " + rule.getEnumValues(), "值不在允许的枚举列表中: " + rule.getEnumValues());
+                                "Value not in allowed list: " + rule.getEnumValues(),
+                                "值不在允许的枚举列表中: " + rule.getEnumValues());
                     }
                     return null;
 
@@ -171,7 +167,8 @@ public class FinalRuleExecutor {
                     strVal = String.valueOf(actualValue);
                     if (!Pattern.matches(rule.getRegexPattern(), strVal)) {
                         return buildViolation(rule, fieldName, actualValue,
-                                "Value does not match pattern: " + rule.getRegexPattern(), "值不符合正则格式: " + rule.getRegexPattern());
+                                "Value does not match pattern: " + rule.getRegexPattern(),
+                                "值不符合正则格式: " + rule.getRegexPattern());
                     }
                     return null;
 
@@ -198,7 +195,9 @@ public class FinalRuleExecutor {
                             String state = "PRESENT".equals(rule.getRefFieldCondition()) ? "has value" : "is absent";
                             return buildViolation(rule, fieldName, actualValue,
                                     "Field is required because @" + rule.getRefFieldName() + " " + state,
-                                    "@" + rule.getRefFieldName() + " " + ("PRESENT".equals(rule.getRefFieldCondition()) ? "有值" : "为空") + "，当前字段必须填写");
+                                    "@" + rule.getRefFieldName() + " "
+                                            + ("PRESENT".equals(rule.getRefFieldCondition()) ? "有值" : "为空")
+                                            + "，当前字段必须填写");
                         }
                         return null;
                     }
@@ -219,7 +218,9 @@ public class FinalRuleExecutor {
                             String state = "PRESENT".equals(rule.getRefFieldCondition()) ? "has value" : "is absent";
                             return buildViolation(rule, fieldName, actualValue,
                                     "Field must be absent because @" + rule.getRefFieldName() + " " + state,
-                                    "@" + rule.getRefFieldName() + " " + ("PRESENT".equals(rule.getRefFieldCondition()) ? "有值" : "为空") + "，当前字段必须为空");
+                                    "@" + rule.getRefFieldName() + " "
+                                            + ("PRESENT".equals(rule.getRefFieldCondition()) ? "有值" : "为空")
+                                            + "，当前字段必须为空");
                         }
                         return null;
                     }
@@ -261,6 +262,10 @@ public class FinalRuleExecutor {
                 case LIST_UNIQUE:
                     return checkListUnique(fieldName, actualValue, rule, context);
 
+                // ★ 新增
+                case CONDITIONAL_COUNT_AGGREGATE:
+                    return checkConditionalCountAggregate(fieldName, actualValue, rule, context);
+
                 case NUMERIC_RANGE:
                     return checkNumericRange(fieldName, actualValue, rule);
 
@@ -276,13 +281,11 @@ public class FinalRuleExecutor {
                     return checkFractionDigits(fieldName, actualValue, rule);
 
                 default:
-                    // 未知规则类型：同样封装为报告，不打 log
                     return buildViolation(rule, fieldName, actualValue,
                             "Unknown rule type: " + rule.getType(),
                             "未知规则类型: " + rule.getType());
             }
         } catch (Exception e) {
-            // 执行期异常：封装为报告，不打 log
             return buildViolation(rule, fieldName, actualValue,
                     "Rule execution error: " + e.getMessage() + " [raw=" + rule.getRawRule() + "]",
                     "规则执行异常: " + e.getMessage() + " [原始规则=" + rule.getRawRule() + "]");
@@ -402,6 +405,180 @@ public class FinalRuleExecutor {
     }
 
     // ==========================================
+    // ★ 新增：CONDITIONAL_COUNT_AGGREGATE 执行逻辑
+    // ==========================================
+
+    /**
+     * 执行带前置字段条件的 COUNT WITHIN 存在性校验。
+     *
+     * <p>执行步骤：
+     * <ol>
+     *   <li><b>Step 1 前置字段条件</b>：若 {@code conditionChain} 不为 null，
+     *       则评估所有前置字段条件（全部满足才继续）；为 null 表示无前置条件，直接进入 Step 2。</li>
+     *   <li><b>Step 2 COUNT WITHIN</b>：从 context 取列表字段（{@code af.getListField()}），
+     *       遍历每行，统计行内字段值（{@code af.getListField()}）命中 {@code af.getEnumValues()}
+     *       的行数，与 {@code af.getThreshold()} 用 {@code af.getOperator()} 比较。
+     *       COUNT 条件不满足则规则不触发（return null）。</li>
+     *   <li><b>Step 3 存在性校验</b>：COUNT 条件满足后，按 {@code rule.getOperator()}
+     *       （"IS_PRESENT" 或 "IS_ABSENT"）检查 {@code actualValue}。</li>
+     * </ol>
+     *
+     * <p>context 中列表字段的数据结构约定（与 COUNT_AGGREGATE 相同）：
+     * <pre>
+     *   context.get("EnergySource") = List&lt;Map&lt;String, Object&gt;&gt;
+     *   每行 Map 含 key="EnergySource", value="95" / "5" / ...
+     * </pre>
+     *
+     * <p>典型规则示例：
+     * <pre>
+     *   // R1 (格式A): 前置字段条件 + COUNT
+     *   VALUE IS PRESENT IF @ConsolidatedMaximum30MinutesPower IS ABSENT
+     *                     AND COUNT(EnergySource WITHIN ['95']) > 1
+     *
+     *   // R2 (格式B): 纯 COUNT
+     *   VALUE IS ABSENT IF COUNT(EnergySource WITHIN ['95']) < 2
+     * </pre>
+     *
+     * @param fieldName   被校验字段名
+     * @param actualValue 被校验字段的实际值
+     * @param rule        CONDITIONAL_COUNT_AGGREGATE 类型的 RuleItem
+     * @param context     报文上下文（含列表字段及其他字段）
+     * @return 违规时返回 {@link RuleViolation}，通过返回 null
+     */
+    private static RuleViolation checkConditionalCountAggregate(
+            String fieldName,
+            Object actualValue,
+            RuleItem rule,
+            Map<String, Object> context) {
+
+        AggregateFunction af = rule.getAggregateFunction();
+        if (af == null) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "CONDITIONAL_COUNT_AGGREGATE: aggregateFunction is null",
+                    "CONDITIONAL_COUNT_AGGREGATE 规则缺少聚合函数描述");
+        }
+
+        // ---- Step 1：评估前置字段条件链 ----
+        // conditionChain 为 null 表示格式B（无前置条件），直接跳过
+        ConditionChain preChain = rule.getConditionChain();
+        if (preChain != null && !preChain.evaluate(context)) {
+            // 前置字段条件不满足，整条规则不触发
+            return null;
+        }
+
+        // ---- Step 2：COUNT WITHIN 列表计数 ----
+        String listFieldName = af.getListField();
+        if (listFieldName == null || listFieldName.isEmpty()) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "CONDITIONAL_COUNT_AGGREGATE: listField is null or empty",
+                    "CONDITIONAL_COUNT_AGGREGATE 规则缺少列表字段名");
+        }
+
+        Object listObj = context.get(listFieldName);
+        if (!(listObj instanceof List)) {
+            // 列表字段不存在或不是 List 类型：COUNT = 0，按 0 参与比较
+            // 这允许空列表场景下 COUNT < N 正确触发禁填
+            long count = 0L;
+            if (!af.getOperator().apply((double) count, af.getThreshold())) {
+                // COUNT 条件不满足，规则不触发
+                return null;
+            }
+            // COUNT 条件满足（如 0 < 2 时 "IS ABSENT" 应触发）→ 进入 Step 3
+            return checkPresenceByOperator(rule, fieldName, actualValue, count);
+        }
+
+        List<?> list = (List<?>) listObj;
+        List<String> withinVals = af.getEnumValues();
+
+        long count = list.stream()
+                .filter(item -> item instanceof Map)
+                .filter(item -> {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> row = (Map<String, Object>) item;
+                    // 列表字段名既是 context key 也是行内字段名（EnergySource -> row["EnergySource"]）
+                    Object rowVal = row.get(listFieldName);
+                    if (rowVal == null) return false;
+                    String strVal = rowVal.toString().trim();
+                    return withinVals != null && withinVals.contains(strVal);
+                })
+                .count();
+
+        // ---- Step 3：COUNT 比较 ----
+        if (!af.getOperator().apply((double) count, af.getThreshold())) {
+            // COUNT 条件不满足，规则不触发
+            return null;
+        }
+
+        // COUNT 条件满足 → 检查 VALUE 的存在性
+        return checkPresenceByOperator(rule, fieldName, actualValue, count);
+    }
+
+    /**
+     * 根据 rule.getOperator()（"IS_PRESENT" / "IS_ABSENT"）检查 VALUE 的存在性，
+     * 构建并返回违规报告（通过返回 null）。
+     *
+     * @param count 实际 COUNT 值，用于填充违规消息
+     */
+    private static RuleViolation checkPresenceByOperator(
+            RuleItem rule, String fieldName, Object actualValue, long count) {
+
+        AggregateFunction af = rule.getAggregateFunction();
+        String countDesc = buildCountDesc(af, count);
+
+        if ("IS_PRESENT".equals(rule.getOperator())) {
+            if (isAbsent(actualValue)) {
+                // 前置条件 + COUNT 均满足，但 VALUE 为空 → 必填违规
+                String preDesc = buildPreCondDesc(rule);
+                String fullDesc = preDesc.isEmpty()
+                        ? countDesc
+                        : preDesc + " AND " + countDesc;
+                return buildViolation(rule, fieldName, actualValue,
+                        "Field is required: " + fullDesc,
+                        "条件满足时该字段为必填: " + fullDesc);
+            }
+        } else if ("IS_ABSENT".equals(rule.getOperator())) {
+            if (!isAbsent(actualValue)) {
+                // 前置条件 + COUNT 均满足，但 VALUE 有值 → 禁填违规
+                String preDesc = buildPreCondDesc(rule);
+                String fullDesc = preDesc.isEmpty()
+                        ? countDesc
+                        : preDesc + " AND " + countDesc;
+                return buildViolation(rule, fieldName, actualValue,
+                        "Field must be absent: " + fullDesc,
+                        "条件满足时该字段必须为空: " + fullDesc);
+            }
+        } else {
+            return buildViolation(rule, fieldName, actualValue,
+                    "CONDITIONAL_COUNT_AGGREGATE: unknown presence operator: " + rule.getOperator(),
+                    "CONDITIONAL_COUNT_AGGREGATE 未知存在性操作符: " + rule.getOperator());
+        }
+
+        return null;
+    }
+
+    /**
+     * 构建 COUNT 描述字符串，用于违规消息。
+     * 示例：{@code "COUNT(EnergySource WITHIN ['95']) > 1 (actual=2)"}
+     */
+    private static String buildCountDesc(AggregateFunction af, long actualCount) {
+        if (af == null) return "(unknown COUNT)";
+        return "COUNT(" + af.getListField()
+                + " WITHIN " + af.getEnumValues() + ") "
+                + af.getOperator().getSymbol()
+                + " " + af.getThreshold().intValue()
+                + " (actual=" + actualCount + ")";
+    }
+
+    /**
+     * 构建前置字段条件的描述字符串，conditionChain 为 null 时返回空字符串。
+     */
+    private static String buildPreCondDesc(RuleItem rule) {
+        // ConditionChain 未提供 toString()，此处返回占位文本
+        // 实际项目中可在 ConditionChain 上实现 toDescription() 获得更好的可读性
+        return rule.getConditionChain() != null ? "(pre-conditions met)" : "";
+    }
+
+    // ==========================================
     // 嵌套条件校验
     // ==========================================
 
@@ -460,14 +637,10 @@ public class FinalRuleExecutor {
         }
 
         Object listObj = context.get(listField);
-        if (!(listObj instanceof List)) {
-            return null;
-        }
+        if (!(listObj instanceof List)) return null;
 
         List<?> list = (List<?>) listObj;
-        if (list.isEmpty()) {
-            return null;
-        }
+        if (list.isEmpty()) return null;
 
         java.util.List<Integer> numbers = new java.util.ArrayList<>();
         for (Object item : list) {
@@ -491,11 +664,9 @@ public class FinalRuleExecutor {
 
         java.util.Collections.sort(numbers);
         for (int i = 0; i < numbers.size(); i++) {
-            int expected = i + 1;
-            if (numbers.get(i) != expected) {
+            if (numbers.get(i) != i + 1) {
                 return buildViolation(rule, fieldName, actualValue,
-                        "VALUE IS NUMBERED failed: expected sequence 1.." + numbers.size()
-                                + " but found " + numbers,
+                        "VALUE IS NUMBERED failed: expected sequence 1.." + numbers.size() + " but found " + numbers,
                         "连续编号校验失败：期望序列 1.." + numbers.size() + "，实际为 " + numbers);
             }
         }
@@ -517,9 +688,7 @@ public class FinalRuleExecutor {
         }
 
         Object targetValue = context.get(targetField);
-        if (isAbsent(targetValue)) {
-            return null;
-        }
+        if (isAbsent(targetValue)) return null;
 
         CompareOperator op;
         try {
@@ -535,10 +704,8 @@ public class FinalRuleExecutor {
             double target = toDouble(targetValue);
             if (!op.apply(actual, target)) {
                 return buildViolation(rule, fieldName, actualValue,
-                        "Value " + actualValue + " " + op.getSymbol() + " @" + targetField
-                                + "(" + targetValue + ") failed",
-                        "字段值 " + actualValue + " 与 @" + targetField
-                                + "(" + targetValue + ") 比较不通过（" + op.getSymbol() + "）");
+                        "Value " + actualValue + " " + op.getSymbol() + " @" + targetField + "(" + targetValue + ") failed",
+                        "字段值 " + actualValue + " 与 @" + targetField + "(" + targetValue + ") 比较不通过（" + op.getSymbol() + "）");
             }
             return null;
         } catch (Exception e) {
@@ -549,16 +716,13 @@ public class FinalRuleExecutor {
                 result = op.applyString(actualStr, targetStr);
             } catch (IllegalArgumentException ex) {
                 return buildViolation(rule, fieldName, actualValue,
-                        "VALUE_FIELD_COMPARE: cannot compare non-numeric values with operator "
-                                + op.getSymbol(),
+                        "VALUE_FIELD_COMPARE: cannot compare non-numeric values with operator " + op.getSymbol(),
                         "VALUE_FIELD_COMPARE：非数值字段不支持运算符 " + op.getSymbol());
             }
             if (!result) {
                 return buildViolation(rule, fieldName, actualValue,
-                        "Value " + actualValue + " " + op.getSymbol()
-                                + " @" + targetField + "(" + targetValue + ") failed",
-                        "字段值 " + actualValue + " 与 @" + targetField
-                                + "(" + targetValue + ") 比较不通过（" + op.getSymbol() + "）");
+                        "Value " + actualValue + " " + op.getSymbol() + " @" + targetField + "(" + targetValue + ") failed",
+                        "字段值 " + actualValue + " 与 @" + targetField + "(" + targetValue + ") 比较不通过（" + op.getSymbol() + "）");
             }
             return null;
         }
@@ -579,9 +743,7 @@ public class FinalRuleExecutor {
         }
 
         Object listObj = context.get(af.getListField());
-        if (!(listObj instanceof List)) {
-            return null;
-        }
+        if (!(listObj instanceof List)) return null;
 
         List<?> list = (List<?>) listObj;
         String condField = af.getField();
@@ -602,8 +764,7 @@ public class FinalRuleExecutor {
         double actualDouble = toDouble(actualValue);
         if ((double) count != actualDouble) {
             return buildViolation(rule, fieldName, actualValue,
-                    "COUNT(" + af.getListField() + ", " + condField
-                            + " IN " + allowed + ") = " + count
+                    "COUNT(" + af.getListField() + ", " + condField + " IN " + allowed + ") = " + count
                             + " but field value is " + actualValue,
                     "列表中满足条件的行数为 " + count + "，与字段值 " + actualValue + " 不符");
         }
@@ -621,9 +782,7 @@ public class FinalRuleExecutor {
         }
 
         Object listObj = context.get(af.getListField());
-        if (!(listObj instanceof List)) {
-            return null;
-        }
+        if (!(listObj instanceof List)) return null;
 
         List<?> list = (List<?>) listObj;
         List<String> allowed = af.getEnumValues();
@@ -660,12 +819,9 @@ public class FinalRuleExecutor {
             String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
 
         ConditionChain chain = rule.getConditionChain();
-        if (chain == null || !chain.evaluate(context)) {
-            return null;
-        }
-        if (isAbsent(actualValue)) {
-            return null;
-        }
+        if (chain == null || !chain.evaluate(context)) return null;
+        if (isAbsent(actualValue)) return null;
+
         String strVal = String.valueOf(actualValue);
         String pattern = rule.getRegexPattern();
         if (pattern == null || !java.util.regex.Pattern.matches(pattern, strVal)) {
@@ -680,18 +836,13 @@ public class FinalRuleExecutor {
             String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
 
         ConditionChain chain = rule.getConditionChain();
-        if (chain == null || !chain.evaluate(context)) {
-            return null;
-        }
-        if (isAbsent(actualValue)) {
-            return null;
-        }
+        if (chain == null || !chain.evaluate(context)) return null;
+        if (isAbsent(actualValue)) return null;
+
         if (!compareValue(actualValue, rule.getCompareValue(), rule.getOperator())) {
             return buildViolation(rule, fieldName, actualValue,
-                    "Value compare failed (condition met): VALUE "
-                            + rule.getOperator() + " " + rule.getCompareValue(),
-                    "条件满足时数值比较不通过: VALUE "
-                            + rule.getOperator() + " " + rule.getCompareValue());
+                    "Value compare failed (condition met): VALUE " + rule.getOperator() + " " + rule.getCompareValue(),
+                    "条件满足时数值比较不通过: VALUE " + rule.getOperator() + " " + rule.getCompareValue());
         }
         return null;
     }
@@ -700,9 +851,7 @@ public class FinalRuleExecutor {
             String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
 
         ConditionChain chain = rule.getConditionChain();
-        if (chain == null || !chain.evaluate(context)) {
-            return null;
-        }
+        if (chain == null || !chain.evaluate(context)) return null;
 
         String targetField = rule.getRefFieldName();
         if (targetField == null || targetField.isEmpty()) {
@@ -712,9 +861,7 @@ public class FinalRuleExecutor {
         }
 
         Object targetValue = context.get(targetField);
-        if (isAbsent(targetValue)) {
-            return null;
-        }
+        if (isAbsent(targetValue)) return null;
 
         CompareOperator op;
         try {
@@ -730,10 +877,8 @@ public class FinalRuleExecutor {
             double target = toDouble(targetValue);
             if (!op.apply(actual, target)) {
                 return buildViolation(rule, fieldName, actualValue,
-                        "Value " + actualValue + " " + op.getSymbol()
-                                + " @" + targetField + "(" + targetValue + ") failed (condition met)",
-                        "条件满足时字段值 " + actualValue + " 与 @" + targetField
-                                + "(" + targetValue + ") 比较不通过（" + op.getSymbol() + "）");
+                        "Value " + actualValue + " " + op.getSymbol() + " @" + targetField + "(" + targetValue + ") failed (condition met)",
+                        "条件满足时字段值 " + actualValue + " 与 @" + targetField + "(" + targetValue + ") 比较不通过（" + op.getSymbol() + "）");
             }
             return null;
         } catch (Exception e) {
@@ -744,16 +889,13 @@ public class FinalRuleExecutor {
                 result = op.applyString(actualStr, targetStr);
             } catch (IllegalArgumentException ex) {
                 return buildViolation(rule, fieldName, actualValue,
-                        "CONDITIONAL_FIELD_COMPARE: cannot compare non-numeric values with operator "
-                                + op.getSymbol(),
+                        "CONDITIONAL_FIELD_COMPARE: cannot compare non-numeric values with operator " + op.getSymbol(),
                         "CONDITIONAL_FIELD_COMPARE：非数值字段不支持运算符 " + op.getSymbol());
             }
             if (!result) {
                 return buildViolation(rule, fieldName, actualValue,
-                        "Value " + actualValue + " " + op.getSymbol()
-                                + " @" + targetField + "(" + targetValue + ") failed (condition met)",
-                        "条件满足时字段值 " + actualValue + " 与 @" + targetField
-                                + "(" + targetValue + ") 比较不通过（" + op.getSymbol() + "）");
+                        "Value " + actualValue + " " + op.getSymbol() + " @" + targetField + "(" + targetValue + ") failed (condition met)",
+                        "条件满足时字段值 " + actualValue + " 与 @" + targetField + "(" + targetValue + ") 比较不通过（" + op.getSymbol() + "）");
             }
             return null;
         }
@@ -766,9 +908,7 @@ public class FinalRuleExecutor {
     private static RuleViolation checkValueInListField(
             String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
 
-        if (isAbsent(actualValue)) {
-            return null;
-        }
+        if (isAbsent(actualValue)) return null;
 
         String listField = rule.getRefFieldName();
         String targetFieldInRow = rule.getCompareValue();
@@ -780,9 +920,7 @@ public class FinalRuleExecutor {
         }
 
         Object listObj = context.get(listField);
-        if (!(listObj instanceof List)) {
-            return null;
-        }
+        if (!(listObj instanceof List)) return null;
 
         String actualStr = String.valueOf(actualValue);
         boolean found = ((List<?>) listObj).stream()
@@ -796,10 +934,8 @@ public class FinalRuleExecutor {
 
         if (!found) {
             return buildViolation(rule, fieldName, actualValue,
-                    "Value " + actualValue + " not found in any row of "
-                            + listField + "." + targetFieldInRow,
-                    "值 " + actualValue + " 不在列表 " + listField
-                            + " 的 " + targetFieldInRow + " 字段中");
+                    "Value " + actualValue + " not found in any row of " + listField + "." + targetFieldInRow,
+                    "值 " + actualValue + " 不在列表 " + listField + " 的 " + targetFieldInRow + " 字段中");
         }
         return null;
     }
@@ -815,9 +951,7 @@ public class FinalRuleExecutor {
         }
 
         Object listObj = context.get(listField);
-        if (!(listObj instanceof List)) {
-            return null;
-        }
+        if (!(listObj instanceof List)) return null;
 
         List<?> list = (List<?>) listObj;
         java.util.Set<String> seen = new java.util.HashSet<>();
@@ -837,16 +971,14 @@ public class FinalRuleExecutor {
 
         if (!duplicates.isEmpty()) {
             return buildViolation(rule, fieldName, actualValue,
-                    "LIST_UNIQUE failed: duplicate values found in "
-                            + listField + "." + fieldName + ": " + duplicates,
-                    "列表 " + listField + " 中字段 " + fieldName
-                            + " 存在重复值: " + duplicates);
+                    "LIST_UNIQUE failed: duplicate values found in " + listField + "." + fieldName + ": " + duplicates,
+                    "列表 " + listField + " 中字段 " + fieldName + " 存在重复值: " + duplicates);
         }
         return null;
     }
 
     // ==========================================
-    // 范围校验（供 checkRule 分发调用，也供多值拆分后子值校验使用）
+    // 范围校验
     // ==========================================
 
     private static RuleViolation checkNumericRange(String fieldName, Object actualValue, RuleItem rule) {

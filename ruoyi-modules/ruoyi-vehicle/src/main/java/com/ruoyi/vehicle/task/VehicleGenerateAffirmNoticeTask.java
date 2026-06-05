@@ -28,7 +28,6 @@ public class VehicleGenerateAffirmNoticeTask {
 
     @Scheduled(cron = "0 * * * * *")
     public void vehicleGenerateAffirmNoticeJobHandler() {
-        log.info("Scheduled:vehicleGenerateAffirmNoticeJobHandler():分钟");
         List<VehicleInfo> vehicleInfoList = vehicleInfoMapper.listPendingGenerateAffirmNotice();
         if (vehicleInfoList.isEmpty()) {
             return;

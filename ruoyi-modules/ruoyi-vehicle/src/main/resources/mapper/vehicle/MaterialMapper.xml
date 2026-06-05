@@ -97,6 +97,12 @@
             <if test="status != null">
                 AND m.status = #{status}
             </if>
+            <if test="vehicleTemplateIds != null and vehicleTemplateIds.size() > 0">
+                AND vehicle_template_id in
+                <foreach item="templateId" collection="vehicleTemplateIds" open="(" separator="," close=")">
+                    #{templateId}
+                </foreach>
+            </if>
         </where>
         GROUP BY m.id
         ORDER BY m.id DESC

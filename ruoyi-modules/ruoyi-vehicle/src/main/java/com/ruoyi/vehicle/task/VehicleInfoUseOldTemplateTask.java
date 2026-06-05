@@ -27,7 +27,6 @@ public class VehicleInfoUseOldTemplateTask {
 
     @Scheduled(cron = "0 * * * * *")
     public void vehicleInfoUseOldTemplateJobHandler(){
-        log.info("Scheduled:vehicleInfoUseOldTemplateJobHandler():分钟");
         List<VehicleInfo> vehicleInfoList = vehicleInfoMapper.checkOldTemplate();
         if (vehicleInfoList.isEmpty()) {
             return;

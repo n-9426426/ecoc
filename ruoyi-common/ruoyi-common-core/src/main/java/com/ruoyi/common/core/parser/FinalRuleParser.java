@@ -1,5 +1,6 @@
 package com.ruoyi.common.core.parser;
 
+import com.ruoyi.common.core.enums.CompareOperator;
 import com.ruoyi.common.core.enums.RuleItemType;
 import com.ruoyi.common.core.model.*;
 
@@ -41,6 +42,7 @@ import java.util.regex.Pattern;
  * 21.  VALUE op N IF ALL &lt;conditions&gt;                                    → CONDITIONAL_VALUE_COMPARE
  * 22.  VALUE = ANY @listField.fieldName                                   → VALUE_IN_LIST_FIELD
  * 23.  @TableName=&gt;VALUE IS UNIQUE                                        → LIST_UNIQUE
+ * 24.  VALUE IS PRESENT|ABSENT IF [@preCond AND] COUNT(f WITHIN [v]) op N → CONDITIONAL_COUNT_AGGREGATE  ★新增
  * </pre>
  */
 public class FinalRuleParser {
@@ -212,6 +214,47 @@ public class FinalRuleParser {
                     "^@([\\w.]+)\\s*=>\\s*VALUE\\s+IS\\s+UNIQUE$",
                     Pattern.CASE_INSENSITIVE);
 
+    // ===== ★ F. 带前置字段条件的 COUNT WITHIN 存在性校验（CONDITIONAL_COUNT_AGGREGATE）=====
+    //
+    // 支持两种格式，用同一个 Pattern 统一匹配，运行时通过 group(2) 是否为空判断格式：
+    //
+    // 格式 A（前置字段条件 + COUNT，AND 连接）：
+    //   VALUE IS PRESENT|ABSENT IF @field IS PRESENT|ABSENT AND COUNT(listField WITHIN ['val']) op N
+    //   示例: VALUE IS PRESENT IF @ConsolidatedMaximum30MinutesPower IS ABSENT
+    //                          AND COUNT(EnergySource WITHIN ['95']) > 1
+    //
+    // 格式 B（纯 COUNT 条件，无前置字段条件）：
+    //   VALUE IS PRESENT|ABSENT IF COUNT(listField WITHIN ['val']) op N
+    //   示例: VALUE IS ABSENT IF COUNT(EnergySource WITHIN ['95']) < 2
+    //
+    // ⚠️ 设计要点：
+    //   - 原先拆分为两个 Pattern（格式A用 (.+?) 懒匹配，格式B独立）
+    //     → 在 Java NFA 引擎中两个 Pattern 均可独立 fullmatch，但 parseRuleBody 里
+    //       "格式B先于格式A检测"导致格式A的规则落入格式B分支时捕获组偏移，产生解析错误。
+    //   - 现改为单一统一 Pattern：
+    //       group(1) = "IS PRESENT" | "IS ABSENT"          → VALUE 存在性要求
+    //       group(2) = 前置条件字符串（可为空串""）             → 非空则传给 ConditionChain.parseAll()
+    //       group(3) = COUNT 的列表字段名（如 EnergySource）  → aggregateFunction.listField
+    //       group(4) = WITHIN 枚举值字符串（如 '95'）          → aggregateFunction.enumValues
+    //       group(5) = COUNT 比较运算符（>, <, =, >=, <=, !=）→ aggregateFunction.operator
+    //       group(6) = 阈值（整数，如 1、2）                   → aggregateFunction.threshold
+    //   - group(2) 匹配"COUNT( 之前、IF 之后的所有字符"（含末尾的 "AND "，解析时 trim + 去尾 AND）
+    //     使用 (.*?) 零次或多次懒匹配，确保格式B时 group(2) 为空串。
+    //
+    // ⚠️ 匹配优先级：必须在以下 Pattern 之前注册和调用：
+    //   - VALUE_IS_PRESENT_IF_REF_PATTERN / VALUE_IS_ABSENT_IF_REF_PATTERN
+    //     （格式A与它们共享 "VALUE IS PRESENT|ABSENT IF @" 前缀）
+    //   - MANDATORY_IF_ANY/ALL / FORBIDDEN_IF_ANY/ALL
+    //     （格式B不含 ANY/ALL 关键字，但 IF (.+) 的贪婪匹配会错误吃掉 COUNT 部分）
+    //
+    private static final Pattern CONDITIONAL_COUNT_AGG_PATTERN =
+            Pattern.compile(
+                    "VALUE\\s+(IS\\s+PRESENT|IS\\s+ABSENT)\\s+IF\\s+" +
+                            "((?:(?!COUNT\\().)*?)" +
+                            "COUNT\\(\\s*@?(\\w+)\\s+WITHIN\\s+\\[([^\\[]+)]\\s*\\)" +
+                            "\\s*(>=|<=|>|<|=|!=)\\s*(\\d+)\\s*$",
+                    Pattern.CASE_INSENSITIVE);
+
     // ==========================================
     // 公开入口
     // ==========================================
@@ -287,7 +330,16 @@ public class FinalRuleParser {
                 return nestedItem;
             }
 
-            Matcher m = VALUE_IS_PRESENT_IF_REF_PATTERN.matcher(body);
+            // ★ 2. CONDITIONAL_COUNT_AGGREGATE（统一 Pattern，格式A/B 均由此处理）
+            //    格式A: group(2) 为前置条件串（如 "@field IS ABSENT AND "），解析时去尾 AND
+            //    格式B: group(2) 为空串 ""，conditionChain = null，直接执行 COUNT 校验
+            //    必须在 VALUE_IS_PRESENT/ABSENT_IF_REF 和 MANDATORY/FORBIDDEN_IF_ANY/ALL 之前匹配
+            Matcher m = CONDITIONAL_COUNT_AGG_PATTERN.matcher(body);
+            if (m.matches()) {
+                return parseConditionalCountAgg(m, rawLine);
+            }
+
+            m = VALUE_IS_PRESENT_IF_REF_PATTERN.matcher(body);
             if (m.matches()) {
                 String refCondition = m.group(2).trim().toUpperCase();
                 return RuleItem.builder()
@@ -309,7 +361,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 2. MANDATORY_IF ANY
+            // 4. MANDATORY_IF ANY
             m = MANDATORY_IF_ANY_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -318,7 +370,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 3. FORBIDDEN_IF ALL
+            // 5. FORBIDDEN_IF ALL
             m = FORBIDDEN_IF_ALL_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -327,7 +379,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 4. MANDATORY_IF ALL
+            // 6. MANDATORY_IF ALL
             m = MANDATORY_IF_ALL_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -336,7 +388,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 5. FORBIDDEN_IF ANY
+            // 7. FORBIDDEN_IF ANY
             m = FORBIDDEN_IF_ANY_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -345,7 +397,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 6. COUNT
+            // 8. COUNT
             m = COUNT_PATTERN.matcher(body);
             if (m.matches()) {
                 String listField = m.group(1).trim().replace("@", "");
@@ -365,7 +417,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 7. SUM
+            // 9. SUM
             m = SUM_PATTERN.matcher(body);
             if (m.matches()) {
                 String listField = m.group(1).trim().replace("@", "");
@@ -387,7 +439,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 8. VALUE IN [...]
+            // 10. VALUE IN [...]
             m = VALUE_IN_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -396,8 +448,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 9-a. VALUE = /regex/ IF ALL <conditions>（条件正则，必须在裸正则之前）
-            //      用途: [463] TestFamilyIdentifierValue
+            // 11-a. VALUE = /regex/ IF ALL <conditions>（条件正则，必须在裸正则之前）
             m = CONDITIONAL_REGEX_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -407,7 +458,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 9. VALUE = /regex/
+            // 11. VALUE = /regex/
             m = VALUE_REGEX_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -416,8 +467,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 10-a. VALUE = COUNT(field WITHIN [vals])（带条件列表计数，必须在VALUE_COMPARE前）
-            //        用途: NumberOfPoweredAxles → VALUE = COUNT(PoweredAxleIndicator WITHIN ['Y'])
+            // 12-a. VALUE = COUNT(field WITHIN [vals])（带条件列表计数，必须在VALUE_COMPARE前）
             m = VALUE_COUNT_WITHIN_PATTERN.matcher(body);
             if (m.matches()) {
                 String listField = m.group(1).trim();
@@ -427,7 +477,7 @@ public class FinalRuleParser {
                         .listField(listField)
                         .enumValues(withinVals)
                         .operator(com.ruoyi.common.core.enums.CompareOperator.EQ)
-                        .threshold(null) // null 表示与当前字段 VALUE 比较
+                        .threshold(null)
                         .build();
                 return RuleItem.builder()
                         .type(RuleItemType.COUNT_AS_VALUE)
@@ -435,8 +485,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 10-b. VALUE = COUNT(field)（简单列表计数，必须在VALUE_COMPARE前）
-            //        用途: NumberOfAxles → VALUE = COUNT(AxleGroup)
+            // 12-b. VALUE = COUNT(field)（简单列表计数，必须在VALUE_COMPARE前）
             m = VALUE_COUNT_SIMPLE_PATTERN.matcher(body);
             if (m.matches()) {
                 String listField = m.group(1).trim();
@@ -452,8 +501,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 10-c. VALUE op FieldName?（无@前缀跨字段比较，必须在VALUE_COMPARE前）
-            //        用途: ActualMass → VALUE < TechnicallyPermissibleMaximumLadenMass?
+            // 12-c. VALUE op FieldName?（无@前缀跨字段比较，必须在VALUE_COMPARE前）
             m = VALUE_FIELD_COMPARE_NO_AT_PATTERN.matcher(body);
             if (m.matches()) {
                 String refName = m.group(2).trim();
@@ -467,7 +515,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 10. VALUE 比较运算（字面量比较，必须在所有字段引用/COUNT之后）
+            // 12. VALUE 比较运算（字面量比较，必须在所有字段引用/COUNT之后）
             m = VALUE_COMPARE_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -477,7 +525,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 11. VALUE IS PRESENT
+            // 13. VALUE IS PRESENT
             if (VALUE_IS_PRESENT_PATTERN.matcher(body).matches()) {
                 return RuleItem.builder()
                         .type(RuleItemType.VALUE_IS_PRESENT)
@@ -485,7 +533,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 12. VALUE IS ABSENT
+            // 14. VALUE IS ABSENT
             if (VALUE_IS_ABSENT_PATTERN.matcher(body).matches()) {
                 return RuleItem.builder()
                         .type(RuleItemType.VALUE_IS_ABSENT)
@@ -493,7 +541,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 13. TableName=>VALUE IS NUMBERED
+            // 15. TableName=>VALUE IS NUMBERED
             m = VALUE_IS_NUMBERED_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -502,9 +550,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 14-a. VALUE op @fieldName IF ALL <conditions>（条件跨字段比较）
-            //       用途: [90] PreviousStageVersion
-            //       必须在裸 VALUE_FIELD_COMPARE 之前匹配
+            // 16-a. VALUE op @fieldName IF ALL <conditions>（条件跨字段比较）
             m = CONDITIONAL_FIELD_COMPARE_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -515,9 +561,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 14-b. VALUE op N IF ALL <conditions>（条件数值比较）
-            //       用途: [127][130][129][132][133] Length/Width/Height 系列
-            //       必须在裸 VALUE_COMPARE 之前匹配
+            // 16-b. VALUE op N IF ALL <conditions>（条件数值比较）
             m = CONDITIONAL_VALUE_COMPARE_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -528,7 +572,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 14. VALUE op @fieldName（跨字段值比较，标准带 @ 前缀）
+            // 16. VALUE op @fieldName（跨字段值比较，标准带 @ 前缀）
             m = VALUE_FIELD_COMPARE_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -538,9 +582,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 15. COUNT(@listField, @conditionField IN [vals]) = VALUE
-            //     列表字段中满足枚举条件的行数，赋值校验当前字段
-            //     用途: [103]-[106] NumberOfAxles* 类字段
+            // 17. COUNT(@listField, @conditionField IN [vals]) = VALUE
             m = COUNT_AS_VALUE_PATTERN.matcher(body);
             if (m.matches()) {
                 AggregateFunction af = AggregateFunction.builder()
@@ -549,7 +591,7 @@ public class FinalRuleParser {
                         .field(m.group(2).trim())
                         .enumValues(parseList(m.group(3)))
                         .operator(com.ruoyi.common.core.enums.CompareOperator.EQ)
-                        .threshold(null) // null 表示与当前字段 VALUE 比较，而非固定阈值
+                        .threshold(null)
                         .build();
                 return RuleItem.builder()
                         .type(RuleItemType.COUNT_AS_VALUE)
@@ -557,9 +599,7 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 16. @TableName=>COUNT(VALUE IN [vals]) op threshold
-            //     列表上下文内对本字段 VALUE 做枚举计数校验
-            //     用途: [233] TyreFittedProductionIndicator
+            // 18. @TableName=>COUNT(VALUE IN [vals]) op threshold
             m = LIST_COUNT_PATTERN.matcher(body);
             if (m.matches()) {
                 AggregateFunction af = AggregateFunction.builder()
@@ -575,19 +615,17 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 17. VALUE = ANY @listField.fieldName（列表成员检查）
-            //     用途: [169] MechanicalCouplingNumberVerticalMass, [242] AxleNumberCombination
+            // 19. VALUE = ANY @listField.fieldName（列表成员检查）
             m = VALUE_IN_LIST_FIELD_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
                         .type(RuleItemType.VALUE_IN_LIST_FIELD)
-                        .refFieldName(m.group(1).trim())   // listField
-                        .compareValue(m.group(2).trim())   // fieldName in each row
+                        .refFieldName(m.group(1).trim())
+                        .compareValue(m.group(2).trim())
                         .build();
             }
 
-            // 18. @TableName=>VALUE IS UNIQUE（列表唯一性校验）
-            //     用途: [252] Colour
+            // 20. @TableName=>VALUE IS UNIQUE（列表唯一性校验）
             m = LIST_UNIQUE_PATTERN.matcher(body);
             if (m.matches()) {
                 return RuleItem.builder()
@@ -600,9 +638,81 @@ public class FinalRuleParser {
             return buildParseErrorItem(rawLine, "规则格式无法识别");
 
         } catch (Exception e) {
-            // 解析过程中出现异常（如运算符不合法、数字格式错误等）—— 同样封装为解析错误条目
             return buildParseErrorItem(rawLine, "规则解析异常: " + e.getMessage());
         }
+    }
+
+    // ==========================================
+    // ★ 新增：CONDITIONAL_COUNT_AGGREGATE 解析辅助方法
+    // ==========================================
+
+    /**
+     * 解析格式A：前置字段条件 + COUNT WITHIN 存在性校验
+     *
+     * <p>示例：
+     * {@code VALUE IS PRESENT IF @ConsolidatedMaximum30MinutesPower IS ABSENT AND COUNT(EnergySource WITHIN ['95']) > 1}
+     *
+     * <p>构建的 RuleItem 字段：
+     * <ul>
+     *   <li>{@code type}              = CONDITIONAL_COUNT_AGGREGATE</li>
+     *   <li>{@code operator}          = "IS_PRESENT" | "IS_ABSENT"（VALUE 的存在性要求）</li>
+     *   <li>{@code conditionChain}    = 前置字段条件链（ConditionChain.parseAll 解析）</li>
+     *   <li>{@code aggregateFunction} = COUNT 的配置（listField / enumValues / operator / threshold）</li>
+     * </ul>
+     */
+    /**
+     * 解析 CONDITIONAL_COUNT_AGGREGATE（格式A/B 统一入口）
+     *
+     * <p>捕获组说明（来自 CONDITIONAL_COUNT_AGG_PATTERN）：
+     * <ul>
+     *   <li>group(1) = "IS PRESENT" | "IS ABSENT"  → VALUE 存在性要求，标准化为 IS_PRESENT/IS_ABSENT</li>
+     *   <li>group(2) = 前置条件字符串（可为空串）      → 非空则去尾 "AND" 后传给 ConditionChain.parseAll()</li>
+     *   <li>group(3) = COUNT 列表字段名              → aggregateFunction.listField</li>
+     *   <li>group(4) = WITHIN 枚举值字符串           → aggregateFunction.enumValues</li>
+     *   <li>group(5) = COUNT 比较运算符              → aggregateFunction.operator</li>
+     *   <li>group(6) = 阈值（整数）                  → aggregateFunction.threshold</li>
+     * </ul>
+     *
+     * <p>格式A示例（group(2) 非空）：
+     * {@code VALUE IS PRESENT IF @ConsolidatedMaximum30MinutesPower IS ABSENT AND COUNT(EnergySource WITHIN ['95']) > 1}
+     *
+     * <p>格式B示例（group(2) 为空串）：
+     * {@code VALUE IS ABSENT IF COUNT(EnergySource WITHIN ['95']) < 2}
+     */
+    private static RuleItem parseConditionalCountAgg(Matcher m, String rawLine) {
+        String presence   = normalizePresence(m.group(1).trim());
+        String preCondRaw = m.group(2).trim();
+        String listField  = m.group(3).trim().replace("@", "");  // ★ 去掉可能残留的 @
+        List<String> vals = parseList(m.group(4));
+        String countOp    = m.group(5).trim();
+        int threshold     = Integer.parseInt(m.group(6).trim());
+
+        String preCondStr = preCondRaw.replaceAll("(?i)\\s+AND\\s*$", "").trim();
+        ConditionChain preChain = preCondStr.isEmpty()
+                ? null
+                : ConditionChain.parseAll(preCondStr);
+
+        AggregateFunction af = AggregateFunction.builder()
+                .functionType(AggregateFunction.Type.COUNT)
+                .listField(listField)
+                .enumValues(vals)
+                .operator(CompareOperator.fromSymbol(countOp))
+                .threshold((double) threshold)
+                .build();
+
+        return RuleItem.builder()
+                .type(RuleItemType.CONDITIONAL_COUNT_AGGREGATE)
+                .operator(presence)
+                .conditionChain(preChain)
+                .aggregateFunction(af)
+                .rawRule(rawLine)
+                .build();
+    }
+
+    private static String normalizePresence(String raw) {
+        if (raw.toUpperCase().contains("PRESENT")) return "IS_PRESENT";
+        if (raw.toUpperCase().contains("ABSENT"))  return "IS_ABSENT";
+        return raw.toUpperCase().replace(" ", "_");
     }
 
     // ==========================================
@@ -611,7 +721,6 @@ public class FinalRuleParser {
 
     /**
      * 构建解析错误条目。
-     * 不打印任何日志，仅将错误信息随条目传递，由执行器生成校验报告。
      */
     private static RuleItem buildParseErrorItem(String rawLine, String reason) {
         return RuleItem.builder()
@@ -693,21 +802,6 @@ public class FinalRuleParser {
 
     /**
      * 【F类修复】多值字段拆分工具
-     *
-     * <p>部分字段存储多个值，以 {@code |} 或 {@code ;} 分隔（如 GearRatio、RimOffSet）。
-     * 执行器在做 range_rule 数值校验（totalDigits / fractionDigits / minInclusive /
-     * maxInclusive / maxLength 等）时，必须先调用此方法将值拆分，再对每个子值单独校验。
-     *
-     * <p>使用示例（执行器伪代码）：
-     * <pre>
-     *   String[] parts = FinalRuleParser.splitMultiValue(rawValue);
-     *   for (String part : parts) {
-     *       validateRangeRule(part, constraint);
-     *   }
-     * </pre>
-     *
-     * @param value 原始字段值，可能含 {@code |} 或 {@code ;} 分隔的多个子值
-     * @return 拆分后的子值数组；若无分隔符则返回长度为 1 的数组
      */
     public static String[] splitMultiValue(String value) {
         if (value == null || value.isEmpty()) {

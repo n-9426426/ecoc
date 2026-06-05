@@ -27,7 +27,6 @@ public class VehicleTemplateExpiredTask {
 
     @Scheduled(cron = "0 * * * * ?")
     public void vehicleTemplateExpiredJobHandler(){
-        log.info("Scheduled:vehicleTemplateExpiredJobHandler():分钟");
         List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectExpiringTemplates(0);
         if (vehicleTemplateList.isEmpty()) {
             return;

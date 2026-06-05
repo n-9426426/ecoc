@@ -1,157 +1,180 @@
-                                        package com.ruoyi.common.core.model;
+package com.ruoyi.common.core.model;
 
-                                        import com.ruoyi.common.core.enums.CompareOperator;
-                                        import lombok.AllArgsConstructor;
-                                        import lombok.Builder;
-                                        import lombok.Data;
-                                        import lombok.NoArgsConstructor;
+import com.ruoyi.common.core.enums.CompareOperator;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-                                        import java.util.Collection;
-                                        import java.util.Map;
-                                        import java.util.Objects;
-                                        import java.util.regex.Matcher;
-                                        import java.util.regex.Pattern;
+import java.util.Collection;
+import java.util.Map;
+import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-                                        /**
-                                         * 单个条件表达式
-                                         * 支持：
-                                         *   field = value
-                                         *   field != value, >, <, >=, <=
-                                         *   field IS PRESENT / IS ABSENT
-                                         *   @field（字段有值即满足）
-                                         *
-                                         * <p>{@link #parse(String)} 在表达式无法识别时返回 {@code null}，
-                                         * 不抛出异常、不打印日志，由调用方（{@link ConditionChain}）决定如何处理。
-                                         */
-                                        @Data
-                                        @Builder
-                                        @NoArgsConstructor
-                                        @AllArgsConstructor
-                                        public class ConditionExpression {
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ConditionExpression {
 
-                                            // field op value（支持 =, !=, >, <, >=, <=）
-                                            private static final Pattern COMPARISON_PATTERN =
-                                                    Pattern.compile("^@?([\\w.]+)\\s+([=<>!]+)\\s+([^\\s,)]+)$");
+    // ★ 新增：@fieldA op @fieldB（跨字段比较，必须在 COMPARISON_PATTERN 之前匹配）
+    private static final Pattern FIELD_EQ_FIELD_PATTERN =
+            Pattern.compile("^@?([\\w.]+)\\s+([=<>!]+)\\s+@([\\w.]+)$");
 
-                                            // field IS PRESENT / IS ABSENT
-                                            private static final Pattern IS_PATTERN =
-                                                    Pattern.compile("^@?([\\w.]+)\\s+IS\\s+(PRESENT|ABSENT)$", Pattern.CASE_INSENSITIVE);
+    // field op value（支持 =, !=, >, <, >=, <=）
+    private static final Pattern COMPARISON_PATTERN =
+            Pattern.compile("^@?([\\w.]+)\\s+([=<>!]+)\\s+([^\\s,)]+)$");
 
-                                            // @field（无运算符）
-                                            private static final Pattern REF_PATTERN =
-                                                    Pattern.compile("^@([\\w.]+)$");
+    // field IS PRESENT / IS ABSENT
+    private static final Pattern IS_PATTERN =
+            Pattern.compile("^@?([\\w.]+)\\s+IS\\s+(PRESENT|ABSENT)$", Pattern.CASE_INSENSITIVE);
 
-                                            private String fieldName;
-                                            private CompareOperator operator;
-                                            private String expectValue;
+    // @field（无运算符）
+    private static final Pattern REF_PATTERN =
+            Pattern.compile("^@([\\w.]+)$");
 
-                                            /**
-                                             * 解析单个条件表达式字符串。
-                                             *
-                                             * @return 解析成功时返回 {@link ConditionExpression}；
-                                             *         表达式格式无法识别或运算符不合法时返回 {@code null}（不抛异常、不打日志）。
-                                             */
-                                            public static ConditionExpression parse(String expr) {
-                                                if (expr == null) {
-                                                    return null;
-                                                }
-                                                expr = expr.trim();
-                                                if (expr.isEmpty()) {
-                                                    return null;
-                                                }
+    private String fieldName;
+    private CompareOperator operator;
+    private String expectValue;
 
-                                                // 1. 尝试匹配：field op value（支持 @field 或 field）
-                                                Matcher m = COMPARISON_PATTERN.matcher(expr);
-                                                if (m.matches()) {
-                                                    String field = m.group(1);
-                                                    String opStr = m.group(2);
-                                                    String val = m.group(3);
+    public static ConditionExpression parse(String expr) {
+        if (expr == null) {
+            return null;
+        }
+        expr = expr.trim();
+        if (expr.isEmpty()) {
+            return null;
+        }
 
-                                                    CompareOperator op;
-                                                    try {
-                                                        op = CompareOperator.fromSymbol(opStr);
-                                                    } catch (IllegalArgumentException e) {
-                                                        // 运算符不合法 —— 静默返回 null
-                                                        return null;
-                                                    }
+        // 0. ★ 跨字段比较：@fieldA op @fieldB（必须在 COMPARISON_PATTERN 之前）
+        Matcher m = FIELD_EQ_FIELD_PATTERN.matcher(expr);
+        if (m.matches()) {
+            String field    = m.group(1);
+            String opStr    = m.group(2);
+            String refField = m.group(3);
 
-                                                    return ConditionExpression.builder()
-                                                            .fieldName(field)
-                                                            .operator(op)
-                                                            .expectValue(val)
-                                                            .build();
-                                                }
+            CompareOperator op;
+            try {
+                op = CompareOperator.fromSymbol(opStr);
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
 
-                                                // 2. 尝试匹配：field IS PRESENT / IS ABSENT
-                                                m = IS_PATTERN.matcher(expr);
-                                                if (m.matches()) {
-                                                    String field = m.group(1);
-                                                    String condition = m.group(2);
-                                                    CompareOperator op = "PRESENT".equalsIgnoreCase(condition)
-                                                            ? CompareOperator.IS_PRESENT
-                                                            : CompareOperator.IS_ABSENT;
-                                                    return ConditionExpression.builder()
-                                                            .fieldName(field)
-                                                            .operator(op)
-                                                            .build();
-                                                }
+            return ConditionExpression.builder()
+                    .fieldName(field)
+                    .operator(op)
+                    .expectValue("@" + refField)  // @ 前缀标记字段引用
+                    .build();
+        }
 
-                                                // 3. 尝试匹配：@field（字段存在即满足）
-                                                m = REF_PATTERN.matcher(expr);
-                                                if (m.matches()) {
-                                                    String field = m.group(1);
-                                                    return ConditionExpression.builder()
-                                                            .fieldName(field)
-                                                            .operator(CompareOperator.REF)
-                                                            .build();
-                                                }
+        // 1. field op value
+        m = COMPARISON_PATTERN.matcher(expr);
+        if (m.matches()) {
+            String field = m.group(1);
+            String opStr = m.group(2);
+            String val   = m.group(3);
 
-                                                // 所有模式均未匹配 —— 静默返回 null，由调用方决定如何处理
-                                                return null;
-                                            }
+            CompareOperator op;
+            try {
+                op = CompareOperator.fromSymbol(opStr);
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
 
-                                            public boolean evaluate(Map<String, Object> context) {
-                                                if (this.fieldName == null || this.operator == null) {
-                                                    return false;
-                                                }
+            return ConditionExpression.builder()
+                    .fieldName(field)
+                    .operator(op)
+                    .expectValue(val)
+                    .build();
+        }
 
-                                                Object actual = context.get(this.fieldName);
+        // 2. field IS PRESENT / IS ABSENT
+        m = IS_PATTERN.matcher(expr);
+        if (m.matches()) {
+            String field     = m.group(1);
+            String condition = m.group(2);
+            CompareOperator op = "PRESENT".equalsIgnoreCase(condition)
+                    ? CompareOperator.IS_PRESENT
+                    : CompareOperator.IS_ABSENT;
+            return ConditionExpression.builder()
+                    .fieldName(field)
+                    .operator(op)
+                    .build();
+        }
 
-                                                if (this.operator == CompareOperator.IS_PRESENT) {
-                                                    return !isAbsent(actual);
-                                                }
-                                                if (this.operator == CompareOperator.IS_ABSENT) {
-                                                    return isAbsent(actual);
-                                                }
-                                                if (this.operator == CompareOperator.REF) {
-                                                    return !isAbsent(actual);
-                                                }
+        // 3. @field（字段存在即满足）
+        m = REF_PATTERN.matcher(expr);
+        if (m.matches()) {
+            return ConditionExpression.builder()
+                    .fieldName(m.group(1))
+                    .operator(CompareOperator.REF)
+                    .build();
+        }
 
-                                                if (this.expectValue == null) {
-                                                    return false;
-                                                }
+        return null;
+    }
 
-                                                try {
-                                                    double actualNum = Double.parseDouble(actual == null ? "0" : actual.toString());
-                                                    double expectedNum = Double.parseDouble(this.expectValue);
-                                                    return this.operator.apply(actualNum, expectedNum);
-                                                } catch (NumberFormatException e) {
-                                                    if (this.operator == CompareOperator.EQ) {
-                                                        return Objects.equals(this.expectValue, actual == null ? null : actual.toString());
-                                                    } else if (this.operator == CompareOperator.NEQ) {
-                                                        return !Objects.equals(this.expectValue, actual == null ? null : actual.toString());
-                                                    } else {
-                                                        // 非数值字段使用数值比较运算符，无法降级 —— 静默返回 false
-                                                        return false;
-                                                    }
-                                                }
-                                            }
+    public boolean evaluate(Map<String, Object> context) {
+        if (this.fieldName == null || this.operator == null) {
+            return false;
+        }
 
-                                            private boolean isAbsent(Object value) {
-                                                if (value == null) return true;
-                                                if (value instanceof String) return ((String) value).trim().isEmpty();
-                                                if (value instanceof Collection) return ((Collection<?>) value).isEmpty();
-                                                if (value instanceof Map) return ((Map<?, ?>) value).isEmpty();
-                                                return false;
-                                            }
-                                        }
+        Object actual = context.get(this.fieldName);
+
+        if (this.operator == CompareOperator.IS_PRESENT) {
+            return !isAbsent(actual);
+        }
+        if (this.operator == CompareOperator.IS_ABSENT) {
+            return isAbsent(actual);
+        }
+        if (this.operator == CompareOperator.REF) {
+            return !isAbsent(actual);
+        }
+
+        if (this.expectValue == null) {
+            return false;
+        }
+
+        // ★ 跨字段比较：expectValue 以 @ 开头表示引用另一个字段的值
+        if (this.expectValue.startsWith("@")) {
+            String refFieldName = this.expectValue.substring(1);
+            Object refActual    = context.get(refFieldName);
+
+            try {
+                double actualNum = Double.parseDouble(actual == null ? "0" : actual.toString());
+                double refNum    = Double.parseDouble(refActual == null ? "0" : refActual.toString());
+                return this.operator.apply(actualNum, refNum);
+            } catch (NumberFormatException e) {
+                String actualStr = actual == null ? "" : actual.toString();
+                String refStr    = refActual == null ? "" : refActual.toString();
+                if (this.operator == CompareOperator.EQ)  return actualStr.equals(refStr);
+                if (this.operator == CompareOperator.NEQ) return !actualStr.equals(refStr);
+                return false;
+            }
+        }
+
+        // 原有字面量比较逻辑
+        try {
+            double actualNum   = Double.parseDouble(actual == null ? "0" : actual.toString());
+            double expectedNum = Double.parseDouble(this.expectValue);
+            return this.operator.apply(actualNum, expectedNum);
+        } catch (NumberFormatException e) {
+            if (this.operator == CompareOperator.EQ) {
+                return Objects.equals(this.expectValue, actual == null ? null : actual.toString());
+            } else if (this.operator == CompareOperator.NEQ) {
+                return !Objects.equals(this.expectValue, actual == null ? null : actual.toString());
+            } else {
+                return false;
+            }
+        }
+    }
+
+    private boolean isAbsent(Object value) {
+        if (value == null) return true;
+        if (value instanceof String) return ((String) value).trim().isEmpty();
+        if (value instanceof Collection) return ((Collection<?>) value).isEmpty();
+        if (value instanceof Map) return ((Map<?, ?>) value).isEmpty();
+        return false;
+    }
+}

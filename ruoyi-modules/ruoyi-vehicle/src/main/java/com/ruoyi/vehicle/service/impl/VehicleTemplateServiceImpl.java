@@ -22,8 +22,10 @@ import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.system.api.domain.SysNotice;
 import com.ruoyi.system.api.enums.SysNoticeModel;
 import com.ruoyi.vehicle.domain.AbnormalClassify;
+import com.ruoyi.vehicle.domain.Material;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.mapper.AbnormalClassifyMapper;
+import com.ruoyi.vehicle.mapper.MaterialMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMapper;
 import com.ruoyi.vehicle.service.IFirstVehicleCheckService;
 import com.ruoyi.vehicle.service.IVehicleTemplateService;
@@ -105,7 +107,8 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     @Autowired
     private IFirstVehicleCheckService firstVehicleCheckService;
 
-
+    @Autowired
+    private MaterialMapper materialMapper;
 
     /**
      * 字典缓存：dictType → (dictLabel → dictValue)
@@ -186,6 +189,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 template.setVariant(tvv[1]);
                 template.setVersionNo(tvv[2]);
             }
+            template.setTvv(template.getTvv().replace(",", ""));
 
             // 解析 json 的每个 key，关联 vehicle_attribute 字典，
             // 查出对应的 otherLabel 和 otherLabelSystem 并挂载到实体
@@ -312,16 +316,13 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int deleteVehicleTemplateByIds(Long[] templateIds) {
-        List<Map<String, Object>> result = templateMapper.selectVehicleCountByTemplateIds(templateIds);
-
+        List<Map<String, Object>> vehicles = templateMapper.selectVehicleCountByTemplateIds(templateIds);
         // 按 templateId 分组，过滤掉 vin 为 null 的行（无关联车辆的模板）
-        Map<Long, List<Map<String, Object>>> groupedByTemplate = result.stream()
+        Map<Long, List<Map<String, Object>>> groupedByTemplate = vehicles.stream()
                 .filter(map -> map.get("vin") != null)
                 .collect(Collectors.groupingBy(map -> ((Number) map.get("templateId")).longValue()));
-
         // 有关联车辆的 templateId 集合
         Set<Long> templateIdsWithVehicle = groupedByTemplate.keySet();
-
         // 拼接有关联车辆的提示信息
         if (!templateIdsWithVehicle.isEmpty()) {
             String messages = groupedByTemplate.values().stream()
@@ -335,6 +336,32 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                                 .collect(Collectors.joining("、"));
                         return String.format("wvtaCocNo为%s，COCNo为%s，版本号为%s的模版存在关联车辆，VIN为%s，删除失败",
                                 wvtaCocNo, cocTemplateNo, version, vins);
+                    })
+                    .collect(Collectors.joining("\n"));
+            throw new ServiceException(messages);
+        }
+
+        Material query = new Material();
+        query.setVehicleTemplateIds(Arrays.asList(templateIds));
+        List<Material> materials = materialMapper.selectMaterialList(query);
+        // 按 templateId 分组
+        Map<Long, List<Material>> groupedByMaterial = materials.stream()
+                .collect(Collectors.groupingBy(material -> ((Number) material.getVehicleTemplateId()).longValue()));
+        // 有关联物料号的 templateId 集合
+        Set<Long> templateIdsWithMaterial = groupedByMaterial.keySet();
+        // 拼接有关联物料号的提示信息
+        if (!templateIdsWithMaterial.isEmpty()) {
+            String messages = groupedByMaterial.values().stream()
+                    .map(rows -> {
+                        List<Material> first = rows;
+                        String wvtaCocNo     = String.valueOf(rows.get(0).getWvtaCocNo());
+                        String cocTemplateNo = String.valueOf(rows.get(0).getCocTemplateNo());
+                        String version       = String.valueOf(rows.get(0).getVersion());
+                        String materialNos          = rows.stream()
+                                .map(Material::getMaterialNo)
+                                .collect(Collectors.joining("、"));
+                        return String.format("wvtaCocNo为%s，COCNo为%s，版本号为%s的模版存在关联物料号，物料号为%s，删除失败",
+                                wvtaCocNo, cocTemplateNo, version, materialNos);
                     })
                     .collect(Collectors.joining("\n"));
             throw new ServiceException(messages);

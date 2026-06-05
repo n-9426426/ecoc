@@ -726,9 +726,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             sysNotice.setNoticeTitle("XML文件校验完成通知");
             String msg =
                     "由车辆VIN " +
-                    xmlFile.getVin() +
-                    "生成的XML文件的校验结果为: " +
-                    (finalReport.isAllValid() ? "通过" : "失败");
+                            xmlFile.getVin() +
+                            "生成的XML文件的校验结果为: " +
+                            (finalReport.isAllValid() ? "通过" : "失败");
             sysNotice.setNoticeContent(msg);
             sysNotice.setCreateBy("自动提醒");
             sysNotice.setCreateTime(new Date());
@@ -1093,44 +1093,52 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                                   Map<String, SysDictData> dictCodeMap,
                                                   Map<String, Object> jsonMap) {
         Set<String> result = new HashSet<>();
-        List<XmlTemplateAttribute> leafNodes = attrList.stream()
-                .filter(a -> {
-                    String[] parts = a.getAttrPath().split("\\.");
-                    SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
-                    return d != null && !isStructNode(d);
-                }).collect(Collectors.toList());
 
-        LoopDetectionResult loopResult = detectLoopPattern(leafNodes, dictCodeMap, jsonMap);
+        // ★ 修复：遍历【所有】含 ; 或 | 的叶子字段，逐一推断其所属 Group 循环节点，
+        //   而不只依赖 detectLoopPattern 返回的单一触发字段。
+        //   原因：detectLoopPattern 只选“最浅”的触发字段，导致深层的嵌套循环
+        //   （如 GearRatioGroup）在校验时被误判为“非循环节点”而报错。
+        for (XmlTemplateAttribute leaf : attrList) {
+            String[] parts = leaf.getAttrPath().split("\\.");
+            SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
+            if (d == null || isStructNode(d)) continue;
+            if (StringUtils.isBlank(d.getDictLabel())) continue;
 
-        log.info("=== loopMode: {}", loopResult.getLoopMode());   // ← 加在这里
-        log.info("=== loopContainerPath: {}", loopResult.getLoopContainerPath());
-        log.info("=== groupKeys: {}", loopResult.getGroupKeys());
-        log.info("=== maxRows: {}", loopResult.getMaxRows());
-        if (loopResult.getLoopMode() == LoopMode.NONE
-                || StringUtils.isBlank(loopResult.getLoopContainerPath())) {
-            return result;
-        }
+            Object raw = jsonMap.get(d.getDictLabel());
+            if (raw == null) continue;
+            String val = raw.toString().trim();
 
-        String loopContainerPath = loopResult.getLoopContainerPath();
-        String triggerPath = loopResult.getTriggerAttr().getAttrPath();
+            boolean hasPipe = val.contains("|");
+            boolean hasSemi = !hasPipe && val.contains(";");
+            if (!hasPipe && !hasSemi) continue;
 
-        if (loopResult.getLoopMode() == LoopMode.PARENT_LEVEL) {
-            // ★修复：上级循环时，loopContainerPath（ManufacturerTable）本身是重复出现的节点
-            result.add(loopContainerPath);
-        } else {
-            // 同级循环：loopContainerPath 下包含触发字段的直接子结构（ManufacturerGroup）是循环节点
-            for (XmlTemplateAttribute attr : attrList) {
-                String p = attr.getAttrPath();
-                if (!p.startsWith(loopContainerPath + ".")) continue;
-                if (p.split("\\.").length != loopContainerPath.split("\\.").length + 1) continue;
-                String[] parts = p.split("\\.");
-                SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
-                if (d == null || !isStructNode(d)) continue;
-                if (triggerPath.startsWith(p + ".")) {
-                    result.add(p);
+            // 判断是否前缀格式（PARENT_LEVEL：每段均含 :)
+            String separator = hasPipe ? "\\|" : ";";
+            String[] items = val.split(separator, -1);
+            boolean allHavePrefix = items.length > 0 && Arrays.stream(items)
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .allMatch(s -> s.contains(":"));
+
+            if (allHavePrefix) {
+                // PARENT_LEVEL：loopContainerPath（Table 层）本身是循环节点
+                String containerPath = getParentPath(getParentPath(leaf.getAttrPath()));
+                if (StringUtils.isNotBlank(containerPath)) {
+                    result.add(containerPath);
+                }
+            } else {
+                // SIBLING_LEVEL：leaf 直接父节点（Group 层）是循环节点
+                String groupPath = getParentPath(leaf.getAttrPath());
+                if (StringUtils.isBlank(groupPath)) continue;
+                String[] groupParts = groupPath.split("\\.");
+                SysDictData groupDict = dictCodeMap.get(groupParts[groupParts.length - 1]);
+                if (groupDict != null && isStructNode(groupDict)) {
+                    result.add(groupPath);
                 }
             }
         }
+
+        log.info("=== resolveLoopContainerPaths result: {}", result);
         return result;
     }
 
@@ -1186,14 +1194,14 @@ public class XmlFileServiceImpl implements IXmlFileService {
             Map<String, List<String[]>> keyMapMeta = buildKeyMapMeta(dictCodeMap);
 
             // 提取 vehicleCategory / stageOfCompletion
-            String vehicleCategory   = extractTextByKeyMap(doc, dictCodeMap, attrList, "vehicleCategory");
-            String stageOfCompletion = extractTextByKeyMap(doc, dictCodeMap, attrList, "stageOfCompletion");
+            String vehicleCategory   = extractTextByKeyMap(doc, dictCodeMap, attrList, "VehicleCategory");
+            String stageOfCompletion = extractTextByKeyMap(doc, dictCodeMap, attrList, "StageOfCompletion");
             if (vehicleCategory == null && vehicle.getJsonMap() != null) {
-                Object v = vehicle.getJsonMap().get("vehicleCategory");
+                Object v = vehicle.getJsonMap().get("VehicleCategory");
                 vehicleCategory = v != null ? v.toString() : null;
             }
             if (stageOfCompletion == null && vehicle.getJsonMap() != null) {
-                Object v = vehicle.getJsonMap().get("stageOfCompletion");
+                Object v = vehicle.getJsonMap().get("StageOfCompletion");
                 stageOfCompletion = v != null ? v.toString() : null;
             }
 
@@ -2020,6 +2028,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 parentElement.appendChild(structElement);
                 pathNodeMap.put(attrPath, structElement);
                 // ★ 检查该结构节点子树是否含 ; 字段需要展开
+                // ★ 修复：仅在 buildNormalTree（无循环场景）下触发，含 ; 不含 | 的孙级叶子才展开
                 int nodeDepth = attrPath.split("\\.").length;
                 boolean subHasSemi = attrList.stream().anyMatch(a -> {
                     if (!a.getAttrPath().startsWith(attrPath + ".")) return false;
@@ -2031,7 +2040,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     return raw != null && raw.toString().contains(";") && !raw.toString().contains("|");
                 });
 
-                log.info("=== buildSubTree struct subHasSemi={} label={}", subHasSemi, dict.getDictLabel());
+                log.info("=== buildNormalTree struct subHasSemi={} label={}", subHasSemi, dict.getDictLabel());
                 if (subHasSemi) {
                     List<XmlTemplateAttribute> subAttrs = attrList.stream()
                             .filter(a -> a.getAttrPath().startsWith(attrPath + "."))
@@ -2104,12 +2113,13 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     Element structElement = createElementWithDefault(doc, sanitizeXmlTagName(dict.getDictLabel()), sibling.getDefaultValue());
                     parentElement.appendChild(structElement);
                     pathNodeMap.put(sibling.getAttrPath(), structElement);
+                    // ★ 修复：直接传主 pathNodeMap，子树内节点回写到主 map，防止 buildUnprocessedNodes 重复创建
                     buildSubTree(doc, structElement,
                             attrList.stream()
                                     .filter(a -> a.getAttrPath().startsWith(sibling.getAttrPath() + "."))
                                     .collect(Collectors.toList()),
                             dictCodeMap, jsonMap,
-                            buildSubPathNodeMap(pathNodeMap, sibling.getAttrPath(), structElement),
+                            pathNodeMap,
                             sibling.getAttrPath());
                 }
             } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
@@ -2246,7 +2256,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             } else if (isStructNode(dict)) {
                 // 结构节点
-                if (!pathNodeMap.containsKey(sibling.getAttrPath())) {
+                // ★ 修复：同时检查 pathNodeMap（逻辑层）和 DOM（物理层），防止 buildTreeUpToPath 已写入后再重复创建
+                if (!pathNodeMap.containsKey(sibling.getAttrPath())
+                        && !hasChildElement(parentElement, sanitizeXmlTagName(dict.getDictLabel()))) {
                     List<XmlTemplateAttribute> subAttrs = attrList.stream()
                             .filter(a -> a.getAttrPath().startsWith(sibling.getAttrPath() + "."))
                             .collect(Collectors.toList());
@@ -2272,10 +2284,14 @@ public class XmlFileServiceImpl implements IXmlFileService {
                         Map<String, Element> subMap = buildSubPathNodeMap(pathNodeMap, sibling.getAttrPath(), structElement);
                         expandPipeLoop(doc, structElement, subAttrs, dictCodeMap, jsonMap,
                                 subMap, sibling.getAttrPath(), pipeRows);
+                        // 将子树节点回写到主 pathNodeMap，防止 buildUnprocessedNodes 重复构建
+                        pathNodeMap.putAll(subMap);
                     } else {
+                        // ★ 修复：直接传主 pathNodeMap（而非副本），使子树内所有结构节点路径回写到主 map，
+                        //   防止 buildUnprocessedNodes BFS 时因找不到 MakeGroup 等路径而重复创建
+                        pathNodeMap.put(sibling.getAttrPath(), structElement);
                         buildSubTree(doc, structElement, subAttrs, dictCodeMap, jsonMap,
-                                buildSubPathNodeMap(pathNodeMap, sibling.getAttrPath(), structElement),
-                                sibling.getAttrPath(), -1);
+                                pathNodeMap, sibling.getAttrPath(), -1);
                     }
                 }
             } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
@@ -2415,7 +2431,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
             } else if (StringUtils.isNotBlank(dict.getDictLabel())) {
                 Object raw = jsonMap.get(dict.getDictLabel());
                 String value = getValueOrDefault(raw, attr.getDefaultValue());
-                if (!value.contains(";")) {
+                // ★ 修复：加重复检查，防止后续 buildSiblingLevelLoop 遍历 directSiblings 时再次写入同名节点
+                if (!value.contains(";") && !hasChildElement(parentElement, sanitizeXmlTagName(dict.getDictLabel()))) {
                     addElement(doc, parentElement,
                             sanitizeXmlTagName(dict.getDictLabel()), value);
                 }
@@ -2522,9 +2539,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
                         sanitizeXmlTagName(dict.getDictLabel()), attr.getDefaultValue());
                 parentElement.appendChild(structElement);
                 pathNodeMap.put(attrPath, structElement);
-                // ★ 检查该结构节点子树是否含 ; 字段需要展开
+                // ★ 检查该结构节点的直接子 Group 层叶子是否含 ; 字段需要展开
+                // ★ 修复：depth 限定改为 nodeDepth+2（Table→Group→Field），且仅在 rowIndex<0 场景触发，
+                //         避免已在循环上下文中再次展开（例如 MakeGroup.Make 含";"被误触发二次循环）
                 int nodeDepth = attrPath.split("\\.").length;
-                boolean subHasSemi = attrList.stream().anyMatch(a -> {
+                boolean subHasSemi = (rowIndex < 0) && attrList.stream().anyMatch(a -> {
                     if (!a.getAttrPath().startsWith(attrPath + ".")) return false;
                     if (a.getAttrPath().split("\\.").length != nodeDepth + 2) return false;
                     String[] p = a.getAttrPath().split("\\.");
@@ -2626,7 +2645,12 @@ public class XmlFileServiceImpl implements IXmlFileService {
                         .filter(a -> a.getAttrPath().startsWith(child.getAttrPath() + "."))
                         .collect(Collectors.toList());
 
-                for (int i = 0; i < rows; i++) {
+                // ★ 修复重复生成：按该 Group 自身子字段的实际最大行数决定展开次数，
+                //   防止外层 rows（由其他 Table 的字段计算得出）污染本 Group 的循环次数。
+                //   例如 MakeGroup.Make="OMODA"（单值）应只展开 1 次，而非 AxleTable 的 2 次。
+                int actualRows = calcGroupActualRows(groupChildren, dictCodeMap, jsonMap, rows);
+
+                for (int i = 0; i < actualRows; i++) {
                     Element groupEl = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
                     parentElement.appendChild(groupEl);
 
@@ -2654,6 +2678,46 @@ public class XmlFileServiceImpl implements IXmlFileService {
                               Map<String, SysDictData> dictCodeMap, Map<String, Object> jsonMap,
                               Map<String, Element> pathNodeMap, String rootAttrPath) {
         buildSubTree(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, rootAttrPath, -1);
+    }
+
+    /**
+     * 计算某个 Group 节点自身子字段的实际最大行数。
+     * <p>
+     * 规则：
+     * <ul>
+     *   <li>遍历该 Group 下所有叶子字段，在 jsonMap 中查找对应值</li>
+     *   <li>若某个字段的值含 | 或 ;，则按分隔符拆分后取条目数</li>
+     *   <li>所有字段条目数的最大值即为该 Group 的实际行数</li>
+     *   <li>若所有字段均为单值（无分隔符），返回 1</li>
+     *   <li>若计算结果超过外层传入的 maxRows，以 maxRows 为上限（防止数据异常撑爆）</li>
+     * </ul>
+     *
+     * @param groupChildren Group 下的所有子节点模板属性
+     * @param dictCodeMap   字段字典映射
+     * @param jsonMap       数据 Map
+     * @param maxRows       外层 Table 计算出的最大行数（上限）
+     * @return 该 Group 实际应展开的次数
+     */
+    private int calcGroupActualRows(List<XmlTemplateAttribute> groupChildren,
+                                    Map<String, SysDictData> dictCodeMap,
+                                    Map<String, Object> jsonMap,
+                                    int maxRows) {
+        int actual = 1;
+        for (XmlTemplateAttribute attr : groupChildren) {
+            String[] parts = attr.getAttrPath().split("\\.");
+            SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
+            if (dict == null || isStructNode(dict)) continue;
+            Object raw = jsonMap.get(dict.getDictLabel());
+            if (raw == null) continue;
+            String val = raw.toString().trim();
+            if (val.contains("|")) {
+                actual = Math.max(actual, val.split("\\|", -1).length);
+            } else if (val.contains(";")) {
+                actual = Math.max(actual, val.split(";", -1).length);
+            }
+        }
+        // 以外层 maxRows 为上限
+        return Math.min(actual, maxRows);
     }
 
     /**

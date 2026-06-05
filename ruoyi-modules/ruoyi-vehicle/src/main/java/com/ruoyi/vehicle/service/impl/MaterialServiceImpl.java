@@ -58,6 +58,9 @@ public class MaterialServiceImpl implements IMaterialService {
     @Override
     public Material selectMaterialById(Long id) {
         Material material = materialMapper.selectMaterialById(id);
+        if (material == null) {
+            throw new ServiceException("该物料号不存在");
+        }
         List<VehicleTemplate> vehicleTemplates = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(
                 null, material.getBrand(), material.getWeight(), material.getSaleName(), material.getTire(), material.getTvv()
         );

@@ -68,6 +68,8 @@ public class Material extends BaseEntity {
     /** 车辆信息模版ID */
     private Long vehicleTemplateId;
 
+    private List<Long> vehicleTemplateIds;
+
     private String tireResistanceGrade;
 
     private String vehicleModel;

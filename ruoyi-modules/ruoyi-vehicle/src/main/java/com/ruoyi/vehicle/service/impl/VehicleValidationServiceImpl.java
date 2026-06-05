@@ -161,8 +161,8 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
         }
 
         // 注入上下文变量
-        context.put("vehicleCategory", vehicleCategory);
-        context.put("stageOfCompletion", stageOfCompletion);
+        context.put("VehicleCategory", vehicleCategory);
+        context.put("StageOfCompletion", stageOfCompletion);
 
         // 注入虚拟变量（@FullyElectricVehicle / @NotFullyElectricVehicle / @HybridVehicle）
         Object energySourceVal = context.get("EnergySource");
@@ -171,15 +171,15 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
         Object pureElectricVal = context.get("PureElectricVehicleIndicator");
         String pureElectric = pureElectricVal != null ? pureElectricVal.toString().trim() : "";
 
-// 纯电动：EnergySource=95 或 PureElectricVehicleIndicator=Y
+        // 纯电动：EnergySource=95 或 PureElectricVehicleIndicator=Y
         boolean isFullyElectric = "95".equals(energySource) || "Y".equals(pureElectric);
 
-// 混动：ClassHybridVehicle 有值且非纯电
+        // 混动：ClassHybridVehicle 有值且非纯电
         Object hybridVal = context.get("ClassHybridVehicle");
         String hybridClass = hybridVal != null ? hybridVal.toString().trim() : "";
         boolean isHybrid = !hybridClass.isEmpty() && !isFullyElectric;
 
-// null 表示条件不满足，executor 的 isAbsent 会判定为缺失
+        // null 表示条件不满足，executor 的 isAbsent 会判定为缺失
         context.put("FullyElectricVehicle",    isFullyElectric ? "Y" : null);
         context.put("NotFullyElectricVehicle", !isFullyElectric ? "Y" : null);
         context.put("HybridVehicle",           isHybrid ? "Y" : null);
@@ -303,10 +303,10 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
         try {
             Map<String, Object> map = parseJson(jsonStr);
             if (map == null) return null;
-            Object v = map.get("vehicleCategory");
+            Object v = map.get("VehicleCategory");
             return v == null ? null : v.toString();
         } catch (Exception e) {
-            log.warn("提取 vehicleCategory 失败", e);
+            log.warn("提取 VehicleCategory 失败", e);
             return null;
         }
     }
@@ -316,7 +316,7 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
         try {
             Map<String, Object> map = parseJson(jsonStr);
             if (map == null) return null;
-            Object v = map.get("stageOfCompletion");
+            Object v = map.get("StageOfCompletion");
             return v == null ? null : v.toString();
         } catch (Exception e) {
             log.warn("提取 stageOfCompletion 失败", e);

@@ -27,13 +27,11 @@ public class VehicleTempleOverdueTask {
 
     @Scheduled(cron = "0 * * * * *")
     public void vehicleTemplateOverdueJobHandler(){
-        log.info("Scheduled:vehicleTemplateOverdueJobHandler():分钟");
         vehicleTemplateMapper.updateStatusByOverdueDate();
     }
 
     @Scheduled(cron = "0 * * * * ?")
     public void vehicleTemplateOverdueButNoNextVersionJobHandler() {
-        log.info("Scheduled:vehicleTemplateOverdueButNoNextVersionJobHandler():分钟");
         List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectVehicleTemplateOverdueButNoNextVersion();
         if (vehicleTemplateList.isEmpty()) {
             return;

@@ -23,7 +23,6 @@ public class VehicleTempleEffectiveTask {
 
     @Scheduled(cron = "0 * * * * *")
     public void vehicleTemplateEffectiveJobHandler(){
-        log.info("Scheduled:vehicleTemplateEffectiveJobHandler():分钟");
         // todo 当模版启用的时候，需要检查物料号管理的自动更新版本是否启用，如果启用，需要同步更改物料号管理的的newVersion
         vehicleTemplateMapper.updateStatusByEffectiveDate();
     }
