@@ -191,4 +191,12 @@
         WHERE material_no = #{materialNo}
             LIMIT 1
     </select>
+
+    <update id="updateMaterialStatus">
+        UPDATE material
+        SET status      = #{status},
+            update_by   = #{updateBy},
+            update_time = SYSDATE()
+        WHERE id = #{id}
+    </update>
 </mapper>

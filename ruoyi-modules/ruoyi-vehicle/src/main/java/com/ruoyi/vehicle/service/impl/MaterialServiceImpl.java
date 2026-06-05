@@ -391,6 +391,21 @@ public class MaterialServiceImpl implements IMaterialService {
         sinks.remove(taskId);
     }
 
+    @Override
+    public Material updateMaterialStatus(Long id) {
+        Material exist = selectMaterialById(id);
+        if (exist == null) {
+            throw new RuntimeException("该记录不存在");
+        }
+        int status = exist.getStatus() == 0 ? 1 : 0;
+        Material update = new Material();
+        update.setId(id);
+        update.setStatus(status);
+        update.setUpdateBy(SecurityUtils.getUsername());
+        materialMapper.updateMaterialStatus(update);
+        return update;
+    }
+
     // ===================== SSE 工具方法 =====================
 
     private void pushEvent(Sinks.Many<ServerSentEvent<String>> sink, String eventType, String data) {

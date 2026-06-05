@@ -51,7 +51,6 @@ import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
-import javax.annotation.PostConstruct;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -109,60 +108,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
     @Autowired
     private MaterialMapper materialMapper;
-
-    /**
-     * 字典缓存：dictType → (dictLabel → dictValue)
-     * 按 dictType 懒加载，首次使用时通过 remoteDictService 拉取并缓存，
-     * 避免 DICT_MAP 规则每次转换都发起远程调用。
-     */
-    private final Map<String, Map<String, String>> dictCache = new ConcurrentHashMap<>();
-
-    /**
-     * Spring 容器初始化完成后，将带缓存的字典查找逻辑注入到 ValueMappingParser。
-     * DICT_MAP 规则（如 value_map = "DICT_MAP:color"）执行时会回调此处，
-     * 以 rawValue 作为 dict_label，在指定 dictType 中查找对应 dict_value。
-     */
-    @PostConstruct
-    public void initDictProvider() {
-        ValueMappingParser.setDictProvider((dictType, dictLabel) -> {
-            Map<String, String> labelToValue = dictCache.computeIfAbsent(dictType, type -> {
-                try {
-                    List<SysDictData> list = remoteDictService.getDictDataByType(type).getData();
-                    Map<String, String> map = new LinkedHashMap<>();
-                    if (list != null) {
-                        for (SysDictData d : list) {
-                            if (StringUtils.isNotBlank(d.getDictLabel())) {
-                                map.put(d.getDictLabel(), d.getDictValue());
-                            }
-                        }
-                    }
-                    return map;
-                } catch (Exception e) {
-                    log.error("[DictProvider] 加载字典失败 dictType={}: {}", type, e.getMessage());
-                    return Collections.emptyMap();
-                }
-            });
-            return labelToValue.get(dictLabel);
-        });
-        log.info("[DictProvider] ValueMappingParser 字典提供者已注入（带缓存）");
-    }
-
-    /**
-     * 清除字典缓存。
-     * 在字典数据变更后可主动调用，使下次 DICT_MAP 转换重新从 remoteDictService 拉取最新数据。
-     *
-     * @param dictType 指定类型清除；传 null 则清除全部缓存
-     */
-    @Override
-    public void evictDictCache(String dictType) {
-        if (dictType == null) {
-            dictCache.clear();
-            log.info("[DictProvider] 已清除全部字典缓存");
-        } else {
-            dictCache.remove(dictType);
-            log.info("[DictProvider] 已清除字典缓存 dictType={}", dictType);
-        }
-    }
 
     @Override
     public List<VehicleTemplate> selectVehicleTemplateList(VehicleTemplate template) {
@@ -1001,7 +946,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                                     ? lines[lineIdx].trim() : "";
                             String converted = applyChain(lineValue, singleChain, fieldName);
                             String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                            // ★ 修改：EMPTY_SENTINEL 写入 null，否则非空才写入
                             if (ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
                                 result.put(targetLabel, null);
                             } else if (StringUtils.isNotBlank(converted)) {
@@ -1036,7 +980,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 for (List<SysDictData> multiChain : multiKeyChainMap.values()) {
                     multiChain.sort(Comparator.comparingLong(SysDictData::getDictCode));
 
-                    // ★ 从链中读取 GROUP_JOIN_SEP 声明，解析输出分隔符，默认逗号
+                    // 从链中读取 GROUP_JOIN_SEP 声明，解析输出分隔符，默认逗号
                     String[] groupSeps = multiChain.stream()
                             .map(SysDictData::getValueMap)
                             .map(ValueMappingParser::extractGroupJoinSep)
@@ -1049,7 +993,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                     for (SysDictData rule : multiChain) {
                         if (StringUtils.isBlank(rule.getDictLabel())) continue;
 
-                        // ★ GROUP_JOIN_SEP 记录仅作配置声明，不参与值转换，跳过
+                        // GROUP_JOIN_SEP 记录仅作配置声明，不参与值转换，跳过
                         if (StringUtils.isNotBlank(rule.getValueMap())
                                 && rule.getValueMap().trim().toUpperCase().startsWith("GROUP_JOIN_SEP")) {
                             continue;
@@ -1061,7 +1005,14 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                         String converted = rawValue;
 
                         if (StringUtils.isNotBlank(rule.getValueMap())) {
-                            String stepped = ValueMappingParser.convert(rawValue, rule.getValueMap());
+                            // 统一走 convertWithDictMap，行为与 applyChain 保持一致：
+                            //   · 普通规则 → 内部委托给 convert()，行为不变
+                            //   · DICT_MAP / PIPE:...|DICT_MAP → 解析 value_connection 后执行映射
+                            Map<String, String> mergedMap =
+                                    ValueMappingParser.mergeValueConnection(rule.getValueConnection());
+                            String stepped =
+                                    ValueMappingParser.convertWithDictMap(rawValue, rule.getValueMap(), mergedMap);
+
                             if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
                                 if (!result.containsKey(rule.getDictLabel())) {
                                     result.put(rule.getDictLabel(), null);
@@ -1155,33 +1106,23 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
      * 对单条链执行链式转换，返回最终值。
      */
     private String applyChain(String rawValue, List<SysDictData> chain, String fieldName) {
-        String converted = rawValue;
-        boolean forceEmpty = false;
-
+        String current = rawValue;
         for (SysDictData rule : chain) {
-            if (StringUtils.isBlank(rule.getValueMap())) {
-                converted = "";
-                break;
-            }
-            String stepped = ValueMappingParser.convert(converted, rule.getValueMap());
-            if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
-                forceEmpty = true;
-                break;
-            }
-            if (stepped == null) {
-                log.warn("[applyChain] value_map 链式第 {} 步返回 null，终止。dict_code={}, fieldName={}",
-                        rule.getDictSort(), rule.getDictCode(), fieldName);
-                break;
-            }
-            converted = stepped;
-        }
+            if (StringUtils.isBlank(rule.getValueMap())) continue;
 
-        if (forceEmpty) {
-            return "";
+            Map<String, String> mergedMap = ValueMappingParser.mergeValueConnection(rule.getValueConnection());
+            current = ValueMappingParser.convertWithDictMap(current, rule.getValueMap(), mergedMap);
+
+            if (current == null) {
+                log.warn("[applyChain] 转换返回 null, fieldName={}, dictCode={}, valueMap={}",
+                        fieldName, rule.getDictCode(), rule.getValueMap());
+                return null;
+            }
+            if (ValueMappingParser.EMPTY_SENTINEL.equals(current)) {
+                return ValueMappingParser.EMPTY_SENTINEL;
+            }
         }
-        converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
-        converted = "N/A".equals(converted) ? "" : converted;
-        return converted;
+        return current;
     }
 
     /**

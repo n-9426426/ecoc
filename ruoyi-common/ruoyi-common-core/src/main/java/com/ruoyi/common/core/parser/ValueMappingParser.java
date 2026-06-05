@@ -1,5 +1,7 @@
 package com.ruoyi.common.core.parser;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.core.utils.StringUtils;
 import lombok.extern.slf4j.Slf4j;
 
@@ -39,11 +41,13 @@ import java.util.regex.Pattern;
  *   PREFIX_STRIP:{prefix}           去掉固定前缀后取剩余
  *   SUFFIX_STRIP:{suffix}           去掉固定后缀后取剩余
  *   SUBSTRING:{start}:{end}         字符串截取（end=-1 表示到末尾）
- *   DICT_MAP:{dictType}             从外部字典查找：以 rawValue 作为 dict_label，
- *                                     在 dictType 对应的字典中查找并返回 dict_value。
- *                                     调用前须通过 {@link #setDictProvider} 注入字典提供者。
- *                                     示例：value_map = "DICT_MAP:color"，rawValue = "BW"
- *                                           → 查 dict_type=color & dict_label=BW 返回对应 dict_value
+ *   DICT_MAP                        从 value_connection 字段解析的合并映射表中查找目标值。
+ *                                     调用方须使用 {@link #convertWithDictMap} 并传入
+ *                                     由 {@link #mergeValueConnection} 生成的映射表。
+ *                                     value_connection 格式：
+ *                                     {"来源A":{"原值":"目标值",...},"来源B":{...}}
+ *                                     示例：value_map = "DICT_MAP"，rawValue = "法国"
+ *                                           → 合并后映射表中查找"法国"返回"F"
  *  STRIP_UNIT_JOIN:{inSep}:{outSep} 按 inSep 拆分，每项提取第1个数字，再用 outSep 拼接
  *  GROUP_JOIN_SEP:{inSep}:{outSep}  不做值转换，仅修改当前 uuid 组的多值拼接符。
  *  RIM_SPEC:BOTH                     提取轮毂规格235/50R19 103V 19x7J ET47 6.28N/kN C1
@@ -61,43 +65,7 @@ import java.util.regex.Pattern;
 @Slf4j
 public class ValueMappingParser {
 
-
-    // =====================================================
-    //  字典查找支持（DICT_MAP 规则）
-    // =====================================================
-
-    /**
-     * 字典提供者接口。
-     * 调用方在应用启动时通过 {@link #setDictProvider} 注入实现，
-     * 使 {@code DICT_MAP} 规则能从业务字典数据源中查值。
-     */
-    @FunctionalInterface
-    public interface DictProvider {
-        /**
-         * 根据字典类型和标签查找对应的字典值。
-         *
-         * @param dictType  字典类型（对应 sys_dict_type.dict_type）
-         * @param dictLabel 字典标签（对应 sys_dict_data.dict_label），即上游原始值
-         * @return 对应的 dict_value；未命中时返回 {@code null}
-         */
-        String lookupByLabel(String dictType, String dictLabel);
-    }
-
-    /** 当前注入的字典提供者，默认为空（不支持 DICT_MAP） */
-    private static volatile DictProvider dictProvider = null;
-
-    /**
-     * 注入字典提供者。通常在 Spring 容器启动后调用一次，例如：
-     * <pre>
-     *   ValueMappingParser.setDictProvider(
-     *       (type, label) -> sysDictDataService.getDictValue(type, label));
-     * </pre>
-     */
-    public static void setDictProvider(DictProvider provider) {
-        dictProvider = provider;
-    }
-
-    // 哨兵值,区分“转换返回null（出错/未命中）"和"规则就是要置空"
+    // 哨兵值，区分"转换返回null（出错/未命中）"和"规则就是要置空"
     public static final String EMPTY_SENTINEL = "\u0000__NULL__\u0000";
 
     // ── 日期格式 ──────────────────────────────────────────────────
@@ -118,7 +86,7 @@ public class ValueMappingParser {
     private static final Pattern NUMBER_PATTERN =
             Pattern.compile("-?\\d+(?:\\.\\d+)?");
 
-    // ── 指数提取：四种格式 ────────────────────────────────────────
+    // ── 指数提取：五种格式 ────────────────────────────────────────
     /**
      * 策略1 — 科学计数法：8.04E+11 / 8.04e+11 / 5.6E11 / 1.2e-3
      * group(1) = 指数数字串
@@ -169,6 +137,9 @@ public class ValueMappingParser {
 
     /**
      * 根据 value_map 规则描述符将上游原始值转换为 eCoC 目标值。
+     *
+     * <p><b>注意：</b>当 {@code valueMap} 为 {@code "DICT_MAP"} 时，
+     * 此方法无法处理，请改用 {@link #convertWithDictMap(String, String, Map)}。
      *
      * @param rawValue 上游原始值（K 列）
      * @param valueMap 映射规则描述符（sys_dict_data.value_map）
@@ -285,7 +256,6 @@ public class ValueMappingParser {
                     // value_map = SPLIT_TAKE:{sep}:{index}
                     if (parts.length < 3) return raw;
                     String sep   = unescapeSep(parts[1]);
-                    // 第 284-287 行，改为：
                     int    idx   = parseIndex(parts[2], 0);
                     String[] arr = raw.split(Pattern.quote(sep), -1);
                     if (idx < 0) idx = arr.length + idx;          // 支持 -1 取最后一项
@@ -344,14 +314,9 @@ public class ValueMappingParser {
                     return raw.substring(start, end);
                 }
 
-                // ── 正则多分组拼接 ──────────────────────────────────────
+                // ── 正则多分组拼接 ────────────────────────────────
                 case "EXTRACT_PATTERN_JOIN": {
                     // value_map 格式：EXTRACT_PATTERN_JOIN:{regex}:{g1}:{g2}:{sep}
-                    // 说明：
-                    //   {regex} — 正则表达式（不能含冒号，冒号用 \x3A 代替）
-                    //   {g1}    — 第一个捕获组序号（从1开始）
-                    //   {g2}    — 第二个捕获组序号（从1开始）
-                    //   {sep}   — 两个分组之间的拼接符（可为空）
                     if (parts.length < 4) {
                         log.warn("[ValueMappingParser] EXTRACT_PATTERN_JOIN 参数不足: {}", descriptor);
                         return null;
@@ -364,10 +329,9 @@ public class ValueMappingParser {
                             .replace("\u0004", "(?!")
                             .replace("\u0005", "(?<=")
                             .replace("\u0006", "(?<!");
-                    int    g1     = parseIndex(parts[2], 1);
-                    int    g2     = parseIndex(parts[3], 2);
-                    // sep 是第5段，允许缺省（空字符串）
-                    String sep    = (parts.length >= 5) ? unescapeSep(parts[4]) : "";
+                    int    g1  = parseIndex(parts[2], 1);
+                    int    g2  = parseIndex(parts[3], 2);
+                    String sep = (parts.length >= 5) ? unescapeSep(parts[4]) : "";
                     Matcher m = Pattern.compile(regex).matcher(raw);
                     if (!m.find()) {
                         log.warn("[ValueMappingParser] EXTRACT_PATTERN_JOIN 未匹配: regex={} raw={}", regex, raw);
@@ -378,31 +342,17 @@ public class ValueMappingParser {
                     return part1 + sep + part2;
                 }
 
-                // ── 字典查找 ──────────────────────────────────────
+                // ── 字典映射（value_connection 新路径）────────────
                 case "DICT_MAP": {
-                    // value_map = DICT_MAP:{dictType}
-                    // rawValue 作为 dict_label，查找对应 dict_value
-                    if (parts.length < 2 || StringUtils.isBlank(parts[1])) {
-                        log.warn("[ValueMappingParser] DICT_MAP 缺少 dictType 参数: {}", descriptor);
-                        return null;
-                    }
-                    if (dictProvider == null) {
-                        log.error("[ValueMappingParser] DICT_MAP 未注入 DictProvider，请先调用 setDictProvider()");
-                        return null;
-                    }
-                    if (raw.isEmpty()) return null;
-                    String dictType = parts[1].trim();
-                    String dictValue = dictProvider.lookupByLabel(dictType, raw);
-                    if (dictValue == null) {
-                        log.warn("[ValueMappingParser] DICT_MAP 未命中: dictType={} dictLabel={}", dictType, raw);
-                    }
-                    return dictValue;
+                    // value_map = "DICT_MAP"
+                    // 必须通过 convertWithDictMap() 传入 mergedDictMap 才能正常工作。
+                    // 直接调用 convert() 走到此分支时，无映射表可用，记录错误并返回 null。
+                    log.error("[ValueMappingParser] DICT_MAP 规则须通过 convertWithDictMap() 调用，" +
+                            "请勿直接使用 convert()。raw={}", raw);
+                    return null;
                 }
 
-                // ── 提取轮毂规格：RIM_SPEC:BOTH ──────────────────────────────
-                // 输入示例：235/50R19 103V 19x7J ET47 6.28N/kN C1
-                //           215/55R18 99H 18x7 1/2J ET33 5.96N/kN C1
-                // 输出示例：19,7  /  18,7.5
+                // ── 提取轮毂规格：RIM_SPEC:BOTH ──────────────────
                 case "RIM_SPEC": {
                     if (parts.length < 2) return null;
                     String part = parts[1].toUpperCase();
@@ -431,36 +381,37 @@ public class ValueMappingParser {
                             double val = Double.parseDouble(fracMatcher.group(1))
                                     + Double.parseDouble(fracMatcher.group(2))
                                     / Double.parseDouble(fracMatcher.group(3));
-                            // 整数去掉 .0，小数保留
                             width = (val == Math.floor(val))
                                     ? String.valueOf((long) val)
                                     : String.valueOf(val);
                         } else {
-                            width = widthRaw; // 纯整数，直接用
+                            width = widthRaw;
                         }
 
-                        return diameter + "," + width; // "19,7" 或 "18,7.5"
+                        return diameter + "," + width;
                     }
 
                     log.warn("[ValueMappingParser] RIM_SPEC 不支持的 part: {}", parts[1]);
                     return null;
                 }
 
-                // ── 管道链式执行：PIPE:{rule1}|{rule2}|... ───────────────────
-                // 将多个 value_map 规则串联，前一步输出作为下一步输入
-                // 注意：规则内部的 | 需用 \x7C 转义
+                // ── 管道链式执行：PIPE:{rule1}|{rule2}|... ───────
+                // 将多个 value_map 规则串联，前一步输出作为下一步输入。
+                // 注意：规则内部的 | 需用 \x7C 转义。
+                // PIPE 内若含 DICT_MAP 步骤，须通过 convertWithDictMap() 调用以传入 mergedDictMap；
+                // 直接调用 convert() 时 mergedDictMap 为 null，DICT_MAP 步骤将返回 null 并打印 error。
                 case "PIPE": {
                     if (parts.length < 2) return raw;
-                    // 还原被 safeDescriptor 处理前的完整参数段
                     String pipeLine = descriptor.substring("PIPE:".length());
                     String[] steps = pipeLine.split("\\|", -1);
                     String current = raw;
                     for (String step : steps) {
                         if (current == null) return null;
                         step = step.trim()
-                                .replace("\\x7C", "|")   // 还原转义的竖线
-                                .replace("\u0001", ":");  // 还原 \x3A
-                        current = convert(current, step);
+                                .replace("\\x7C", "|")
+                                .replace("\u0001", ":");
+                        // 委托给 convertStep，mergedDictMap=null（DICT_MAP 步骤将报错）
+                        current = convertStep(current, step, null);
                         if (EMPTY_SENTINEL.equals(current)) return EMPTY_SENTINEL;
                     }
                     return current;
@@ -476,6 +427,160 @@ public class ValueMappingParser {
                     valueMap, rawValue, e.getMessage());
             return null;
         }
+    }
+
+    // =====================================================
+    //  DICT_MAP：基于 value_connection 的映射
+    // =====================================================
+
+    /**
+     * DICT_MAP 规则入口：使用由 {@code value_connection} 解析得到的合并映射表执行值转换。
+     *
+     * <p>支持以下两种 valueMap 场景：
+     * <ul>
+     *   <li>{@code "DICT_MAP"} — 直接在 mergedDictMap 中查找 rawValue</li>
+     *   <li>{@code "PIPE:...步骤...|DICT_MAP"} — 管道中含 DICT_MAP 步骤时，
+     *       透传 mergedDictMap 给每一步，确保 DICT_MAP 步骤正常执行</li>
+     * </ul>
+     *
+     * <p>对于其他类型的 {@code valueMap}，直接委托给 {@link #convert(String, String)}。
+     *
+     * <p>示例（直接 DICT_MAP）：
+     * <pre>
+     *   value_connection = {"COC模版":{"法国":"F","德国":"G"},"MES":{"法国":"F","日本":"J"}}
+     *   → mergedDictMap  = {"法国":"F","德国":"G","日本":"J"}
+     *   → convertWithDictMap("法国", "DICT_MAP", mergedDictMap) → "F"
+     * </pre>
+     *
+     * <p>示例（PIPE 中含 DICT_MAP）：
+     * <pre>
+     *   输入：     "215/55R18 99H 18x7J ET33 5.96N/kN C1"
+     *   valueMap： "PIPE:EXTRACT_PATTERN:(\d+\.\d+N\/kN):1|DICT_MAP"
+     *   step-1 EXTRACT_PATTERN → "5.96N/kN"
+     *   step-2 DICT_MAP        → mergedDictMap.get("5.96N/kN") → 目标值
+     * </pre>
+     *
+     * @param rawValue      上游原始值
+     * @param valueMap      映射规则描述符（sys_dict_data.value_map）
+     * @param mergedDictMap 已合并的映射表（由 {@link #mergeValueConnection} 生成）
+     * @return 转换后的目标值；DICT_MAP 未命中时返回 null
+     */
+    public static String convertWithDictMap(String rawValue, String valueMap, Map<String, String> mergedDictMap) {
+        if (valueMap == null || StringUtils.isBlank(valueMap)) {
+            return rawValue;
+        }
+        return convertStep(rawValue, valueMap.trim(), mergedDictMap);
+    }
+
+    /**
+     * 单步转换的统一分发器，同时感知 {@code mergedDictMap}。
+     *
+     * <ul>
+     *   <li>{@code DICT_MAP} → 直接查 mergedDictMap</li>
+     *   <li>{@code PIPE:...} → 拆分管道步骤，每步递归调用本方法，透传 mergedDictMap</li>
+     *   <li>其他规则 → 委托给 {@link #convert(String, String)}</li>
+     * </ul>
+     *
+     * @param rawValue      当前步骤的输入值
+     * @param step          单条规则描述符
+     * @param mergedDictMap DICT_MAP 映射表；非 DICT_MAP 步骤时忽略
+     * @return 当前步骤的输出值
+     */
+    private static String convertStep(String rawValue, String step, Map<String, String> mergedDictMap) {
+        if (step == null || StringUtils.isBlank(step)) return rawValue;
+
+        String upperStep = step.trim().toUpperCase();
+
+        // ── DICT_MAP 步骤：查合并映射表 ──────────────────────────
+        if (upperStep.equals("DICT_MAP")) {
+            String raw = (rawValue == null) ? "" : rawValue.trim();
+            if (raw.isEmpty()) return null;
+            if (mergedDictMap == null || mergedDictMap.isEmpty()) {
+                log.error("[ValueMappingParser] DICT_MAP：mergedDictMap 为空，无法映射。raw={}", raw);
+                return null;
+            }
+            String result = mergedDictMap.get(raw);
+            if (result == null) {
+                log.warn("[ValueMappingParser] DICT_MAP 未命中: raw='{}', 可用键={}", raw, mergedDictMap.keySet());
+            }
+            return result;
+        }
+
+        // ── PIPE 步骤：拆分子步骤，逐步执行，透传 mergedDictMap ──
+        if (upperStep.startsWith("PIPE:")) {
+            String pipeLine = step.trim().substring("PIPE:".length());
+            String[] steps = pipeLine.split("\\|", -1);
+            String current = rawValue;
+            for (String s : steps) {
+                if (current == null) return null;
+                s = s.trim()
+                        .replace("\\x7C", "|")
+                        .replace("\\x3A", ":");
+                current = convertStep(current, s, mergedDictMap);
+                if (EMPTY_SENTINEL.equals(current)) return EMPTY_SENTINEL;
+            }
+            return current;
+        }
+
+        // ── 其他规则：走常规 convert ──────────────────────────────
+        return convert(rawValue, step);
+    }
+
+    /**
+     * 将 {@code value_connection} 字段存储的多来源映射 JSON 合并为一张扁平映射表。
+     *
+     * <p>{@code value_connection} 格式（两层 JSON 对象）：
+     * <pre>
+     *   {
+     *     "COC模版": {"法国": "F", "德国": "G"},
+     *     "MES":     {"法国": "F", "日本": "J"}
+     *   }
+     * </pre>
+     *
+     * <p>合并规则：
+     * <ul>
+     *   <li>同一 key 在不同来源中值相同：取一次，无冲突</li>
+     *   <li>同一 key 在不同来源中值不同：后来的值覆盖，打印 warn 日志</li>
+     * </ul>
+     *
+     * @param valueConnectionJson {@code SysDictData.valueConnection} 字段的 JSON 字符串
+     * @return 合并后的扁平映射表；入参为空或解析失败时返回空 map（不抛异常）
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, String> mergeValueConnection(String valueConnectionJson) {
+        Map<String, String> merged = new LinkedHashMap<>();
+        if (StringUtils.isBlank(valueConnectionJson)) {
+            return merged;
+        }
+        try {
+            ObjectMapper om = new ObjectMapper();
+            Map<String, Object> outer = om.readValue(
+                    valueConnectionJson,
+                    new TypeReference<Map<String, Object>>() {});
+
+            for (Map.Entry<String, Object> sourceEntry : outer.entrySet()) {
+                String sourceName = sourceEntry.getKey();
+                Object subMapObj  = sourceEntry.getValue();
+                if (!(subMapObj instanceof Map)) {
+                    log.warn("[ValueMappingParser] mergeValueConnection: 来源 '{}' 的值不是 Map，已跳过", sourceName);
+                    continue;
+                }
+                Map<String, Object> subMap = (Map<String, Object>) subMapObj;
+                for (Map.Entry<String, Object> kv : subMap.entrySet()) {
+                    String k = kv.getKey();
+                    String v = kv.getValue() == null ? null : String.valueOf(kv.getValue());
+                    if (merged.containsKey(k) && !Objects.equals(merged.get(k), v)) {
+                        log.warn("[ValueMappingParser] mergeValueConnection: key='{}' 在来源 '{}' 中值冲突 " +
+                                        "（已有值='{}' 新值='{}'），以新值覆盖",
+                                k, sourceName, merged.get(k), v);
+                    }
+                    merged.put(k, v);
+                }
+            }
+        } catch (Exception e) {
+            log.error("[ValueMappingParser] mergeValueConnection 解析失败: {}", e.getMessage(), e);
+        }
+        return merged;
     }
 
     // =====================================================
@@ -501,7 +606,6 @@ public class ValueMappingParser {
             count++;
             if (count == n) {
                 String val = m.group();
-                // 去掉多余的尾部小数点
                 return val.endsWith(".") ? val.substring(0, val.length() - 1) : val;
             }
         }
@@ -509,61 +613,33 @@ public class ValueMappingParser {
     }
 
     /**
-     * 从文本中提取指数值，按优先级依次尝试四种格式：
+     * 从文本中提取指数值，按优先级依次尝试五种格式：
      *
      * <ol>
-     *   <li><b>科学计数法</b>：{@code 8.04E+11}、{@code 1.2e-3}、{@code 5.6E11}
-     *       → 提取 E/e 后面的数字串</li>
-     *   <li><b>Unicode 上标</b>：{@code 10¹¹}、{@code 3.5×10⁸}
-     *       → 将上标字符（U+00B9/U+00B2/U+00B3/U+2070/U+2074-U+2079）转为 ASCII 数字</li>
-     *   <li><b>括号注释</b>：{@code （11上标）}、{@code (11上标)}
-     *       → 提取括号内的数字串</li>
-     *   <li><b>脱字符</b>：{@code ^11}、{@code ^{11}}
-     *       → 提取 ^ 后面的数字串</li>
+     *   <li><b>科学计数法</b>：{@code 8.04E+11}、{@code 1.2e-3}、{@code 5.6E11}</li>
+     *   <li><b>Unicode 上标</b>：{@code 10¹¹}、{@code 3.5×10⁸}</li>
+     *   <li><b>括号注释</b>：{@code （11上标）}、{@code (11上标)}</li>
+     *   <li><b>脱字符</b>：{@code ^11}、{@code ^{11}}</li>
+     *   <li><b>10-N 格式</b>：{@code 10-2}</li>
      * </ol>
-     *
-     * <p>示例：
-     * <pre>
-     *   "PN: 8.04E+11 #/km"   → "11"   (科学计数)
-     *   "#.10¹¹/km"            → "11"   (Unicode上标)
-     *   "3.5×10⁸ /km"          → "8"    (Unicode上标+乘号)
-     *   "#.1011/km（11上标）"  → "11"   (括号注释)
-     *   "1.2e+8"               → "8"    (小写e科学计数)
-     *   "10^{6}"               → "6"    (脱字符)
-     * </pre>
      */
     private static String extractExponent(String text) {
         if (text == null || StringUtils.isBlank(text)) return null;
 
-        // 策略1：科学计数法 E/e 后的指数
         Matcher m = SCI_NOTATION_PATTERN.matcher(text);
-        if (m.find()) {
-            return m.group(1);
-        }
+        if (m.find()) return m.group(1);
 
-        // 策略2：Unicode 上标数字（×10ⁿ 或 10ⁿ）
         m = UNICODE_SUP_PATTERN.matcher(text);
-        if (m.find()) {
-            return normalizeSuperscript(m.group(1));
-        }
+        if (m.find()) return normalizeSuperscript(m.group(1));
 
-        // 策略3：括号注释"（N上标）"
         m = ANNOTATED_SUP_PATTERN.matcher(text);
-        if (m.find()) {
-            return m.group(1);
-        }
+        if (m.find()) return m.group(1);
 
-        // 策略4：脱字符 ^N 或 ^{N}
         m = CARET_SUP_PATTERN.matcher(text);
-        if (m.find()) {
-            return m.group(1);
-        }
+        if (m.find()) return m.group(1);
 
-        // 策略5：10-N 格式（如 #.10-2/km）
         m = PLAIN_NEG_EXP_PATTERN.matcher(text);
-        if (m.find()) {
-            return m.group(1);
-        }
+        if (m.find()) return m.group(1);
 
         log.warn("[ValueMappingParser] EXTRACT_EXPONENT 未找到指数: {}", text);
         return null;
@@ -586,7 +662,7 @@ public class ValueMappingParser {
         if (raw == null || StringUtils.isBlank(raw)) return null;
         DateTimeFormatter outFormatter = StringUtils.isNotBlank(outputFmt)
                 ? DateTimeFormatter.ofPattern(outputFmt)
-                : XSD_DATE;  // 默认 yyyy-MM-dd
+                : XSD_DATE;
 
         if (StringUtils.isNotBlank(inputFmt)) {
             try {
@@ -596,13 +672,11 @@ public class ValueMappingParser {
                 log.warn("[ValueMappingParser] 日期解析失败 fmt={} raw={}", inputFmt, raw);
             }
         }
-        // 自动探测
         for (DateTimeFormatter fmt : COMMON_DATE_FORMATS) {
             try {
                 return LocalDate.parse(raw, fmt).format(outFormatter);
             } catch (DateTimeParseException ignored) { }
         }
-        // 已是 ISO 格式（含时间部分）
         try {
             return LocalDateTime.parse(raw).toLocalDate().format(outFormatter);
         } catch (DateTimeParseException ignored) { }
@@ -614,7 +688,7 @@ public class ValueMappingParser {
         if (raw == null || StringUtils.isBlank(raw)) return null;
         DateTimeFormatter outFormatter = StringUtils.isNotBlank(outputFmt)
                 ? DateTimeFormatter.ofPattern(outputFmt)
-                : XSD_DATETIME;  // 默认 yyyy-MM-dd'T'HH:mm:ss
+                : XSD_DATETIME;
 
         if (StringUtils.isNotBlank(inputFmt)) {
             try {
@@ -627,7 +701,6 @@ public class ValueMappingParser {
         try {
             return LocalDateTime.parse(raw).format(outFormatter);
         } catch (DateTimeParseException ignored) { }
-        // 尝试当作纯日期补 00:00:00
         String dateOnly = convertDate(raw, inputFmt, outputFmt);
         return (dateOnly != null) ? dateOnly + "T00:00:00" : null;
     }
@@ -653,14 +726,14 @@ public class ValueMappingParser {
      */
     private static String unescapeSep(String sep) {
         switch (sep.toUpperCase()) {
-            case "SEMICOLON": return ";";
-            case "NEWLINE":   return "\n";
-            case "COMMA":     return ",";
-            case "PIPE":      return "|";
-            case "SLASH":     return "/";
-            case "TAB":       return "\t";
+            case "SEMICOLON":   return ";";
+            case "NEWLINE":     return "\n";
+            case "COMMA":       return ",";
+            case "PIPE":        return "|";
+            case "SLASH":       return "/";
+            case "TAB":         return "\t";
             case "COMMA_SPACE": return ", ";
-            default:          return sep;
+            default:            return sep;
         }
     }
 
@@ -712,11 +785,10 @@ public class ValueMappingParser {
         return "SPLIT_MULTIROW:" + escapeSepAlias(sep);
     }
 
-    /** 生成 DICT_MAP 描述符 */
-    public static String dictMap(String dictType) {
-        return "DICT_MAP:" + dictType;
+    /** 生成 DICT_MAP 描述符（value_map 列存入 "DICT_MAP"，映射数据存入 value_connection 列） */
+    public static String dictMap() {
+        return "DICT_MAP";
     }
-
 
     private static String escapeSepAlias(String sep) {
         switch (sep) {

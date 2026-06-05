@@ -136,21 +136,35 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                             remoteDictService.getDictDataByType("vehicle_attribute");
 
                     if (dictResult != null && dictResult.getData() != null) {
-                        Map<String, SysDictData> dictLabelMap = dictResult.getData().stream()
+                        // 同一 dict_label 可能对应多条记录（每条记录有独立的 original_system 和 key_map）
+                        // 使用 groupingBy 收集同一 dict_label 下的所有 SysDictData
+                        Map<String, List<SysDictData>> dictLabelMap = dictResult.getData().stream()
                                 .filter(d -> StringUtils.isNotBlank(d.getDictLabel()))
-                                .collect(java.util.stream.Collectors.toMap(
-                                        SysDictData::getDictLabel,
-                                        d -> d,
-                                        (existing, replacement) -> existing
-                                ));
+                                .collect(java.util.stream.Collectors.groupingBy(SysDictData::getDictLabel));
 
-                        Map<String, Map<String, String>> jsonDictMap = new LinkedHashMap<>();
+                        Map<String, Map<String, Object>> jsonDictMap = new LinkedHashMap<>();
                         for (String key : jsonMap.keySet()) {
-                            SysDictData dictData = dictLabelMap.get(key);
-                            Map<String, String> labels = new HashMap<>();
-                            labels.put("cocOrder", dictData != null ? dictData.getCocOrder() : null);
-                            labels.put("originalSystemConnection", dictData != null ? dictData.getOriginalSystemConnection() : null);
-                            labels.put("valueConnection", dictData != null ? dictData.getValueConnection() : null);
+                            List<SysDictData> dictDataList = dictLabelMap.get(key);
+                            // 取第一条记录用于公共字段（cocOrder、valueConnection 各条相同）
+                            SysDictData first = (dictDataList != null && !dictDataList.isEmpty()) ? dictDataList.get(0) : null;
+                            Map<String, Object> labels = new HashMap<>();
+                            labels.put("cocOrder", first != null ? first.getCocOrder() : null);
+                            labels.put("valueConnection", first != null ? first.getValueConnection() : null);
+                            // 将每条记录的 original_system -> key_map 收集为嵌套 Map 对象，
+                            // 直接以 "originalSystemConnection" 为 key 存入 labels，
+                            // 最终结构：{ "originalSystemConnection": { "认证系统__0": "xxx", ... } }
+                            if (dictDataList != null) {
+                                Map<String, String> systemKeyMap = new LinkedHashMap<>();
+                                for (SysDictData dictData : dictDataList) {
+                                    if (StringUtils.isNotBlank(dictData.getOriginalSystem())
+                                            && StringUtils.isNotBlank(dictData.getKeyMap())) {
+                                        systemKeyMap.put(dictData.getOriginalSystem(), dictData.getKeyMap());
+                                    }
+                                }
+                                if (!systemKeyMap.isEmpty()) {
+                                    labels.put("originalSystemConnection", systemKeyMap);
+                                }
+                            }
                             jsonDictMap.put(key, labels);
                         }
                         vehicle.setOtherSystem(jsonDictMap);

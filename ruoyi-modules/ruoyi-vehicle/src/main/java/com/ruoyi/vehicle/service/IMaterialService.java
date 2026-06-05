@@ -57,4 +57,6 @@ public interface IMaterialService {
     String submitImportTask(MultipartFile file, boolean updateSupport);
 
     Flux<ServerSentEvent<String>> getImportFlux(String taskId);
+
+    Material updateMaterialStatus(Long id);
 }

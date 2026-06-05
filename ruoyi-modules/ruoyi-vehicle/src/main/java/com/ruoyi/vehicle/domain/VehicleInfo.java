@@ -153,7 +153,7 @@ public class VehicleInfo extends BaseEntity {
 
     private String tempVersion;
 
-    private Map<String, Map<String, String>> otherSystem;
+    private Map<String, Map<String, Object>> otherSystem;
 
     public Map<String, Object> getJsonMap() {
         if (jsonMap != null) {

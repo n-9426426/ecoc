@@ -9,7 +9,10 @@ import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.system.api.domain.SysNotice;
 import com.ruoyi.system.api.enums.SysNoticeModel;
 import com.ruoyi.vehicle.domain.VehicleInfo;
+import com.ruoyi.vehicle.domain.VehicleLifecycle;
+import com.ruoyi.vehicle.enums.VehicleLifecycleOperation;
 import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
+import com.ruoyi.vehicle.mapper.VehicleLifecycleMapper;
 import com.ruoyi.vehicle.service.IFirstVehicleCheckService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -69,6 +72,9 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
 
     @Autowired
     private RemoteNoticeService remoteNoticeService;
+
+    @Autowired
+    private VehicleLifecycleMapper vehicleLifecycleMapper;
 
     // ===================================================================
     //  对外接口实现
@@ -200,9 +206,17 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void confirmMaterial(Long vehicleId, String confirmedBy) {
-
         vehicleInfoMapper.confirmMaterialFlag(vehicleId, confirmedBy);
         VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
+
+        VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
+        vehicleLifecycle.setEntryId(vehicleInfo.getVehicleId());
+        vehicleLifecycle.setTime(new Date());
+        vehicleLifecycle.setVin(vehicleInfo.getVin());
+        vehicleLifecycle.setOperate(VehicleLifecycleOperation.FIRST_VEHICLE_AFFIRM.getOperation());
+        vehicleLifecycle.setResult(0);
+        vehicleLifecycleMapper.insert(vehicleLifecycle);
+
         Map<String, String> params = new HashMap<>();
         params.put("id", String.valueOf(vehicleInfo.getVehicleId()));
         params.put("vin", vehicleInfo.getVin());
@@ -233,6 +247,15 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
     public void confirmTemplate(Long vehicleId, String confirmedBy) {
         vehicleInfoMapper.confirmTemplateFlag(vehicleId, confirmedBy);
         VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
+
+        VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
+        vehicleLifecycle.setEntryId(vehicleInfo.getVehicleId());
+        vehicleLifecycle.setTime(new Date());
+        vehicleLifecycle.setVin(vehicleInfo.getVin());
+        vehicleLifecycle.setOperate(VehicleLifecycleOperation.FIRST_VEHICLE_AFFIRM.getOperation());
+        vehicleLifecycle.setResult(0);
+        vehicleLifecycleMapper.insert(vehicleLifecycle);
+
         Map<String, String> params = new HashMap<>();
         params.put("id", String.valueOf(vehicleInfo.getVehicleId()));
         params.put("vin", vehicleInfo.getVin());

@@ -52,4 +52,6 @@ public interface MaterialMapper {
     int deleteMaterialByIds(Long[] ids);
 
     Material selectByMaterialNo(String materialNo);
+
+    void updateMaterialStatus(Material update);
 }

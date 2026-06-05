@@ -136,4 +136,11 @@ public class MaterialController extends BaseController {
         IOUtils.copy(resource.getInputStream(), response.getOutputStream());
         response.flushBuffer();
     }
+
+    @RequiresPermissions("vehicle:material:edit")
+    @Log(title = "物料号管理状态切换", businessType = BusinessType.UPDATE)
+    @PutMapping("/status/{id}")
+    public AjaxResult updateStatus(@PathVariable Long id) {
+        return success(materialService.updateMaterialStatus(id));
+    }
 }
