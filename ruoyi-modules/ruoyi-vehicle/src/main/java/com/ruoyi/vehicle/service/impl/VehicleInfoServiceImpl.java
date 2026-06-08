@@ -28,7 +28,6 @@ import com.ruoyi.vehicle.domain.vo.VehicleJsonKeyVo;
 import com.ruoyi.vehicle.enums.VehicleLifecycleOperation;
 import com.ruoyi.vehicle.mapper.*;
 import com.ruoyi.vehicle.service.IFirstVehicleCheckService;
-import com.ruoyi.vehicle.service.IMaterialBlacklistService;
 import com.ruoyi.vehicle.service.IVehicleInfoService;
 import com.ruoyi.vehicle.service.IVehicleValidationService;
 import com.ruoyi.vehicle.utils.ExcelUtil;
@@ -90,9 +89,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Autowired
     private MaterialMapper materialMapper;
-
-    @Autowired
-    private IMaterialBlacklistService materialBlacklistService;
 
     @Autowired
     private IFirstVehicleCheckService firstVehicleCheckService;
@@ -244,6 +240,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             vehicleInfo.setJson(json);
             vehicleInfo.setGenerateAffirm(template.getGenerateAffirm());
             vehicleInfo.setUploadAffirm(template.getUploadAffirm());
+            // 按物料号首台车逻辑覆盖 generate_affirm
+            applyFirstVehicleAffirm(vehicleInfo, vehicleInfo.getMaterialNo(), String.valueOf(vehicleTemplateId));
         }
         vehicleInfo.setUploadStatus(0);
         vehicleInfo.setValidationResult(0);
@@ -589,8 +587,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         }
 
         try {
-            self.insertVehicleInfo(vehicleInfo);  // ← 走代理，事务独立
-            checkMaterialInBlacklist(vehicleInfo);
+            self.insertVehicleInfo(vehicleInfo);  // ← 走代理，事务独立；黑名单检查已在内部执行
         } catch (Exception e) {
             // 剥出根因，确保 message 不丢失
             Throwable cause = e;
@@ -845,6 +842,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setDeleted(0);
         vehicleInfo.setGenerateAffirm(template.getGenerateAffirm());
         vehicleInfo.setUploadAffirm(template.getUploadAffirm());
+        // 按物料号/模版首台车逻辑覆盖 generate_affirm / upload_affirm
+        applyFirstVehicleAffirm(vehicleInfo, vehicleInfo.getMaterialNo(), String.valueOf(template.getTemplateId()));
         vehicleInfo.setVehicleModel(material.getVehicleModel());
         vehicleInfo.setProjectName(material.getName());
         vehicleInfo.setBrand(material.getBrand());
@@ -1175,7 +1174,58 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 .replace("\r", "\\r");
     }
 
-// ========== 工具方法 ==========
+    // ========== 工具方法 ==========
+
+    /**
+     * 新车辆创建时，根据物料号和模版的"首台车"情况，覆盖 generate_affirm / upload_affirm。
+     *
+     * <p><b>物料号维度（generate_affirm）：</b>
+     * <ul>
+     *   <li>该物料号在 vehicle_info 表中尚无任何记录（当前这条就是第一条）→ 置为 0</li>
+     *   <li>已有记录 → 找制造日期最早的那条，把其 generate_affirm 值赋给当前车辆</li>
+     * </ul>
+     *
+     * <p><b>模版维度（upload_affirm）：</b>逻辑与物料号维度完全对称。
+     *
+     * @param vehicleInfo  当前待插入的车辆（generate_affirm / upload_affirm 已由模板初始化）
+     * @param materialNo   物料号
+     * @param templateId   车辆模版 ID（字符串）
+     */
+    private void applyFirstVehicleAffirm(VehicleInfo vehicleInfo, String materialNo, String templateId) {
+        // ── 物料号维度：generate_affirm ──────────────────────────────────────
+        if (StringUtils.isNotBlank(materialNo)) {
+            Long earliestMaterialId = vehicleInfoMapper.findEarliestIdByMaterialNo(materialNo);
+            if (earliestMaterialId == null) {
+                // 该物料号在库中尚无记录，当前这条就是第一条 → 置为 0
+                vehicleInfo.setGenerateAffirm(0);
+                vehicleInfo.setUploadAffirm(0);
+            } else {
+                // 已有记录，取最早那条的 generate_affirm 值
+                VehicleInfo earliest = vehicleInfoMapper.selectVehicleInfoById(earliestMaterialId);
+                if (earliest != null) {
+                    vehicleInfo.setGenerateAffirm(earliest.getGenerateAffirm());
+                    vehicleInfo.setUploadAffirm(earliest.getUploadAffirm());
+                }
+            }
+        }
+
+        // ── 模版维度：upload_affirm ──────────────────────────────────────────
+        if (StringUtils.isNotBlank(templateId)) {
+            Long earliestTemplateId = vehicleInfoMapper.findEarliestIdByTemplateId(templateId);
+            if (earliestTemplateId == null) {
+                // 该模版在库中尚无关联车辆，当前这条就是第一条 → 置为 0
+                vehicleInfo.setGenerateAffirm(0);
+                vehicleInfo.setUploadAffirm(0);
+            } else {
+                // 已有记录，取最早那条的 upload_affirm 值
+                VehicleInfo earliest = vehicleInfoMapper.selectVehicleInfoById(earliestTemplateId);
+                if (earliest != null) {
+                    vehicleInfo.setGenerateAffirm(earliest.getGenerateAffirm());
+                    vehicleInfo.setUploadAffirm(earliest.getUploadAffirm());
+                }
+            }
+        }
+    }
 
     /**
      * 过滤 JSON 字符串，只保留 sys_data 中 dict_type='vehicle_attribute' 的 dict_label 所对应的键，
@@ -1318,34 +1368,31 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         MaterialBlacklist materialBlacklist = materialBlacklistMapper
                 .selectMaterialBlacklistByMaterialNo(vehicleInfo.getMaterialNo());
 
-        // 2. 查不到再按 customerNo 查
+        // 2a. 查不到再按 customerNo 查
         if (materialBlacklist == null) {
             materialBlacklist = materialBlacklistMapper
                     .selectMaterialBlacklistByCustomerNo(vehicleInfo.getCustomerNo());
         }
 
+        // 一次解析 JSON，同时取 CommercialName（customerNo来源）和 Make（brand来源）
         if (materialBlacklist == null) {
             try {
                 JsonNode jsonObj = new ObjectMapper().readTree(vehicleInfo.getJson());
+
+                // 2b. 按 CommercialName（等同于 customerNo）查
                 JsonNode customerNoNode = jsonObj.get("CommercialName");
                 if (customerNoNode != null && StringUtils.isNotBlank(customerNoNode.asText())) {
                     materialBlacklist = materialBlacklistMapper
                             .selectMaterialBlacklistByCustomerNo(customerNoNode.asText());
                 }
-            } catch (Exception e) {
-                log.warn("checkMaterialInBlacklist: json 解析失败, vehicleId={}",
-                        vehicleInfo.getVehicleId(), e);
-            }
-        }
 
-        // 3. 还查不到再按 brand 查（从 json 取 Make 字段）
-        if (materialBlacklist == null) {
-            try {
-                JsonNode jsonObj = new ObjectMapper().readTree(vehicleInfo.getJson());
-                JsonNode makeNode = jsonObj.get("Make");
-                if (makeNode != null && StringUtils.isNotBlank(makeNode.asText())) {
-                    materialBlacklist = materialBlacklistMapper
-                            .selectMaterialBlacklistByBrand(makeNode.asText());
+                // 3. 还查不到再按 brand 查（Make 字段）
+                if (materialBlacklist == null) {
+                    JsonNode makeNode = jsonObj.get("Make");
+                    if (makeNode != null && StringUtils.isNotBlank(makeNode.asText())) {
+                        materialBlacklist = materialBlacklistMapper
+                                .selectMaterialBlacklistByBrand(makeNode.asText());
+                    }
                 }
             } catch (Exception e) {
                 log.warn("checkMaterialInBlacklist: json 解析失败, vehicleId={}",

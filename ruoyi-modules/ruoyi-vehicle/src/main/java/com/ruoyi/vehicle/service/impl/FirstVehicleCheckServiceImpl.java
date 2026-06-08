@@ -205,8 +205,8 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void confirmMaterial(Long vehicleId, String confirmedBy) {
-        vehicleInfoMapper.confirmMaterialFlag(vehicleId, confirmedBy);
+    public void confirmMaterial(Long vehicleId, String confirmedBy, String generateAffirmCause) {
+        vehicleInfoMapper.confirmMaterialFlag(vehicleId, confirmedBy, generateAffirmCause);
         VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
 
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
@@ -244,8 +244,8 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void confirmTemplate(Long vehicleId, String confirmedBy) {
-        vehicleInfoMapper.confirmTemplateFlag(vehicleId, confirmedBy);
+    public void confirmTemplate(Long vehicleId, String confirmedBy, String uploadAffirmCause) {
+        vehicleInfoMapper.confirmTemplateFlag(vehicleId, confirmedBy, uploadAffirmCause);
         VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
 
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();

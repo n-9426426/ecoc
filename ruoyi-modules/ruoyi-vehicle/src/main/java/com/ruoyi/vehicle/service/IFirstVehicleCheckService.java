@@ -52,16 +52,18 @@ public interface IFirstVehicleCheckService {
     /**
      * 确认物料号首台（确认可生成）
      *
-     * @param vehicleId   车辆 ID
-     * @param confirmedBy 确认人用户名
+     * @param vehicleId           车辆ID
+     * @param confirmedBy         确认人
+     * @param generateAffirmCause 生成确认原因
      */
-    void confirmMaterial(Long vehicleId, String confirmedBy);
+    void confirmMaterial(Long vehicleId, String confirmedBy, String generateAffirmCause);
 
     /**
      * 确认模版首台（确认可上传）
      *
-     * @param vehicleId   车辆 ID
-     * @param confirmedBy 确认人用户名
+     * @param vehicleId         车辆ID
+     * @param confirmedBy       确认人
+     * @param uploadAffirmCause 上传确认原因
      */
-    void confirmTemplate(Long vehicleId, String confirmedBy);
+    void confirmTemplate(Long vehicleId, String confirmedBy, String uploadAffirmCause);
 }

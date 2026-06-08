@@ -58,6 +58,8 @@
 		<result property="uploadAffirmNotice"   column="upload_affirm_notice"   />
 		<result property="saleCompanyName"      column="sale_company_name"      />
 		<result property="modelNo"              column="model_no"               />
+		<result property="generateAffirmCause"  column="generate_affirm_cause"  />
+		<result property="uploadAffirmCause"    column="upload_affirm_cause"    />
 	</resultMap>
 
 	<sql id="selectVehicleInfoVo">
@@ -69,7 +71,8 @@
 			   sdd.dict_label as vehicle_model_str, vt.filepath as vehicle_template_filepath, vt.coc_template_no as coc_template_no,
 			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade,   vi.first_material_flag,
 			   vi.first_template_flag, vi.material_confirmed_by, vi.material_confirmed_time, vi.template_confirmed_by,
-			   vi.template_confirmed_time, vi.generate_affirm_notice, vi.upload_affirm_notice, vi.sale_company_name, vi.model_no
+			   vi.template_confirmed_time, vi.generate_affirm_notice, vi.upload_affirm_notice, vi.sale_company_name, vi.model_no,
+			   vi.generate_affirm_cause, vi.upload_affirm_cause
 		from vehicle_info vi
 		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
 		left join (select template_id, filepath, coc_template_no, is_last, version, model_no, tvv from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
@@ -269,6 +272,8 @@
 		<if test="generateAffirmNotice != null">generate_affirm_notice,</if>
 		<if test="uploadAffirmNotice != null">upload_affirm_notice,</if>
 		<if test="modelNo != null and modelNo != ''">model_no,</if>
+		<if test="generateAffirmCause != null and generateAffirmCause != ''">generate_affirm_cause,</if>
+		<if test="uploadAffirmCause != null and uploadAffirmCause != ''">upload_affirm_cause,</if>
 		create_time
 		) values (
 		<if test="vin != null and vin != ''">#{vin}, </if>
@@ -310,6 +315,8 @@
 		<if test="generateAffirmNotice != null">generate_affirm_notice,</if>
 		<if test="uploadAffirmNotice != null">upload_affirm_notice,</if>
 		<if test="modelNo != null and modelNo != ''">#{modelNo},</if>
+		<if test="generateAffirmCause != null and generateAffirmCause != ''">#{generateAffirmCause},</if>
+		<if test="uploadAffirmCause != null and uploadAffirmCause != ''">#{uploadAffirmCause},</if>
 		sysdate()
 		)
 	</insert>
@@ -357,6 +364,8 @@
 			<if test="generateAffirmNotice != null">generate_affirm_notice = #{generateAffirmNotice},</if>
 			<if test="uploadAffirmNotice != null">upload_affirm_notice = #{uploadAffirmNotice},</if>
 			<if test="modelNo != null and modelNo != ''">model_no = #{modelNo},</if>
+			<if test="generateAffirmCause != null and generateAffirmCause != ''">generate_affirm_cause = #{generateAffirmCause},</if>
+			<if test="uploadAffirmCause != null and uploadAffirmCause != ''">upload_affirm_cause = #{uploadAffirmCause},</if>
 			update_time = sysdate()
 		</set>
 		where vehicle_id = #{vehicleId}
@@ -563,24 +572,23 @@
 		WHERE vehicle_id = #{vehicleId}
 	</update>
 
-	<!-- 确认物料号首台：generate_affirm=1，记录确认人和时间 -->
-	<!-- first_material_flag 保留为 1，靠 generate_affirm=0 过滤"待确认"列表 -->
 	<update id="confirmMaterialFlag">
 		UPDATE vehicle_info
-		SET generate_affirm         = 1,
+		SET generate_affirm         = CASE WHEN generate_affirm = 1 THEN 0 ELSE 1 END,
 			material_confirmed_by   = #{confirmedBy},
 			material_confirmed_time = SYSDATE(),
+			generate_affirm_cause   = #{generateAffirmCause},
 			update_by               = #{confirmedBy},
 			update_time             = SYSDATE()
 		WHERE vehicle_id = #{vehicleId}
 	</update>
 
-	<!-- 确认模版首台：upload_affirm=1，记录确认人和时间 -->
 	<update id="confirmTemplateFlag">
 		UPDATE vehicle_info
-		SET upload_affirm           = 1,
+		SET upload_affirm           = CASE WHEN upload_affirm = 1 THEN 0 ELSE 1 END,
 			template_confirmed_by   = #{confirmedBy},
 			template_confirmed_time = SYSDATE(),
+			upload_affirm_cause     = #{uploadAffirmCause},
 			update_by               = #{confirmedBy},
 			update_time             = SYSDATE()
 		WHERE vehicle_id = #{vehicleId}

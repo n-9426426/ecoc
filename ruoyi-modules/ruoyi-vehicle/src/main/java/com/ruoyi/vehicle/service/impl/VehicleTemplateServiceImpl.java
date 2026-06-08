@@ -147,26 +147,39 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
                     if (!jsonMap.isEmpty()) {
                         // 通过 Feign 获取 vehicle_attribute 全量字典
-                        R<List<SysDictData>> dictResult =remoteDictService.getDictDataByType("vehicle_attribute");
+                        R<List<SysDictData>> dictResult = remoteDictService.getDictDataByType("vehicle_attribute");
 
                         if (dictResult != null && dictResult.getData() != null) {
-                            // 转为 Map<dictLabel, SysDictData>，O(1) 查找
-                            Map<String, SysDictData> dictLabelMap = dictResult.getData().stream()
+                            // 同一 dict_label 可能对应多条记录（每条记录有独立的 original_system 和 key_map）
+                            // 使用 groupingBy 收集同一 dict_label 下的所有 SysDictData
+                            Map<String, List<SysDictData>> dictLabelMap = dictResult.getData().stream()
                                     .filter(d -> StringUtils.isNotBlank(d.getDictLabel()))
-                                    .collect(Collectors.toMap(
-                                            SysDictData::getDictLabel,
-                                            d -> d,
-                                            (existing, replacement) -> existing
-                                    ));
+                                    .collect(Collectors.groupingBy(SysDictData::getDictLabel));
 
                             // 遍历 json 的每个 key，匹配字典，组装结果
-                            Map<String, Map<String, String>> jsonDictMap = new LinkedHashMap<>();
+                            Map<String, Map<String, Object>> jsonDictMap = new LinkedHashMap<>();
                             for (String key : jsonMap.keySet()) {
-                                SysDictData dictData = dictLabelMap.get(key);
-                                Map<String, String> labels = new HashMap<>();
-                                labels.put("cocOrder", dictData != null ? dictData.getCocOrder() : null);
-                                labels.put("originalSystemConnection", dictData != null ? dictData.getOriginalSystemConnection() : null);
-                                labels.put("valueConnection", dictData != null ? dictData.getValueConnection() : null);
+                                List<SysDictData> dictDataList = dictLabelMap.get(key);
+                                // 取第一条记录用于公共字段（cocOrder、valueConnection 各条相同）
+                                SysDictData first = (dictDataList != null && !dictDataList.isEmpty()) ? dictDataList.get(0) : null;
+                                Map<String, Object> labels = new HashMap<>();
+                                labels.put("cocOrder", first != null ? first.getCocOrder() : null);
+                                labels.put("valueConnection", first != null ? first.getValueConnection() : null);
+                                // 将每条记录的 original_system -> key_map 收集为嵌套 Map 对象，
+                                // 直接以 "originalSystemConnection" 为 key 存入 labels，
+                                // 最终结构：{ "originalSystemConnection": { "认证系统__0": "xxx", ... } }
+                                if (dictDataList != null) {
+                                    Map<String, String> systemKeyMap = new LinkedHashMap<>();
+                                    for (SysDictData dictData : dictDataList) {
+                                        if (StringUtils.isNotBlank(dictData.getOriginalSystem())
+                                                && StringUtils.isNotBlank(dictData.getKeyMap())) {
+                                            systemKeyMap.put(dictData.getOriginalSystem(), dictData.getKeyMap());
+                                        }
+                                    }
+                                    if (!systemKeyMap.isEmpty()) {
+                                        labels.put("originalSystemConnection", systemKeyMap);
+                                    }
+                                }
                                 jsonDictMap.put(key, labels);
                             }
                             template.setOtherSystem(jsonDictMap);
@@ -214,7 +227,11 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         template.setJson(mappedJson);
         Map<String, String> jsonMap = JSONObject.parseObject(
                 mappedJson, new TypeReference<Map<String, String>>() {});
-        template.setTvv(jsonMap.get("Type") + "," + jsonMap.get("Variant") + "," + jsonMap.get("Version"));
+        if (jsonMap.get("Type") == null && jsonMap.get("Variant") == null && jsonMap.get("Version") == null) {
+            template.setTvv(StringUtils.isBlank(template.getTvv()) ? "" : template.getTvv());
+        } else {
+            template.setTvv(jsonMap.get("Type") + "," + jsonMap.get("Variant") + "," + jsonMap.get("Version"));
+        }
         int row = templateMapper.insertVehicleTemplate(template);
         batchValidate(template.getTemplateId());
         return row;

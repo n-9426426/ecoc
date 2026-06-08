@@ -129,16 +129,26 @@ public interface VehicleInfoMapper {
     void markTemplateFlag(@Param("vehicleId") Long vehicleId, @Param("flag") int flag);
 
     /**
-     * 确认物料号首台：记录确认人、确认时间，并将 generate_affirm 置为 1
+     * 确认物料号首台（toggle generate_affirm，写入确认人和确认原因）
+     *
+     * @param vehicleId           车辆ID
+     * @param confirmedBy         确认人
+     * @param generateAffirmCause 生成确认原因
      */
     void confirmMaterialFlag(@Param("vehicleId") Long vehicleId,
-                             @Param("confirmedBy") String confirmedBy);
+                             @Param("confirmedBy") String confirmedBy,
+                             @Param("generateAffirmCause") String generateAffirmCause);
 
     /**
-     * 确认模版首台：记录确认人、确认时间，并将 upload_affirm 置为 1
+     * 确认模版首台（toggle upload_affirm，写入确认人和确认原因）
+     *
+     * @param vehicleId         车辆ID
+     * @param confirmedBy       确认人
+     * @param uploadAffirmCause 上传确认原因
      */
     void confirmTemplateFlag(@Param("vehicleId") Long vehicleId,
-                             @Param("confirmedBy") String confirmedBy);
+                             @Param("confirmedBy") String confirmedBy,
+                             @Param("uploadAffirmCause") String uploadAffirmCause);
 
     /**
      * 重置该物料号下所有车辆的物料号确认状态

@@ -205,4 +205,8 @@ public class VehicleInfo extends BaseEntity {
     private Integer uploadAffirmNotice;
 
     private String modelNo;
+
+    private String generateAffirmCause;
+
+    private String uploadAffirmCause;
 }

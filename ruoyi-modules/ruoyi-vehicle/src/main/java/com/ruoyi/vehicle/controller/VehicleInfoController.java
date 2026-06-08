@@ -417,35 +417,41 @@ public class VehicleInfoController extends BaseController {
         return getDataTable(list);
     }
 
-// ===================================================================
-//  确认
-// ===================================================================
+    // ===================================================================
+    //  确认
+    // ===================================================================
 
     /**
      * 确认物料号首台（确认可生成）
-     * <p>将该车辆 generate_affirm 置为 1，记录确认人和时间。
+     * <p>将该车辆 generate_affirm 置为 1，记录确认人、时间和确认原因。
      * <p>确认后该车辆不再出现在 dimension=material 的待确认列表中。
      */
     @Operation(summary = "确认物料号首台（可生成）")
     @RequiresPermissions("vehicle:first:confirm")
     @Log(title = "首台车确认", businessType = BusinessType.UPDATE)
     @PutMapping("/first/material/confirm/{vehicleId}")
-    public AjaxResult confirmMaterial(@PathVariable Long vehicleId) {
-        firstVehicleCheckService.confirmMaterial(vehicleId, SecurityUtils.getUsername());
+    public AjaxResult confirmMaterial(
+            @PathVariable Long vehicleId,
+            @RequestBody(required = false) VehicleInfo request) {
+        String cause = (request != null) ? request.getGenerateAffirmCause() : null;
+        firstVehicleCheckService.confirmMaterial(vehicleId, SecurityUtils.getUsername(), cause);
         return AjaxResult.success();
     }
 
     /**
      * 确认模版首台（确认可上传）
-     * <p>将该车辆 upload_affirm 置为 1，记录确认人和时间。
+     * <p>将该车辆 upload_affirm 置为 1，记录确认人、时间和确认原因。
      * <p>确认后该车辆不再出现在 dimension=template 的待确认列表中。
      */
     @Operation(summary = "确认模版首台（可上传）")
     @RequiresPermissions("vehicle:first:confirm")
     @Log(title = "首台车确认", businessType = BusinessType.UPDATE)
     @PutMapping("/first/template/confirm/{vehicleId}")
-    public AjaxResult confirmTemplate(@PathVariable Long vehicleId) {
-        firstVehicleCheckService.confirmTemplate(vehicleId, SecurityUtils.getUsername());
+    public AjaxResult confirmTemplate(
+            @PathVariable Long vehicleId,
+            @RequestBody(required = false) VehicleInfo request) {
+        String cause = (request != null) ? request.getUploadAffirmCause() : null;
+        firstVehicleCheckService.confirmTemplate(vehicleId, SecurityUtils.getUsername(), cause);
         return AjaxResult.success();
     }
 }
