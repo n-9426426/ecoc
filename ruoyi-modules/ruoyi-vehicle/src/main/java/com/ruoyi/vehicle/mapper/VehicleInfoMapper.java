@@ -133,11 +133,9 @@ public interface VehicleInfoMapper {
      *
      * @param vehicleId           车辆ID
      * @param confirmedBy         确认人
-     * @param generateAffirmCause 生成确认原因
      */
     void confirmMaterialFlag(@Param("vehicleId") Long vehicleId,
-                             @Param("confirmedBy") String confirmedBy,
-                             @Param("generateAffirmCause") String generateAffirmCause);
+                             @Param("confirmedBy") String confirmedBy);
 
     /**
      * 确认模版首台（toggle upload_affirm，写入确认人和确认原因）

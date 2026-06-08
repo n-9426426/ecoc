@@ -17,7 +17,7 @@
 		<result property="secondaryColor"     column="secondary_color"      />
 		<result property="certificateVersion" column="certificate_version"  />
 		<result property="wvtaNo"             column="wvta_no"              />
-		<result property="manufactureDate"    column="manufacture_date"      />
+		<result property="manufactureDate"    column="manufacture_date"     />
 		<result property="issueDate"          column="issue_date"           />
 		<result property="json"               column="json"                 />
 		<result property="xmlTemplateId"      column="xml_template_id"      />
@@ -58,8 +58,7 @@
 		<result property="uploadAffirmNotice"   column="upload_affirm_notice"   />
 		<result property="saleCompanyName"      column="sale_company_name"      />
 		<result property="modelNo"              column="model_no"               />
-		<result property="generateAffirmCause"  column="generate_affirm_cause"  />
-		<result property="uploadAffirmCause"    column="upload_affirm_cause"    />
+		<result property="affirmCause"          column="affirm_cause"           />
 	</resultMap>
 
 	<sql id="selectVehicleInfoVo">
@@ -70,9 +69,8 @@
 			   vi.engine_number, vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire, vi.battery_number, vi.tvv, vi.breakpoint_time,
 			   sdd.dict_label as vehicle_model_str, vt.filepath as vehicle_template_filepath, vt.coc_template_no as coc_template_no,
 			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade,   vi.first_material_flag,
-			   vi.first_template_flag, vi.material_confirmed_by, vi.material_confirmed_time, vi.template_confirmed_by,
-			   vi.template_confirmed_time, vi.generate_affirm_notice, vi.upload_affirm_notice, vi.sale_company_name, vi.model_no,
-			   vi.generate_affirm_cause, vi.upload_affirm_cause
+			   vi.first_template_flag, vi.material_confirmed_by, vi.material_confirmed_time, vi.template_confirmed_by, vi.template_confirmed_time,
+			   vi.generate_affirm_notice, vi.upload_affirm_notice, vi.sale_company_name, vi.model_no, vi.affirm_cause
 		from vehicle_info vi
 		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
 		left join (select template_id, filepath, coc_template_no, is_last, version, model_no, tvv from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
@@ -272,8 +270,7 @@
 		<if test="generateAffirmNotice != null">generate_affirm_notice,</if>
 		<if test="uploadAffirmNotice != null">upload_affirm_notice,</if>
 		<if test="modelNo != null and modelNo != ''">model_no,</if>
-		<if test="generateAffirmCause != null and generateAffirmCause != ''">generate_affirm_cause,</if>
-		<if test="uploadAffirmCause != null and uploadAffirmCause != ''">upload_affirm_cause,</if>
+		<if test="affirmCause != null and affirmCause != ''">affirm_cause,</if>
 		create_time
 		) values (
 		<if test="vin != null and vin != ''">#{vin}, </if>
@@ -312,11 +309,10 @@
 		<if test="customerNo != null and customerNo != ''">#{customerNo},</if>
 		<if test="tireResistanceGrade != null and tireResistanceGrade != ''">#{tireResistanceGrade},</if>
 		<if test="createBy != null and createBy != ''">#{createBy}, </if>
-		<if test="generateAffirmNotice != null">generate_affirm_notice,</if>
-		<if test="uploadAffirmNotice != null">upload_affirm_notice,</if>
+		<if test="generateAffirmNotice != null">#{generateAffirmNotice},</if>
+		<if test="uploadAffirmNotice != null">#{uploadAffirmNotice},</if>
 		<if test="modelNo != null and modelNo != ''">#{modelNo},</if>
-		<if test="generateAffirmCause != null and generateAffirmCause != ''">#{generateAffirmCause},</if>
-		<if test="uploadAffirmCause != null and uploadAffirmCause != ''">#{uploadAffirmCause},</if>
+		<if test="affirmCause != null and affirmCause != ''">#{affirmCause},</if>
 		sysdate()
 		)
 	</insert>
@@ -364,8 +360,7 @@
 			<if test="generateAffirmNotice != null">generate_affirm_notice = #{generateAffirmNotice},</if>
 			<if test="uploadAffirmNotice != null">upload_affirm_notice = #{uploadAffirmNotice},</if>
 			<if test="modelNo != null and modelNo != ''">model_no = #{modelNo},</if>
-			<if test="generateAffirmCause != null and generateAffirmCause != ''">generate_affirm_cause = #{generateAffirmCause},</if>
-			<if test="uploadAffirmCause != null and uploadAffirmCause != ''">upload_affirm_cause = #{uploadAffirmCause},</if>
+			<if test="affirmCause != null and affirmCause != ''">affirm_cause = #{affirmCause},</if>
 			update_time = sysdate()
 		</set>
 		where vehicle_id = #{vehicleId}
@@ -577,7 +572,6 @@
 		SET generate_affirm         = CASE WHEN generate_affirm = 1 THEN 0 ELSE 1 END,
 			material_confirmed_by   = #{confirmedBy},
 			material_confirmed_time = SYSDATE(),
-			generate_affirm_cause   = #{generateAffirmCause},
 			update_by               = #{confirmedBy},
 			update_time             = SYSDATE()
 		WHERE vehicle_id = #{vehicleId}
@@ -812,21 +806,16 @@
     first_material_flag=1，按 material_no 分组取制造日期最早一条
 	-->
 	<select id="listFirstMaterialUnconfirmedEarliest" resultMap="VehicleInfoResult">
-		SELECT vi.vehicle_id, vi.vin, vi.factory_code, vi.factory_name, vi.material_no, vi.vehicle_model,
-			   vi.upload_status, vi.validation_result, vi.status, vi.country, vi.color, vi.secondary_color, vi.temp_version,
-			   vi.certificate_version, vi.wvta_no, vi.manufacture_date, vi.issue_date, vi.json, vi.xml_template_id, vi.vehicle_template_id,
-			   vi.deleted, vi.create_by, vi.create_time, vi.update_by, vi.update_time, vi.remark, vi.validation_report_json,
-			   vi.engine_number, vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire, vi.battery_number, vi.tvv, vi.breakpoint_time,
+		SELECT vi.vehicle_id, vi.vin, vi.factory_code, vi.factory_name, vi.material_no, vi.vehicle_model, vi.upload_status,
+		       vi.validation_result, vi.status, vi.country, vi.color, vi.secondary_color, vi.temp_version, vi.certificate_version,
+		       vi.wvta_no, vi.manufacture_date, vi.issue_date, vi.json, vi.xml_template_id, vi.vehicle_template_id, vi.deleted,
+		       vi.create_by, vi.create_time, vi.update_by, vi.update_time, vi.remark, vi.validation_report_json, vi.engine_number,
+		       vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire, vi.battery_number, vi.tvv, vi.breakpoint_time,
 			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade,
-			   vi.first_material_flag, vi.first_template_flag,
-			   vi.material_confirmed_by, vi.material_confirmed_time,
-			   vi.template_confirmed_by, vi.template_confirmed_time,
-			   vi.generate_affirm_notice, vi.upload_affirm_notice, vi.sale_company_name, vi.model_no,
-			   vi.generate_affirm_cause, vi.upload_affirm_cause,
-			   sdd.dict_label AS vehicle_model_str,
-			   vt.filepath AS vehicle_template_filepath,
-			   vt.coc_template_no AS coc_template_no,
-			   vt.version AS version
+			   vi.first_material_flag, vi.first_template_flag, vi.material_confirmed_by, vi.material_confirmed_time,
+			   vi.template_confirmed_by, vi.template_confirmed_time, vi.generate_affirm_notice, vi.upload_affirm_notice,
+			   vi.sale_company_name, vi.model_no, vi.affirm_cause, sdd.dict_label AS vehicle_model_str,
+			   vt.filepath AS vehicle_template_filepath, vt.coc_template_no AS coc_template_no, vt.version AS version
 		FROM (
 				 SELECT *,
 						ROW_NUMBER() OVER (
@@ -849,21 +838,16 @@
         first_template_flag=1，按 vehicle_template_id 分组取制造日期最早一条
     -->
 	<select id="listFirstTemplateUnconfirmedEarliest" resultMap="VehicleInfoResult">
-		SELECT vi.vehicle_id, vi.vin, vi.factory_code, vi.factory_name, vi.material_no, vi.vehicle_model,
-			   vi.upload_status, vi.validation_result, vi.status, vi.country, vi.color, vi.secondary_color, vi.temp_version,
-			   vi.certificate_version, vi.wvta_no, vi.manufacture_date, vi.issue_date, vi.json, vi.xml_template_id, vi.vehicle_template_id,
-			   vi.deleted, vi.create_by, vi.create_time, vi.update_by, vi.update_time, vi.remark, vi.validation_report_json,
-			   vi.engine_number, vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire, vi.battery_number, vi.tvv, vi.breakpoint_time,
+		SELECT vi.vehicle_id, vi.vin, vi.factory_code, vi.factory_name, vi.material_no, vi.vehicle_model, vi.upload_status,
+		       vi.validation_result, vi.status, vi.country, vi.color, vi.secondary_color, vi.temp_version, vi.certificate_version,
+		       vi.wvta_no, vi.manufacture_date, vi.issue_date, vi.json, vi.xml_template_id, vi.vehicle_template_id, vi.deleted,
+		       vi.create_by, vi.create_time, vi.update_by, vi.update_time, vi.remark, vi.validation_report_json, vi.engine_number,
+		       vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire, vi.battery_number, vi.tvv, vi.breakpoint_time,
 			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade,
-			   vi.first_material_flag, vi.first_template_flag,
-			   vi.material_confirmed_by, vi.material_confirmed_time,
-			   vi.template_confirmed_by, vi.template_confirmed_time,
-			   vi.generate_affirm_notice, vi.upload_affirm_notice, vi.sale_company_name, vi.model_no,
-			   vi.generate_affirm_cause, vi.upload_affirm_cause,
-			   sdd.dict_label AS vehicle_model_str,
-			   vt.filepath AS vehicle_template_filepath,
-			   vt.coc_template_no AS coc_template_no,
-			   vt.version AS version
+			   vi.first_material_flag, vi.first_template_flag, vi.material_confirmed_by, vi.material_confirmed_time,
+			   vi.template_confirmed_by, vi.template_confirmed_time, vi.generate_affirm_notice, vi.upload_affirm_notice,
+			   vi.sale_company_name, vi.model_no, vi.affirm_cause, sdd.dict_label AS vehicle_model_str,
+			   vt.filepath AS vehicle_template_filepath, vt.coc_template_no AS coc_template_no, vt.version AS version
 		FROM (
 				 SELECT *,
 						ROW_NUMBER() OVER (

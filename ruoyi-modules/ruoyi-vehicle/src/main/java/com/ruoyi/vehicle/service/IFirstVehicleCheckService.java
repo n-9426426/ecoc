@@ -54,16 +54,14 @@ public interface IFirstVehicleCheckService {
      *
      * @param vehicleId           车辆ID
      * @param confirmedBy         确认人
-     * @param generateAffirmCause 生成确认原因
      */
-    void confirmMaterial(Long vehicleId, String confirmedBy, String generateAffirmCause);
+    void confirmMaterial(Long vehicleId, String confirmedBy);
 
     /**
      * 确认模版首台（确认可上传）
      *
      * @param vehicleId         车辆ID
      * @param confirmedBy       确认人
-     * @param uploadAffirmCause 上传确认原因
      */
     void confirmTemplate(Long vehicleId, String confirmedBy);
 

@@ -238,8 +238,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             vehicleInfo.setWvtaNo(template.getWvtaCocNo());
             vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
             vehicleInfo.setJson(json);
-            vehicleInfo.setGenerateAffirm(template.getGenerateAffirm());
-            vehicleInfo.setUploadAffirm(template.getUploadAffirm());
             // 按物料号首台车逻辑覆盖 generate_affirm
             applyFirstVehicleAffirm(vehicleInfo, vehicleInfo.getMaterialNo(), String.valueOf(vehicleTemplateId));
         }
@@ -389,6 +387,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
             // VehicleTemplate.json 已在导入阶段完成字段映射，直接使用，无需再次转换
             vehicleInfo.setJson(template.getJson());
+            // 判断首台车原因并写入 affirmCause
+            applyFirstVehicleAffirmOnUpdate(vehicleInfo, vehicleInfo.getMaterialNo(), String.valueOf(vehicleTemplateId));
         }
         // 去掉这里强制重置，交给调用方自己决定
         vehicleInfo.setVin(null);
@@ -865,8 +865,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setUploadStatus(0);
         vehicleInfo.setValidationResult(0);
         vehicleInfo.setDeleted(0);
-        vehicleInfo.setGenerateAffirm(template.getGenerateAffirm());
-        vehicleInfo.setUploadAffirm(template.getUploadAffirm());
         // 按物料号/模版首台车逻辑覆盖 generate_affirm / upload_affirm
         applyFirstVehicleAffirm(vehicleInfo, vehicleInfo.getMaterialNo(), String.valueOf(template.getTemplateId()));
         vehicleInfo.setVehicleModel(material.getVehicleModel());
@@ -1220,38 +1218,85 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     }
 
     // ========== 工具方法 ==========
-
-    /**
-     * 新车辆创建时，根据物料号和模版的"首台车"情况，覆盖 generate_affirm / upload_affirm。
-     *
-     * <p><b>物料号维度（generate_affirm）：</b>
-     * <ul>
-     *   <li>该物料号在 vehicle_info 表中尚无任何记录（当前这条就是第一条）→ 置为 0</li>
-     *   <li>已有记录 → 找制造日期最早的那条，把其 generate_affirm 值赋给当前车辆</li>
-     * </ul>
-     *
-     * <p><b>模版维度（upload_affirm）：</b>逻辑与物料号维度完全对称。
-     *
-     * @param vehicleInfo  当前待插入的车辆（generate_affirm / upload_affirm 已由模板初始化）
-     * @param materialNo   物料号
-     * @param templateId   车辆模版 ID（字符串）
-     */
     private void applyFirstVehicleAffirm(VehicleInfo vehicleInfo, String materialNo, String templateId) {
         boolean materialSwitchOn = firstVehicleCheckService.isSwitchOn("new_material");
         boolean templateSwitchOn = firstVehicleCheckService.isSwitchOn("new_template");
 
         boolean materialNeedsConfirm = false;
         boolean templateNeedsConfirm = false;
+        List<String> causes = new ArrayList<>();
+
+        // ── 物料号维度 ────────────────────────────────────────────────────────
+        if (StringUtils.isNotBlank(materialNo) && materialSwitchOn) {
+            Long earliestMaterialId = vehicleInfoMapper.findEarliestIdByMaterialNo(materialNo);
+            if (earliestMaterialId == null) {
+                // 该物料号首次出现
+                materialNeedsConfirm = true;
+                causes.add("物料号");
+            } else {
+                VehicleInfo earliest = vehicleInfoMapper.selectVehicleInfoById(earliestMaterialId);
+                if (earliest != null && Integer.valueOf(0).equals(earliest.getGenerateAffirm())) {
+                    materialNeedsConfirm = true;
+                    causes.add("物料号");
+                }
+            }
+        }
+
+        // ── 模板维度 ──────────────────────────────────────────────────────────
+        if (StringUtils.isNotBlank(templateId) && templateSwitchOn) {
+            Long earliestTemplateId = vehicleInfoMapper.findEarliestIdByTemplateId(templateId);
+            if (earliestTemplateId == null) {
+                // 该模版首次出现 → 模版新增
+                templateNeedsConfirm = true;
+                causes.add("模版新增");
+            } else {
+                VehicleInfo earliest = vehicleInfoMapper.selectVehicleInfoById(earliestTemplateId);
+                if (earliest != null && Integer.valueOf(0).equals(earliest.getUploadAffirm())) {
+                    // 该模版已有记录但仍待确认 → 模版编辑
+                    templateNeedsConfirm = true;
+                    causes.add("模版编辑");
+                }
+            }
+        }
+
+        if (materialNeedsConfirm) {
+            vehicleInfo.setFirstMaterialFlag(1);
+        }
+
+        if (templateNeedsConfirm) {
+            vehicleInfo.setFirstTemplateFlag(1);
+        }
+
+        // ── 任意一个维度需要待确认，两个字段都置 0，否则置 1 ─────────────────
+        int affirm = (materialNeedsConfirm || templateNeedsConfirm) ? 0 : 1;
+        vehicleInfo.setGenerateAffirm(affirm);
+        vehicleInfo.setUploadAffirm(affirm);
+
+        // ── 写入首台车原因 ─────────────────────────────────────────────────────
+        if (!causes.isEmpty()) {
+            vehicleInfo.setAffirmCause(String.join("、", causes));
+        }
+    }
+
+    private void applyFirstVehicleAffirmOnUpdate(VehicleInfo vehicleInfo, String materialNo, String templateId) {
+        boolean materialSwitchOn = firstVehicleCheckService.isSwitchOn("new_material");
+        boolean templateSwitchOn = firstVehicleCheckService.isSwitchOn("new_template");
+
+        boolean materialNeedsConfirm = false;
+        boolean templateNeedsConfirm = false;
+        List<String> causes = new ArrayList<>();
 
         // ── 物料号维度 ────────────────────────────────────────────────────────
         if (StringUtils.isNotBlank(materialNo) && materialSwitchOn) {
             Long earliestMaterialId = vehicleInfoMapper.findEarliestIdByMaterialNo(materialNo);
             if (earliestMaterialId == null) {
                 materialNeedsConfirm = true;
+                causes.add("物料号");
             } else {
                 VehicleInfo earliest = vehicleInfoMapper.selectVehicleInfoById(earliestMaterialId);
                 if (earliest != null && Integer.valueOf(0).equals(earliest.getGenerateAffirm())) {
                     materialNeedsConfirm = true;
+                    causes.add("物料号");
                 }
             }
         }
@@ -1261,18 +1306,31 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             Long earliestTemplateId = vehicleInfoMapper.findEarliestIdByTemplateId(templateId);
             if (earliestTemplateId == null) {
                 templateNeedsConfirm = true;
+                causes.add("模版新增");
             } else {
                 VehicleInfo earliest = vehicleInfoMapper.selectVehicleInfoById(earliestTemplateId);
                 if (earliest != null && Integer.valueOf(0).equals(earliest.getUploadAffirm())) {
                     templateNeedsConfirm = true;
+                    causes.add("模版编辑");
                 }
             }
         }
 
-        // ── 任意一个维度需要待确认，两个字段都置 0，否则置 1 ─────────────────
-        int affirm = (materialNeedsConfirm || templateNeedsConfirm) ? 0 : 1;
-        vehicleInfo.setGenerateAffirm(affirm);
-        vehicleInfo.setUploadAffirm(affirm);
+        if (materialNeedsConfirm) {
+            vehicleInfo.setFirstMaterialFlag(1);
+        }
+
+        if (templateNeedsConfirm) {
+            vehicleInfo.setFirstTemplateFlag(1);
+        }
+
+        // ── 写入首台车原因和确认状态 ──────────────────────────────────────────
+        if (materialNeedsConfirm || templateNeedsConfirm) {
+            int affirm = 0;
+            vehicleInfo.setGenerateAffirm(affirm);
+            vehicleInfo.setUploadAffirm(affirm);
+            vehicleInfo.setAffirmCause(String.join("、", causes));
+        }
     }
 
     /**

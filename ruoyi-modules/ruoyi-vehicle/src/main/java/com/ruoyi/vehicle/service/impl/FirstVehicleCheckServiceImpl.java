@@ -210,8 +210,8 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void confirmMaterial(Long vehicleId, String confirmedBy, String generateAffirmCause) {
-        vehicleInfoMapper.confirmMaterialFlag(vehicleId, confirmedBy, generateAffirmCause);
+    public void confirmMaterial(Long vehicleId, String confirmedBy) {
+        vehicleInfoMapper.confirmMaterialFlag(vehicleId, confirmedBy);
         VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
 
         int newGenerateAffirm = vehicleInfo.getGenerateAffirm();
