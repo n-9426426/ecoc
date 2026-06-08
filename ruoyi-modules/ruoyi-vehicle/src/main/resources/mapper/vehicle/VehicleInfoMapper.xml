@@ -271,6 +271,8 @@
 		<if test="uploadAffirmNotice != null">upload_affirm_notice,</if>
 		<if test="modelNo != null and modelNo != ''">model_no,</if>
 		<if test="affirmCause != null and affirmCause != ''">affirm_cause,</if>
+		<if test="firstMaterialFlag != null">first_material_flag,</if>
+		<if test="firstTemplateFlag != null">first_template_flag,</if>
 		create_time
 		) values (
 		<if test="vin != null and vin != ''">#{vin}, </if>
@@ -313,6 +315,8 @@
 		<if test="uploadAffirmNotice != null">#{uploadAffirmNotice},</if>
 		<if test="modelNo != null and modelNo != ''">#{modelNo},</if>
 		<if test="affirmCause != null and affirmCause != ''">#{affirmCause},</if>
+		<if test="firstMaterialFlag != null">#{firstMaterialFlag},</if>
+		<if test="firstTemplateFlag != null">#{firstTemplateFlag},</if>
 		sysdate()
 		)
 	</insert>
@@ -361,6 +365,8 @@
 			<if test="uploadAffirmNotice != null">upload_affirm_notice = #{uploadAffirmNotice},</if>
 			<if test="modelNo != null and modelNo != ''">model_no = #{modelNo},</if>
 			<if test="affirmCause != null and affirmCause != ''">affirm_cause = #{affirmCause},</if>
+			<if test="firstMaterialFlag != null">first_material_flag = #{firstMaterialFlag},</if>
+			<if test="firstTemplateFlag != null">first_template_flag = #{firstTemplateFlag},</if>
 			update_time = sysdate()
 		</set>
 		where vehicle_id = #{vehicleId}
@@ -807,10 +813,10 @@
 	-->
 	<select id="listFirstMaterialUnconfirmedEarliest" resultMap="VehicleInfoResult">
 		SELECT vi.vehicle_id, vi.vin, vi.factory_code, vi.factory_name, vi.material_no, vi.vehicle_model, vi.upload_status,
-		       vi.validation_result, vi.status, vi.country, vi.color, vi.secondary_color, vi.temp_version, vi.certificate_version,
-		       vi.wvta_no, vi.manufacture_date, vi.issue_date, vi.json, vi.xml_template_id, vi.vehicle_template_id, vi.deleted,
-		       vi.create_by, vi.create_time, vi.update_by, vi.update_time, vi.remark, vi.validation_report_json, vi.engine_number,
-		       vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire, vi.battery_number, vi.tvv, vi.breakpoint_time,
+			   vi.validation_result, vi.status, vi.country, vi.color, vi.secondary_color, vi.temp_version, vi.certificate_version,
+			   vi.wvta_no, vi.manufacture_date, vi.issue_date, vi.json, vi.xml_template_id, vi.vehicle_template_id, vi.deleted,
+			   vi.create_by, vi.create_time, vi.update_by, vi.update_time, vi.remark, vi.validation_report_json, vi.engine_number,
+			   vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire, vi.battery_number, vi.tvv, vi.breakpoint_time,
 			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade,
 			   vi.first_material_flag, vi.first_template_flag, vi.material_confirmed_by, vi.material_confirmed_time,
 			   vi.template_confirmed_by, vi.template_confirmed_time, vi.generate_affirm_notice, vi.upload_affirm_notice,
@@ -839,10 +845,10 @@
     -->
 	<select id="listFirstTemplateUnconfirmedEarliest" resultMap="VehicleInfoResult">
 		SELECT vi.vehicle_id, vi.vin, vi.factory_code, vi.factory_name, vi.material_no, vi.vehicle_model, vi.upload_status,
-		       vi.validation_result, vi.status, vi.country, vi.color, vi.secondary_color, vi.temp_version, vi.certificate_version,
-		       vi.wvta_no, vi.manufacture_date, vi.issue_date, vi.json, vi.xml_template_id, vi.vehicle_template_id, vi.deleted,
-		       vi.create_by, vi.create_time, vi.update_by, vi.update_time, vi.remark, vi.validation_report_json, vi.engine_number,
-		       vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire, vi.battery_number, vi.tvv, vi.breakpoint_time,
+			   vi.validation_result, vi.status, vi.country, vi.color, vi.secondary_color, vi.temp_version, vi.certificate_version,
+			   vi.wvta_no, vi.manufacture_date, vi.issue_date, vi.json, vi.xml_template_id, vi.vehicle_template_id, vi.deleted,
+			   vi.create_by, vi.create_time, vi.update_by, vi.update_time, vi.remark, vi.validation_report_json, vi.engine_number,
+			   vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire, vi.battery_number, vi.tvv, vi.breakpoint_time,
 			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade,
 			   vi.first_material_flag, vi.first_template_flag, vi.material_confirmed_by, vi.material_confirmed_time,
 			   vi.template_confirmed_by, vi.template_confirmed_time, vi.generate_affirm_notice, vi.upload_affirm_notice,

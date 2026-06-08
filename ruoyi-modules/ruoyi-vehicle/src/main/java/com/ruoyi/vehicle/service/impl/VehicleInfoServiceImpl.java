@@ -588,24 +588,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new RuntimeException("车型代码不存在");
         }
 
-        // 插入前判断该物料号和模版是否首次使用
-        String materialNo = vehicleInfo.getMaterialNo();
-        boolean isNewMaterial = StringUtils.isNotBlank(materialNo)
-                && vehicleInfoMapper.findEarliestIdByMaterialNo(materialNo) == null;
-
-        String templateId = null;
-        if (StringUtils.isNotBlank(materialNo)) {
-            Material query = new Material();
-            query.setMaterialNo(materialNo);
-            query.setStatus(0);
-            List<Material> materialList = materialMapper.selectMaterialList(query);
-            if (!materialList.isEmpty()) {
-                templateId = String.valueOf(materialList.get(0).getVehicleTemplateId());
-            }
-        }
-        boolean isNewTemplate = StringUtils.isNotBlank(templateId)
-                && vehicleInfoMapper.findEarliestIdByTemplateId(templateId) == null;
-
+        // insertVehicleInfo 内部已通过 applyFirstVehicleAffirm 按物料号/模版维度
+        // 分别设置 firstMaterialFlag / firstTemplateFlag，此处无需重复判断。
         try {
             self.insertVehicleInfo(vehicleInfo);
         } catch (Exception e) {
@@ -616,12 +600,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new RuntimeException(cause.getMessage() != null ? cause.getMessage() : e.toString(), e);
         }
 
-        if (isNewMaterial) {
-            vehicleInfoMapper.markMaterialFlag(vehicleInfo.getVehicleId(), 1);
-        }
-        if (isNewTemplate) {
-            vehicleInfoMapper.markTemplateFlag(vehicleInfo.getVehicleId(), 1);
-        }
         firstVehicleCheckService.handleAfterInsert(Collections.singletonList(vehicleInfo));
 
         Map<String, Object> result = new LinkedHashMap<>();
