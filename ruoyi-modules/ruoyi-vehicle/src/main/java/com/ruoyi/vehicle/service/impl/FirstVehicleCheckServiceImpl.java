@@ -11,8 +11,10 @@ import com.ruoyi.system.api.enums.SysNoticeModel;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.VehicleLifecycle;
 import com.ruoyi.vehicle.enums.VehicleLifecycleOperation;
+import com.ruoyi.vehicle.mapper.MaterialMapper;
 import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
 import com.ruoyi.vehicle.mapper.VehicleLifecycleMapper;
+import com.ruoyi.vehicle.mapper.VehicleTemplateMapper;
 import com.ruoyi.vehicle.service.IFirstVehicleCheckService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -75,6 +77,12 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
 
     @Autowired
     private VehicleLifecycleMapper vehicleLifecycleMapper;
+
+    @Autowired
+    private VehicleTemplateMapper vehicleTemplateMapper;
+
+    @Autowired
+    private MaterialMapper materialMapper;
 
     // ===================================================================
     //  对外接口实现
@@ -198,7 +206,8 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
             vehicleInfoMapper.resetTemplateConfirm(templateId);
             log.info("[首台车] 模版修改 uuid={} templateId={} → 重置确认状态", uuid, templateId);
         });
-
+        vehicleTemplateMapper.resetAffirmByUuid(uuid);
+        materialMapper.resetAffirmByTemplateUuid(uuid);
         // 重置后，existsConfirmedTemplate 返回 false，recalculateTemplateFlag 可以正常打标
         templateIds.forEach(this::recalculateTemplateFlag);
     }
@@ -208,6 +217,13 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
     public void confirmMaterial(Long vehicleId, String confirmedBy, String generateAffirmCause) {
         vehicleInfoMapper.confirmMaterialFlag(vehicleId, confirmedBy, generateAffirmCause);
         VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
+
+        int newGenerateAffirm = vehicleInfo.getGenerateAffirm();
+        materialMapper.updateGenerateAffirmByMaterialNo(vehicleInfo.getMaterialNo(), newGenerateAffirm);
+        if (vehicleInfo.getVehicleTemplateId() != null) {
+            vehicleTemplateMapper.updateGenerateAffirmByTemplateId(
+                    Long.parseLong(vehicleInfo.getVehicleTemplateId()), newGenerateAffirm);
+        }
 
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
         vehicleLifecycle.setEntryId(vehicleInfo.getVehicleId());
@@ -247,6 +263,13 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
     public void confirmTemplate(Long vehicleId, String confirmedBy, String uploadAffirmCause) {
         vehicleInfoMapper.confirmTemplateFlag(vehicleId, confirmedBy, uploadAffirmCause);
         VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
+
+        int newUploadAffirm = vehicleInfo.getUploadAffirm();
+        materialMapper.updateUploadAffirmByMaterialNo(vehicleInfo.getMaterialNo(), newUploadAffirm);
+        if (vehicleInfo.getVehicleTemplateId() != null) {
+            vehicleTemplateMapper.updateUploadAffirmByTemplateId(
+                    Long.parseLong(vehicleInfo.getVehicleTemplateId()), newUploadAffirm);
+        }
 
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
         vehicleLifecycle.setEntryId(vehicleInfo.getVehicleId());

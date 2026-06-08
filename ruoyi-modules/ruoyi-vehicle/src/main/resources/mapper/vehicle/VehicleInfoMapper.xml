@@ -809,4 +809,82 @@
 		AND DATE_ADD(vi.create_time, INTERVAL CAST(sdd.dict_value / 1000 AS UNSIGNED) SECOND) &lt;= NOW()
 		)
 	</select>
+
+	<!--
+    物料号维度待确认首台车：
+    first_material_flag=1 AND generate_affirm=0
+    按 material_no 分组，取 manufacture_date 最早一条（同日期再按 vehicle_id 升序兜底）
+-->
+	<select id="listFirstMaterialUnconfirmedEarliest" resultMap="VehicleInfoResult">
+		SELECT vi.vehicle_id, vi.vin, vi.factory_code, vi.factory_name, vi.material_no, vi.vehicle_model,
+			   vi.upload_status, vi.validation_result, vi.status, vi.country, vi.color, vi.secondary_color, vi.temp_version,
+			   vi.certificate_version, vi.wvta_no, vi.manufacture_date, vi.issue_date, vi.json, vi.xml_template_id, vi.vehicle_template_id,
+			   vi.deleted, vi.create_by, vi.create_time, vi.update_by, vi.update_time, vi.remark, vi.validation_report_json,
+			   vi.engine_number, vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire, vi.battery_number, vi.tvv, vi.breakpoint_time,
+			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade,
+			   vi.first_material_flag, vi.first_template_flag,
+			   vi.material_confirmed_by, vi.material_confirmed_time,
+			   vi.template_confirmed_by, vi.template_confirmed_time,
+			   vi.generate_affirm_notice, vi.upload_affirm_notice, vi.sale_company_name, vi.model_no,
+			   vi.generate_affirm_cause, vi.upload_affirm_cause,
+			   sdd.dict_label AS vehicle_model_str,
+			   vt.filepath AS vehicle_template_filepath,
+			   vt.coc_template_no AS coc_template_no,
+			   vt.version AS version
+		FROM (
+				 SELECT *,
+						ROW_NUMBER() OVER (
+                   PARTITION BY material_no
+                   ORDER BY manufacture_date ASC, vehicle_id ASC
+               ) AS rn
+				 FROM vehicle_info
+				 WHERE first_material_flag = 1
+				   AND generate_affirm = 0
+				   AND deleted = 0
+			 ) vi
+				 LEFT JOIN (SELECT dict_code, dict_label FROM sys_dict_data WHERE dict_type = 'vehicle_model') sdd
+						   ON vi.vehicle_model = sdd.dict_code
+				 LEFT JOIN (SELECT template_id, filepath, coc_template_no, is_last, version, model_no, tvv FROM vehicle_template) vt
+						   ON vi.vehicle_template_id = vt.template_id
+		WHERE vi.rn = 1
+	</select>
+
+	<!--
+        模版维度待确认首台车：
+        first_template_flag=1 AND upload_affirm=0
+        按 vehicle_template_id 分组，取 manufacture_date 最早一条（同日期再按 vehicle_id 升序兜底）
+    -->
+	<select id="listFirstTemplateUnconfirmedEarliest" resultMap="VehicleInfoResult">
+		SELECT vi.vehicle_id, vi.vin, vi.factory_code, vi.factory_name, vi.material_no, vi.vehicle_model,
+			   vi.upload_status, vi.validation_result, vi.status, vi.country, vi.color, vi.secondary_color, vi.temp_version,
+			   vi.certificate_version, vi.wvta_no, vi.manufacture_date, vi.issue_date, vi.json, vi.xml_template_id, vi.vehicle_template_id,
+			   vi.deleted, vi.create_by, vi.create_time, vi.update_by, vi.update_time, vi.remark, vi.validation_report_json,
+			   vi.engine_number, vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire, vi.battery_number, vi.tvv, vi.breakpoint_time,
+			   vi.generate_affirm, vi.upload_affirm, vi.project_name, vi.customer_no, vi.tire_resistance_grade,
+			   vi.first_material_flag, vi.first_template_flag,
+			   vi.material_confirmed_by, vi.material_confirmed_time,
+			   vi.template_confirmed_by, vi.template_confirmed_time,
+			   vi.generate_affirm_notice, vi.upload_affirm_notice, vi.sale_company_name, vi.model_no,
+			   vi.generate_affirm_cause, vi.upload_affirm_cause,
+			   sdd.dict_label AS vehicle_model_str,
+			   vt.filepath AS vehicle_template_filepath,
+			   vt.coc_template_no AS coc_template_no,
+			   vt.version AS version
+		FROM (
+				 SELECT *,
+						ROW_NUMBER() OVER (
+                   PARTITION BY vehicle_template_id
+                   ORDER BY manufacture_date ASC, vehicle_id ASC
+               ) AS rn
+				 FROM vehicle_info
+				 WHERE first_template_flag = 1
+				   AND upload_affirm = 0
+				   AND deleted = 0
+			 ) vi
+				 LEFT JOIN (SELECT dict_code, dict_label FROM sys_dict_data WHERE dict_type = 'vehicle_model') sdd
+						   ON vi.vehicle_model = sdd.dict_code
+				 LEFT JOIN (SELECT template_id, filepath, coc_template_no, is_last, version, model_no, tvv FROM vehicle_template) vt
+						   ON vi.vehicle_template_id = vt.template_id
+		WHERE vi.rn = 1
+	</select>
 </mapper>

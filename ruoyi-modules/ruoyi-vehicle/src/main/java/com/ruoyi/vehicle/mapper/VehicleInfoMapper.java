@@ -210,4 +210,14 @@ public interface VehicleInfoMapper {
      * @return 车辆信息列表
      */
     List<VehicleInfo> listPendingUploadAffirmNotice();
+
+    /**
+     * 物料号维度待确认首台车，每个 material_no 取制造日期最早一条
+     */
+    List<VehicleInfo> listFirstMaterialUnconfirmedEarliest();
+
+    /**
+     * 模版维度待确认首台车，每个 vehicle_template_id 取制造日期最早一条
+     */
+    List<VehicleInfo> listFirstTemplateUnconfirmedEarliest();
 }

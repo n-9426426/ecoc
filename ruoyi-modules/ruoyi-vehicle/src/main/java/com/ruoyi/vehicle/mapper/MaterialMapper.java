@@ -1,6 +1,7 @@
 package com.ruoyi.vehicle.mapper;
 
 import com.ruoyi.vehicle.domain.Material;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
@@ -54,4 +55,10 @@ public interface MaterialMapper {
     Material selectByMaterialNo(String materialNo);
 
     void updateMaterialStatus(Material update);
+
+    void resetAffirmByTemplateUuid(@Param("uuid") String uuid);
+
+    void updateGenerateAffirmByMaterialNo(@Param("materialNo") String materialNo, @Param("generateAffirm") int generateAffirm);
+
+    void updateUploadAffirmByMaterialNo(@Param("materialNo") String materialNo, @Param("uploadAffirm") int uploadAffirm);
 }

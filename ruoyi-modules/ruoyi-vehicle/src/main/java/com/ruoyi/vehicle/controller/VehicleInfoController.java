@@ -454,4 +454,14 @@ public class VehicleInfoController extends BaseController {
         firstVehicleCheckService.confirmTemplate(vehicleId, SecurityUtils.getUsername(), cause);
         return AjaxResult.success();
     }
+
+    /**
+     * 查询所有待确认首台车（无分页）
+     * 物料号维度（generate_affirm=0）和模版维度（upload_affirm=0）各取每组制造日期最早一条后合并返回
+     */
+    @GetMapping("/first/unconfirmedAll")
+    public AjaxResult listAllFirstVehicleUnconfirmed() {
+        List<VehicleInfo> list = vehicleInfoService.listAllFirstVehicleUnconfirmed();
+        return AjaxResult.success(list);
+    }
 }

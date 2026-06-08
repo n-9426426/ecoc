@@ -375,4 +375,32 @@
             #{id}
         </foreach>
     </select>
+
+    <!-- 模版改动后：重置同 uuid 下所有模版的两个确认状态为 0 -->
+    <update id="resetAffirmByUuid">
+        UPDATE vehicle_template
+        SET generate_affirm = 0,
+            upload_affirm   = 0,
+            update_time     = SYSDATE()
+        WHERE uuid = #{uuid}
+          AND del_flag = '0'
+    </update>
+
+    <!-- 首台车确认后：按 template_id 更新 generate_affirm -->
+    <update id="updateGenerateAffirmByTemplateId">
+        UPDATE vehicle_template
+        SET generate_affirm = #{generateAffirm},
+            update_time     = SYSDATE()
+        WHERE template_id = #{templateId}
+          AND del_flag = '0'
+    </update>
+
+    <!-- 首台车确认后：按 template_id 更新 upload_affirm -->
+    <update id="updateUploadAffirmByTemplateId">
+        UPDATE vehicle_template
+        SET upload_affirm = #{uploadAffirm},
+            update_time   = SYSDATE()
+        WHERE template_id = #{templateId}
+          AND del_flag = '0'
+    </update>
 </mapper>

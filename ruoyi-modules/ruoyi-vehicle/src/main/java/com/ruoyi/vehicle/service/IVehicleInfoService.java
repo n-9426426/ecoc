@@ -123,4 +123,9 @@ public interface IVehicleInfoService {
     List<VehicleInfo> listFirstVehicleUnconfirmed(VehicleInfo vehicleInfo, String dimension);
 
     List<VehicleInfo> selectVehicleInfoByIds(Long[] vehicleIds);
+
+    /**
+     * 查询所有待确认首台车（物料号维度 + 模版维度合并，无分页）
+     */
+    List<VehicleInfo> listAllFirstVehicleUnconfirmed();
 }

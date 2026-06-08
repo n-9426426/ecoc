@@ -64,4 +64,11 @@ public interface VehicleTemplateMapper {
      * @return 每个模板ID及其对应的车辆数量
      */
     List<Map<String, Object>> selectVehicleCountByTemplateIds(@Param("templateIds") Long[] templateIds);
+
+    void resetAffirmByUuid(@Param("uuid") String uuid);
+
+    void updateGenerateAffirmByTemplateId(@Param("templateId") Long templateId, @Param("generateAffirm") int generateAffirm);
+
+    void updateUploadAffirmByTemplateId(@Param("templateId") Long templateId, @Param("uploadAffirm") int uploadAffirm);
+
 }

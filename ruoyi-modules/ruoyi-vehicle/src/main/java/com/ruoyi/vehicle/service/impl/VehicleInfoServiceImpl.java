@@ -571,10 +571,12 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         if (!permissions.contains("vehicle:info:toSystem")) {
             throw new ServiceException("没有权限执行此操作");
         }
+
         VehicleInfo vehicleInfo = new VehicleInfo();
         BeanUtils.copyProperties(vehicle, vehicleInfo);
         vehicleInfo.setCustomerNo(vehicle.getCustomerNumber());
         vehicleInfo.setCreateTime(now);
+
         List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_model").getData();
         for (SysDictData dictData : sysDictData) {
             if (dictData.getDictLabel().equals(vehicle.getVehicleModel())) {
@@ -586,10 +588,27 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new RuntimeException("车型代码不存在");
         }
 
+        // 插入前判断该物料号和模版是否首次使用
+        String materialNo = vehicleInfo.getMaterialNo();
+        boolean isNewMaterial = StringUtils.isNotBlank(materialNo)
+                && vehicleInfoMapper.findEarliestIdByMaterialNo(materialNo) == null;
+
+        String templateId = null;
+        if (StringUtils.isNotBlank(materialNo)) {
+            Material query = new Material();
+            query.setMaterialNo(materialNo);
+            query.setStatus(0);
+            List<Material> materialList = materialMapper.selectMaterialList(query);
+            if (!materialList.isEmpty()) {
+                templateId = String.valueOf(materialList.get(0).getVehicleTemplateId());
+            }
+        }
+        boolean isNewTemplate = StringUtils.isNotBlank(templateId)
+                && vehicleInfoMapper.findEarliestIdByTemplateId(templateId) == null;
+
         try {
-            self.insertVehicleInfo(vehicleInfo);  // ← 走代理，事务独立；黑名单检查已在内部执行
+            self.insertVehicleInfo(vehicleInfo);
         } catch (Exception e) {
-            // 剥出根因，确保 message 不丢失
             Throwable cause = e;
             while (cause.getCause() != null && cause.getMessage() == null) {
                 cause = cause.getCause();
@@ -597,6 +616,12 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new RuntimeException(cause.getMessage() != null ? cause.getMessage() : e.toString(), e);
         }
 
+        if (isNewMaterial) {
+            vehicleInfoMapper.markMaterialFlag(vehicleInfo.getVehicleId(), 1);
+        }
+        if (isNewTemplate) {
+            vehicleInfoMapper.markTemplateFlag(vehicleInfo.getVehicleId(), 1);
+        }
         firstVehicleCheckService.handleAfterInsert(Collections.singletonList(vehicleInfo));
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -1153,7 +1178,27 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         return vehicleTemplateMapper.updateVehicleTemplateId(vin, templateId);
     }
 
-// ========== SSE 工具方法（与 VehicleTemplateServiceImpl 保持一致）==========
+    @Override
+    public List<VehicleInfo> listAllFirstVehicleUnconfirmed() {
+        // 物料号维度：first_material_flag=1 AND generate_affirm=0，每个 material_no 取制造日期最早一条
+        List<VehicleInfo> materialList = vehicleInfoMapper.listFirstMaterialUnconfirmedEarliest();
+
+        // 模版维度：first_template_flag=1 AND upload_affirm=0，每个 vehicle_template_id 取制造日期最早一条
+        List<VehicleInfo> templateList = vehicleInfoMapper.listFirstTemplateUnconfirmedEarliest();
+
+        // 按 vehicle_id 去重合并（同一辆车可能同时出现在两个维度）
+        // 物料号维度优先放入，模版维度用 putIfAbsent 补充不重复的
+        Map<Long, VehicleInfo> mergedMap = new LinkedHashMap<>();
+        for (VehicleInfo v : materialList) {
+            mergedMap.put(v.getVehicleId(), v);
+        }
+        for (VehicleInfo v : templateList) {
+            mergedMap.putIfAbsent(v.getVehicleId(), v);
+        }
+        return new ArrayList<>(mergedMap.values());
+    }
+
+    // ========== SSE 工具方法（与 VehicleTemplateServiceImpl 保持一致）==========
 
     private void pushEvent(Sinks.Many<ServerSentEvent<String>> sink, String eventType, String data) {
         Sinks.EmitResult result = sink.tryEmitNext(

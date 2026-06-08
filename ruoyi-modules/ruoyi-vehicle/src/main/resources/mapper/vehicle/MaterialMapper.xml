@@ -199,4 +199,31 @@
             update_time = SYSDATE()
         WHERE id = #{id}
     </update>
+
+    <!-- 模版改动后：重置关联该 uuid 下任意模版的所有物料两个确认状态为 0 -->
+    <update id="resetAffirmByTemplateUuid">
+        UPDATE material m
+            INNER JOIN vehicle_template vt ON vt.template_id = m.vehicle_template_id
+            SET m.generate_affirm = 0,
+                m.upload_affirm   = 0,
+                m.update_time     = SYSDATE()
+        WHERE vt.uuid = #{uuid}
+          AND vt.del_flag = '0'
+    </update>
+
+    <!-- 首台车确认后：按 material_no 更新 generate_affirm -->
+    <update id="updateGenerateAffirmByMaterialNo">
+        UPDATE material
+        SET generate_affirm = #{generateAffirm},
+            update_time     = SYSDATE()
+        WHERE material_no = #{materialNo}
+    </update>
+
+    <!-- 首台车确认后：按 material_no 更新 upload_affirm -->
+    <update id="updateUploadAffirmByMaterialNo">
+        UPDATE material
+        SET upload_affirm = #{uploadAffirm},
+            update_time   = SYSDATE()
+        WHERE material_no = #{materialNo}
+    </update>
 </mapper>
