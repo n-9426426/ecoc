@@ -238,8 +238,8 @@
 		THEN JSON_OBJECT('system', sdd.original_system, 'key', sdd.key_map)
 		ELSE NULL END
 		)                                       AS key_map_agg,
-		GROUP_CONCAT(sdd.value_map ORDER BY sdd.dict_code ASC SEPARATOR ';')
-		AS value_map_agg
+		GROUP_CONCAT(sdd.value_map ORDER BY sdd.dict_code ASC SEPARATOR ';') AS value_map_agg,
+		MIN(sdd.coc_order)                      AS coc_order
 		FROM sys_dict_data sdd
 		LEFT JOIN sys_dict_type sdt ON sdd.dict_type = sdt.dict_type
 		LEFT JOIN sys_dict_data sdd2 ON sdd.dict_type_affiliation = sdd2.dict_code
@@ -290,10 +290,11 @@
 		<result property="ruleType"                  column="rule_type"                  />
 		<result property="dictTypeStr"               column="dict_type_str"              />
 		<result property="dictTypeAffiliationStr"    column="dict_type_affiliation_str"  />
+		<result property="cocOrder" 				 column="coc_order" 				 />
+		<result property="uuid"						 column="uuid"						 />
 		<!-- 聚合原始字符串，由 Service 层转为 JSON -->
 		<result property="keyMap"                    column="key_map_agg"                />
 		<result property="valueMap"                  column="value_map_agg"              />
-		<result property="uuid" column="uuid"/>
 	</resultMap>
 
 	<select id="countDictDataListAggregated" parameterType="SysDictData" resultType="long">

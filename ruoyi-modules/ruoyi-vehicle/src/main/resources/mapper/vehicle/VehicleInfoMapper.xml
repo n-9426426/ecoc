@@ -811,10 +811,9 @@
 	</select>
 
 	<!--
-    物料号维度待确认首台车：
-    first_material_flag=1 AND generate_affirm=0
-    按 material_no 分组，取 manufacture_date 最早一条（同日期再按 vehicle_id 升序兜底）
--->
+    物料号维度首台车列表（永久显示，不受确认状态影响）：
+    first_material_flag=1，按 material_no 分组取制造日期最早一条
+	-->
 	<select id="listFirstMaterialUnconfirmedEarliest" resultMap="VehicleInfoResult">
 		SELECT vi.vehicle_id, vi.vin, vi.factory_code, vi.factory_name, vi.material_no, vi.vehicle_model,
 			   vi.upload_status, vi.validation_result, vi.status, vi.country, vi.color, vi.secondary_color, vi.temp_version,
@@ -839,7 +838,6 @@
                ) AS rn
 				 FROM vehicle_info
 				 WHERE first_material_flag = 1
-				   AND generate_affirm = 0
 				   AND deleted = 0
 			 ) vi
 				 LEFT JOIN (SELECT dict_code, dict_label FROM sys_dict_data WHERE dict_type = 'vehicle_model') sdd
@@ -850,9 +848,8 @@
 	</select>
 
 	<!--
-        模版维度待确认首台车：
-        first_template_flag=1 AND upload_affirm=0
-        按 vehicle_template_id 分组，取 manufacture_date 最早一条（同日期再按 vehicle_id 升序兜底）
+        模版维度首台车列表（永久显示，不受确认状态影响）：
+        first_template_flag=1，按 vehicle_template_id 分组取制造日期最早一条
     -->
 	<select id="listFirstTemplateUnconfirmedEarliest" resultMap="VehicleInfoResult">
 		SELECT vi.vehicle_id, vi.vin, vi.factory_code, vi.factory_name, vi.material_no, vi.vehicle_model,
@@ -878,7 +875,6 @@
                ) AS rn
 				 FROM vehicle_info
 				 WHERE first_template_flag = 1
-				   AND upload_affirm = 0
 				   AND deleted = 0
 			 ) vi
 				 LEFT JOIN (SELECT dict_code, dict_label FROM sys_dict_data WHERE dict_type = 'vehicle_model') sdd

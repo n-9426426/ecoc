@@ -106,6 +106,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
     @Autowired
     private RemoteNoticeService remoteNoticeService;
 
+    @Autowired
+    private VehicleInfoMapper vehicleInfoMapper;
+
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -289,6 +292,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     @Override
     public int uploadXmlFilesToApprove(List<Long> xmlIds) {
+        for (Long xmlId : xmlIds) {
+            checkUploadPermission(new VehicleInfo());
+        }
         return -1;
     }
 
@@ -1421,9 +1427,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
         if (vehicle.getStatus().equals(1)) {
             throw new RuntimeException("车辆信息已停用");
         }
-        if (vehicle.getGenerateAffirm().equals(0)) {
-            throw new RuntimeException("车辆信息未确认，无法生成XML文件");
-        }
+        checkGeneratePermission(vehicle);
 
         SysNotice sysNotice = new SysNotice();
         sysNotice.setIsRead(false);
@@ -3320,5 +3324,39 @@ public class XmlFileServiceImpl implements IXmlFileService {
         params.put("issueDate", com.ruoyi.common.core.utils.DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicle.getIssueDate()));
         params.put("materialNo", vehicle.getMaterialNo());
         return params;
+    }
+
+    /**
+     * 校验车辆是否允许生成 XML
+     * 规则：该车辆关联物料号的首台车必须已确认（generate_affirm=1），
+     *       或者该车辆本身就是首台车（first_material_flag=1）
+     */
+    private void checkGeneratePermission(VehicleInfo vehicleInfo) {
+        // 首台车本身始终允许操作
+        if (Integer.valueOf(1).equals(vehicleInfo.getFirstMaterialFlag())) {
+            return;
+        }
+        // 其他车辆：检查该物料号下是否已有确认记录
+        boolean confirmed = vehicleInfoMapper.existsConfirmedMaterial(vehicleInfo.getMaterialNo());
+        if (!confirmed) {
+            throw new ServiceException("该物料号首台车尚未确认生成，当前车辆暂不可生成");
+        }
+    }
+
+    /**
+     * 校验车辆是否允许上传 XML
+     * 规则：该车辆关联模版的首台车必须已确认（upload_affirm=1），
+     *       或者该车辆本身就是首台车（first_template_flag=1）
+     */
+    private void checkUploadPermission(VehicleInfo vehicleInfo) {
+        // 首台车本身始终允许操作
+        if (Integer.valueOf(1).equals(vehicleInfo.getFirstTemplateFlag())) {
+            return;
+        }
+        // 其他车辆：检查该模版下是否已有确认记录
+        boolean confirmed = vehicleInfoMapper.existsConfirmedTemplate(vehicleInfo.getVehicleTemplateId());
+        if (!confirmed) {
+            throw new ServiceException("该模版首台车尚未确认上传，当前车辆暂不可上传");
+        }
     }
 }

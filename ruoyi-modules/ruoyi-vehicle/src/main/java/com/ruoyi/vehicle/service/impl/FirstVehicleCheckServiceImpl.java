@@ -162,10 +162,8 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
         }
 
         if (isSwitchOn(KEY_NEW_MATERIAL)) {
-            // 只对"未确认"的车辆涉及的物料号重算
-            // 已确认（generate_affirm=1）说明该物料号已走完流程，删除不影响
+            // 无论确认状态，被删车辆涉及的物料号都要重算，保证 flag 始终正确
             deletedList.stream()
-                    .filter(v -> !Objects.equals(v.getGenerateAffirm(), 1))
                     .map(VehicleInfo::getMaterialNo)
                     .filter(this::isNotBlank)
                     .collect(Collectors.toSet())
@@ -173,9 +171,7 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
         }
 
         if (isSwitchOn(KEY_NEW_TEMPLATE)) {
-            // 只对"未确认"的车辆涉及的模版重算
             deletedList.stream()
-                    .filter(v -> !Objects.equals(v.getUploadAffirm(), 1))
                     .map(VehicleInfo::getVehicleTemplateId)
                     .filter(this::isNotBlank)
                     .collect(Collectors.toSet())
@@ -311,37 +307,18 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
     /**
      * 重新计算某个物料号下应该打标的车辆。
      *
-     * <pre>
-     * 1. 该物料号已有确认记录（generate_affirm=1）→ 跳过
-     * 2. 先清掉该物料号下所有 flag，防止脏数据
-     * 3. 找制造日期最早的车
-     * 4. 不存在 → 不打标（该物料号下已无车辆）
-     * 5. 存在   → 打标
-     * </pre>
+     * flag 始终跟随制造日期最早的那辆存活车辆
      */
     private void recalculateMaterialFlag(String materialNo) {
         if (!isNotBlank(materialNo)) {
             return;
         }
-
-        // 已有确认记录，说明该物料号已走完流程，不再重复打标
-        if (vehicleInfoMapper.existsConfirmedMaterial(materialNo)) {
-            log.debug("[首台车] 物料号={} 已有确认记录，跳过打标", materialNo);
-            return;
-        }
-
-        // 先清掉该物料号下全部 flag，保证只有一条 flag=1
         vehicleInfoMapper.clearMaterialFlagByMaterialNo(materialNo);
-
-        // 找制造日期最早的
         Long earliestId = vehicleInfoMapper.findEarliestIdByMaterialNo(materialNo);
         if (earliestId == null) {
-            log.debug("[首台车] 物料号={} 已无车辆，不打标", materialNo);
             return;
         }
-
         vehicleInfoMapper.markMaterialFlag(earliestId, 1);
-        log.info("[首台车] 物料号={} → 打标 vehicleId={}", materialNo, earliestId);
     }
 
     // ===================================================================
@@ -351,34 +328,18 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
     /**
      * 重新计算某个模版下应该打标的车辆（逻辑与物料号维度完全对称）。
      *
-     * <pre>
-     * 1. 该模版已有确认记录（upload_affirm=1）→ 跳过
-     * 2. 先清掉该模版下所有 flag
-     * 3. 找制造日期最早的车
-     * 4. 不存在 → 不打标
-     * 5. 存在   → 打标
-     * </pre>
+     * flag 始终跟随制造日期最早的那辆存活车辆
      */
     private void recalculateTemplateFlag(String templateId) {
         if (!isNotBlank(templateId)) {
             return;
         }
-
-        if (vehicleInfoMapper.existsConfirmedTemplate(templateId)) {
-            log.debug("[首台车] 模版={} 已有确认记录，跳过打标", templateId);
-            return;
-        }
-
         vehicleInfoMapper.clearTemplateFlagByTemplateId(templateId);
-
         Long earliestId = vehicleInfoMapper.findEarliestIdByTemplateId(templateId);
         if (earliestId == null) {
-            log.debug("[首台车] 模版={} 已无车辆，不打标", templateId);
             return;
         }
-
         vehicleInfoMapper.markTemplateFlag(earliestId, 1);
-        log.info("[首台车] 模版={} → 打标 vehicleId={}", templateId, earliestId);
     }
 
     // ===================================================================

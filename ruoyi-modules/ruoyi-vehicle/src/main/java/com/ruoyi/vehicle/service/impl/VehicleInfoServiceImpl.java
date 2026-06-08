@@ -117,7 +117,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         VehicleInfo vehicle = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
         if (vehicle != null && StringUtils.isNotBlank(vehicle.getJson())) {
             // 转换 JSON key 为 dict_label
-            Map<String, Object> convertedMap = jsonDictConverter.convertJsonKeysToDictLabel(vehicle.getJson());
+            Map<String, Object> convertedMap = jsonDictConverter.convertJsonToMap(vehicle.getJson());
             vehicle.setJsonMap(convertedMap);
 
             // 解析 json 的每个 key，关联 vehicle_attribute 字典，
@@ -184,7 +184,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         List<VehicleInfo> list = vehicleInfoMapper.selectVehicleInfoList(vehicleInfo);
         for (VehicleInfo vehicle : list) {
             if (StringUtils.isNotBlank(vehicle.getJson())) {
-                Map<String, Object> convertedMap = jsonDictConverter.convertJsonKeysToDictLabel(vehicle.getJson());
+                Map<String, Object> convertedMap = jsonDictConverter.convertJsonToMap(vehicle.getJson());
                 vehicle.setJsonMap(convertedMap);
             }
             // 回收站数据，vin 去掉 _DEL_ 后缀，只影响显示
@@ -1452,6 +1452,23 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             update.setDeleted(2);
             vehicleInfoMapper.updateVehicleInfo(update);
             vehicleInfo.setDeleted(2);
+        }
+    }
+
+    /**
+     * 校验车辆是否允许上传 XML
+     * 规则：该车辆关联模版的首台车必须已确认（upload_affirm=1），
+     *       或者该车辆本身就是首台车（first_template_flag=1）
+     */
+    private void checkUploadPermission(VehicleInfo vehicleInfo) {
+        // 首台车本身始终允许操作
+        if (Integer.valueOf(1).equals(vehicleInfo.getFirstTemplateFlag())) {
+            return;
+        }
+        // 其他车辆：检查该模版下是否已有确认记录
+        boolean confirmed = vehicleInfoMapper.existsConfirmedTemplate(vehicleInfo.getVehicleTemplateId());
+        if (!confirmed) {
+            throw new ServiceException("该模版首台车尚未确认上传，当前车辆暂不可上传");
         }
     }
 }

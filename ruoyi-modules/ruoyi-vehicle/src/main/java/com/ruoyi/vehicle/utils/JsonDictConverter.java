@@ -24,38 +24,16 @@ public class JsonDictConverter {
     /**
      * 将 JSON 字符串的 key 转换为 dict_label，保持原始顺序
      */
-    public Map<String, Object> convertJsonKeysToDictLabel(String json) {
-        if (StringUtils.isBlank(json)) {
+    public Map<String, Object> convertJsonToMap(String json) {
+        // 如果没有转换过，返回原始 JSON 解析结果（使用 LinkedHashMap 保持顺序）
+        if (json == null || json.trim().isEmpty()) {
             return Collections.emptyMap();
         }
 
         try {
-            // 使用 LinkedHashMap 保持顺序
-            Map<String, Object> originalMap = MAPPER.readValue(
-                    json,
-                    new TypeReference<LinkedHashMap<String, Object>>() {}
-            );
-
-            Map<String, Object> resultMap = new LinkedHashMap<>();
-
-            for (Map.Entry<String, Object> entry : originalMap.entrySet()) {
-                String key = entry.getKey();
-                Object value = entry.getValue();
-
-                Long dictCode = extractLastIdFromKey(key);
-                String dictLabel = null;
-
-                if (dictCode != null) {
-                    dictLabel = getDictLabelByCode(dictCode);
-                }
-
-                String newKey = StringUtils.isNotBlank(dictLabel) ? dictLabel : key;
-                resultMap.put(key, value);
-            }
-
-            return resultMap;
+            return MAPPER.readValue(json, new TypeReference<LinkedHashMap<String, Object>>() {});
         } catch (IOException e) {
-            throw new RuntimeException("解析 JSON 失败: " + json, e);
+            return Collections.emptyMap();
         }
     }
 
