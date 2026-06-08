@@ -484,7 +484,11 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 log.info("文件保存成功, taskId={}, filePath={}", taskId, filePath);
             } catch (Exception e) {
                 log.error("文件保存失败, taskId={}", taskId, e);
-                return null;
+                pushEvent(sink, "error", String.format(
+                        "{\"message\":\"文件保存失败: %s\"}", escapeJson(e.getMessage())));
+                sink.tryEmitComplete();
+                sinks.remove(taskId);
+                return sink.asFlux();
             }
 
             executor.execute(() -> {
@@ -612,10 +616,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                             SysDictData::getDictLabel,
                             (k1, k2) -> k1));
 
-            // ===================== 新增：导入前预校验非配置列头 =====================
-            // ExcelUtil 会把未在 excel_column_config 中配置的列头写入每行的 json 字段，
-            // 取第一行的 json key 集合作为"额外列头"代表（所有行一致）
-            // 加载需要跳过校验的列头白名单（dict_type='excel_skip_column' 的所有 dict_value）
             Set<String> skipHeaders = remoteDictService
                     .getDictDataByType("excel_skip_column").getData().stream()
                     .map(SysDictData::getDictValue)
@@ -1181,4 +1181,3 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         }
     }
 }
-

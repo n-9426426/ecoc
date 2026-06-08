@@ -238,6 +238,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             vehicleInfo.setWvtaNo(template.getWvtaCocNo());
             vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
             vehicleInfo.setJson(json);
+            vehicleInfo.setVehicleModel(material.getVehicleModel());
             // 按物料号首台车逻辑覆盖 generate_affirm
             applyFirstVehicleAffirm(vehicleInfo, vehicleInfo.getMaterialNo(), String.valueOf(vehicleTemplateId));
         }
@@ -577,19 +578,50 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setCustomerNo(vehicle.getCustomerNumber());
         vehicleInfo.setCreateTime(now);
 
-        List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_model").getData();
-        for (SysDictData dictData : sysDictData) {
-            if (dictData.getDictLabel().equals(vehicle.getVehicleModel())) {
-                vehicleInfo.setVehicleModel(dictData.getDictValue());
+        List<SysDictData> factoryDictData = remoteDictService.getDictDataByType("factory").getData();
+        for (SysDictData dictData : factoryDictData) {
+            if (dictData.getDictLabel().equals(vehicle.getFactoryCode())) {
+                vehicleInfo.setFactoryCode(dictData.getDictValue());
+                vehicleInfo.setFactoryName(dictData.getDictLabel());
                 break;
             }
         }
-        if (vehicleInfo.getVehicleModel() == null) {
-            throw new RuntimeException("车型代码不存在");
+        if (vehicleInfo.getFactoryCode() == null) {
+            throw new RuntimeException("工厂代码不存在");
         }
 
-        // insertVehicleInfo 内部已通过 applyFirstVehicleAffirm 按物料号/模版维度
-        // 分别设置 firstMaterialFlag / firstTemplateFlag，此处无需重复判断。
+        List<SysDictData> countryDictData = remoteDictService.getDictDataByType("country").getData();
+        for (SysDictData dictData : countryDictData) {
+            if (dictData.getDictLabel().equals(vehicle.getFactoryCode())) {
+                vehicleInfo.setCountry(dictData.getDictValue());
+                break;
+            }
+        }
+        if (vehicleInfo.getCountry() == null) {
+            throw new RuntimeException("国家代码不存在");
+        }
+
+        vehicleInfo.setColor(vehicleInfo.getColor().substring(0, 2));
+
+        // 复合色拆分映射表从字典中查询：dict_label=色码(Z3)，dict_value=主色,副色(UU,CP)
+        Map<String, String[]> compositeColorMap = remoteDictService
+                .getDictDataByType("color_composite")
+                .getData().stream()
+                .collect(Collectors.toMap(
+                        SysDictData::getDictLabel,
+                        d -> d.getDictValue().split(",", 2),
+                        (k1, k2) -> k1));
+        String[] composite = compositeColorMap.get(vehicleInfo.getColor());
+        if (composite != null) {
+            vehicleInfo.setColor(composite[0].trim());
+            vehicleInfo.setSecondaryColor(composite[1].trim());
+        } else {
+            vehicleInfo.setColor(vehicleInfo.getColor());
+        }
+        if (vehicleInfo.getColor() == null) {
+            throw new RuntimeException("颜色代码不存在");
+        }
+
         try {
             self.insertVehicleInfo(vehicleInfo);
         } catch (Exception e) {
@@ -710,20 +742,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 if (vehicleInfo.getManufactureDate() == null)           missingFields.add("Manufacture Date");
                 if (vehicleInfo.getIssueDate() == null)                 missingFields.add("Issue Date");
 
-                Map<String, String> countryLabelToValueMap = remoteDictService
-                        .getDictDataByType("country")   // dict_type 替换为实际值
-                        .getData().stream()
-                        .collect(Collectors.toMap(
-                                SysDictData::getDictLabel,
-                                SysDictData::getDictValue,
-                                (k1, k2) -> k1));
-                String countryLabel = vehicleInfo.getCountry();
-                String countryValue = countryLabelToValueMap.get(countryLabel);
-                if (countryValue == null) {
-                    throw new IllegalArgumentException("国家[" + countryLabel + "]在字典中未找到对应值");
-                }
-                vehicleInfo.setCountry(countryValue);
-
                 if (!missingFields.isEmpty()) {
                     failCount++;
                     String reason = String.join("、", missingFields) + " 不能为空";
@@ -735,6 +753,54 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 }
 
                 try {
+                    Map<String, String> factoryLabelToValueMap = remoteDictService
+                            .getDictDataByType("factory")
+                            .getData().stream()
+                            .collect(Collectors.toMap(SysDictData::getDictLabel, SysDictData::getDictValue, (k1, k2) -> k1));
+                    String factoryLabel = vehicleInfo.getFactoryCode();
+                    String factoryValue = factoryLabelToValueMap.get(factoryLabel);
+                    if (factoryValue == null) {
+                        throw new IllegalArgumentException("工厂代码[" + factoryLabel + "]在字典中未找到对应值");
+                    }
+                    vehicleInfo.setFactoryCode(factoryValue);
+                    vehicleInfo.setFactoryName(factoryLabel);
+
+                    Map<String, String> countryLabelToValueMap = remoteDictService
+                            .getDictDataByType("country")
+                            .getData().stream()
+                            .collect(Collectors.toMap(
+                                    SysDictData::getDictLabel,
+                                    SysDictData::getDictValue,
+                                    (k1, k2) -> k1));
+                    String countryLabel = vehicleInfo.getCountry();
+                    String countryValue = countryLabelToValueMap.get(countryLabel);
+                    if (countryValue == null) {
+                        throw new IllegalArgumentException("国家[" + countryLabel + "]在字典中未找到对应值");
+                    }
+                    vehicleInfo.setCountry(countryValue);
+
+                    // 1. 先用 dict_label 查出原始色码（如 "Z3"）
+                    vehicleInfo.setColor(vehicleInfo.getColor().substring(0, 2));
+
+                    // 2. 查复合色字典，判断是否需要拆分主色和副色（dict_label=Z3，dict_value=UU,CP）
+                    Map<String, String> compositeColorMap = remoteDictService
+                            .getDictDataByType("color_composite")
+                            .getData().stream()
+                            .collect(Collectors.toMap(
+                                    SysDictData::getDictLabel,
+                                    SysDictData::getDictValue,
+                                    (k1, k2) -> k1));
+                    String compositeValue = compositeColorMap.get(vehicleInfo.getColor());
+                    if (compositeValue != null) {
+                        // 复合色：dict_value 格式为 "主色,副色"，如 "UU,CP"
+                        String[] parts = compositeValue.split(",", 2);
+                        vehicleInfo.setColor(parts[0].trim());
+                        vehicleInfo.setSecondaryColor(parts[1].trim());
+                    } else {
+                        // 单色：直接使用原始色码
+                        vehicleInfo.setColor(vehicleInfo.getColor());
+                    }
+
                     // VIN 已存在则覆盖
                     VehicleInfo existing = vehicleInfoMapper.selectVehicleInfoByVin(vin);
                     if (existing != null) {
@@ -757,6 +823,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                         }
 
                         vehicleInfo.setCreateBy(createBy);
+                        vehicleInfo.setVehicleModel(materialList.get(0).getVehicleModel());
                         // 每行独立事务插入
                         self.insertSingleVehicleInfoRow(vehicleInfo, template, materialList.get(0));
                         importedList.add(vehicleInfo);
