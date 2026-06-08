@@ -9,10 +9,13 @@ import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.Material;
 import com.ruoyi.vehicle.domain.MaterialHistory;
+import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.mapper.MaterialHistoryMapper;
 import com.ruoyi.vehicle.mapper.MaterialMapper;
+import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMapper;
+import com.ruoyi.vehicle.service.IFirstVehicleCheckService;
 import com.ruoyi.vehicle.service.IMaterialService;
 import com.ruoyi.vehicle.utils.ExcelUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +53,12 @@ public class MaterialServiceImpl implements IMaterialService {
 
     @Autowired
     private VehicleTemplateMapper vehicleTemplateMapper;
+
+    @Autowired
+    private IFirstVehicleCheckService firstVehicleCheckService;
+
+    @Autowired
+    private VehicleInfoMapper vehicleInfoMapper;
 
     /** SSE sink 注册表，taskId -> sink */
     private final Map<String, Sinks.Many<ServerSentEvent<String>>> sinks = new ConcurrentHashMap<>();
@@ -440,5 +449,52 @@ public class MaterialServiceImpl implements IMaterialService {
                 .map(String::trim)
                 .filter(StringUtils::isNotBlank)
                 .collect(Collectors.toList());
+    }
+
+    private void applyMaterialAffirm(Material material) {
+        String materialNo = material.getMaterialNo();
+        String templateId = material.getVehicleTemplateId() != null
+                ? String.valueOf(material.getVehicleTemplateId()) : null;
+
+        boolean materialSwitchOn = firstVehicleCheckService.isSwitchOn("new_material");
+        boolean templateSwitchOn = firstVehicleCheckService.isSwitchOn("new_template");
+
+        // 两个维度各自的判断结果，true 表示"需要待确认（置0）"
+        boolean materialNeedsConfirm = false;
+        boolean templateNeedsConfirm = false;
+
+        // ── 物料号维度 ────────────────────────────────────────────────────────
+        if (StringUtils.isNotBlank(materialNo) && materialSwitchOn) {
+            Long earliestMaterialId = vehicleInfoMapper.findEarliestIdByMaterialNo(materialNo);
+            if (earliestMaterialId == null) {
+                // 物料号首次出现
+                materialNeedsConfirm = true;
+            } else {
+                VehicleInfo earliest = vehicleInfoMapper.selectVehicleInfoById(earliestMaterialId);
+                if (earliest != null && Integer.valueOf(0).equals(earliest.getGenerateAffirm())) {
+                    // 最早那辆车的生成确认状态仍是待确认
+                    materialNeedsConfirm = true;
+                }
+            }
+        }
+
+        // ── 模板维度 ──────────────────────────────────────────────────────────
+        if (StringUtils.isNotBlank(templateId) && templateSwitchOn) {
+            Long earliestTemplateId = vehicleInfoMapper.findEarliestIdByTemplateId(templateId);
+            if (earliestTemplateId == null) {
+                // 模板首次出现
+                templateNeedsConfirm = true;
+            } else {
+                VehicleInfo earliest = vehicleInfoMapper.selectVehicleInfoById(earliestTemplateId);
+                if (earliest != null && Integer.valueOf(0).equals(earliest.getUploadAffirm())) {
+                    // 最早那辆车的上传确认状态仍是待确认
+                    templateNeedsConfirm = true;
+                }
+            }
+        }
+
+        // ── 任意一个维度需要待确认，对应字段置 0，否则置 1 ──────────────────
+        material.setGenerateAffirm((materialNeedsConfirm || templateNeedsConfirm) ? 0 : 1);
+        material.setUploadAffirm((materialNeedsConfirm || templateNeedsConfirm) ? 0 : 1);
     }
 }

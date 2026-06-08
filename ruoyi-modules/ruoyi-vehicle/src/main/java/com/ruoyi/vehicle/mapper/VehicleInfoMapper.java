@@ -144,11 +144,9 @@ public interface VehicleInfoMapper {
      *
      * @param vehicleId         车辆ID
      * @param confirmedBy       确认人
-     * @param uploadAffirmCause 上传确认原因
      */
     void confirmTemplateFlag(@Param("vehicleId") Long vehicleId,
-                             @Param("confirmedBy") String confirmedBy,
-                             @Param("uploadAffirmCause") String uploadAffirmCause);
+                             @Param("confirmedBy") String confirmedBy);
 
     /**
      * 重置该物料号下所有车辆的物料号确认状态

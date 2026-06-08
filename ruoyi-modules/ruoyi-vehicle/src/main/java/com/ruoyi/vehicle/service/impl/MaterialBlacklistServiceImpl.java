@@ -9,12 +9,11 @@ import com.ruoyi.vehicle.service.IMaterialBlacklistService;
 import com.ruoyi.vehicle.service.IMaterialService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 物料黑名单 Service 实现
@@ -91,31 +90,63 @@ public class MaterialBlacklistServiceImpl implements IMaterialBlacklistService {
         if (count == 0) {
             throw new RuntimeException("选择的数据为空");
         }
+
         int fail = 0;
         int success = 0;
-        List<String> materialNos = new LinkedList<>();
+        // key: materialNo, value: 失败原因
+        Map<String, String> failReasons = new LinkedHashMap<>();
+        List<Long> successIds = new LinkedList<>();
+
         for (Long id : ids) {
-            MaterialBlacklist materialBlacklist = materialBlacklistMapper.selectMaterialBlacklistById(id);
-            if (materialBlacklist == null) {
+            try {
+                MaterialBlacklist materialBlacklist = materialBlacklistMapper.selectMaterialBlacklistById(id);
+                if (materialBlacklist == null) {
+                    fail++;
+                    failReasons.put("id=" + id, "黑名单记录不存在");
+                    continue;
+                }
+                if (materialBlacklist.getStatus() == 1) {
+                    fail++;
+                    failReasons.put(materialBlacklist.getMaterialNo(), "物料状态异常，不可移除");
+                    continue;
+                }
+
+                Material material = new Material();
+                material.setMaterialNo(materialBlacklist.getMaterialNo());
+                material.setBrand(materialBlacklist.getBrand());
+
+                int row = materialService.insertMaterial(material);
+                if (row == 0) {
+                    fail++;
+                    failReasons.put(material.getMaterialNo(), "插入物料表失败");
+                } else {
+                    success++;
+                    successIds.add(id);
+                }
+            } catch (DuplicateKeyException e) {
                 fail++;
-                continue;
-            }
-            Material material = new Material();
-            material.setMaterialNo(materialBlacklist.getMaterialNo());
-            material.setBrand(materialBlacklist.getBrand());
-            int row = materialService.insertMaterial(material);
-            if (row == 0) {
+                failReasons.put("id=" + id, "物料编号已存在，重复插入");
+            } catch (Exception e) {
                 fail++;
-                materialNos.add(material.getMaterialNo());
-            } else {
-                success++;
+                failReasons.put("id=" + id, "系统异常：" + e.getMessage());
             }
         }
+
+        // 只删除成功插入物料的黑名单记录
+        if (!successIds.isEmpty()) {
+            materialBlacklistMapper.deleteMaterialBlacklistByIds(successIds.toArray(new Long[0]));
+        }
+
+        // 组装失败详情描述，例如："materialNo为M001的因为插入物料表失败移除失败"
+        List<String> failDetails = failReasons.entrySet().stream()
+                .map(entry -> "materialNo为 [" + entry.getKey() + "] 的因为 [" + entry.getValue() + "] 移除失败")
+                .collect(Collectors.toList());
+
         Map<String, Object> result = new HashMap<>();
         result.put("count", count);
         result.put("fail", fail);
         result.put("success", success);
-        result.put("materialNos", materialNos);
+        result.put("failDetails", failDetails);
         return result;
     }
 }

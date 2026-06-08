@@ -76,6 +76,12 @@ public class Material extends BaseEntity {
 
     private Integer status;
 
+    /** 生成确认 */
+    private Integer generateAffirm;
+
+    /** 上传确认 */
+    private Integer uploadAffirm;
+
     // -------------------- 关联/查询扩展字段 --------------------
 
     private String vehicleType;
@@ -88,10 +94,6 @@ public class Material extends BaseEntity {
 
     /** 模版版本号 */
     private String version;
-
-    private Integer generateAffirm;
-
-    private Integer uploadAffirm;
 
     /** 新版本号（用于版本升级） */
     private String newVersion;

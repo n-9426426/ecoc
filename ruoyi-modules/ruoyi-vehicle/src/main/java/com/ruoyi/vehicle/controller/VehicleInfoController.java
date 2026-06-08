@@ -447,11 +447,8 @@ public class VehicleInfoController extends BaseController {
     @RequiresPermissions("vehicle:first:confirm")
     @Log(title = "首台车确认", businessType = BusinessType.UPDATE)
     @PutMapping("/first/template/confirm/{vehicleId}")
-    public AjaxResult confirmTemplate(
-            @PathVariable Long vehicleId,
-            @RequestBody(required = false) VehicleInfo request) {
-        String cause = (request != null) ? request.getUploadAffirmCause() : null;
-        firstVehicleCheckService.confirmTemplate(vehicleId, SecurityUtils.getUsername(), cause);
+    public AjaxResult confirmTemplate(@PathVariable Long vehicleId) {
+        firstVehicleCheckService.confirmTemplate(vehicleId, SecurityUtils.getUsername());
         return AjaxResult.success();
     }
 

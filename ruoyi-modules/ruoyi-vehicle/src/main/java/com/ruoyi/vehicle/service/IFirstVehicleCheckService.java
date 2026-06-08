@@ -65,5 +65,7 @@ public interface IFirstVehicleCheckService {
      * @param confirmedBy       确认人
      * @param uploadAffirmCause 上传确认原因
      */
-    void confirmTemplate(Long vehicleId, String confirmedBy, String uploadAffirmCause);
+    void confirmTemplate(Long vehicleId, String confirmedBy);
+
+    boolean isSwitchOn(String key);
 }

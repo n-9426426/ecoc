@@ -588,7 +588,6 @@
 		SET upload_affirm           = CASE WHEN upload_affirm = 1 THEN 0 ELSE 1 END,
 			template_confirmed_by   = #{confirmedBy},
 			template_confirmed_time = SYSDATE(),
-			upload_affirm_cause     = #{uploadAffirmCause},
 			update_by               = #{confirmedBy},
 			update_time             = SYSDATE()
 		WHERE vehicle_id = #{vehicleId}
@@ -631,12 +630,10 @@
 			<!-- 维度过滤 -->
 			<choose>
 				<when test="dimension == 'material'">
-					AND vi.first_material_flag = 0
-					AND vi.generate_affirm = 0
+					AND vi.first_material_flag = 1
 				</when>
 				<when test="dimension == 'template'">
-					AND vi.first_template_flag = 0
-					AND vi.upload_affirm = 0
+					AND vi.first_template_flag = 1
 				</when>
 			</choose>
 

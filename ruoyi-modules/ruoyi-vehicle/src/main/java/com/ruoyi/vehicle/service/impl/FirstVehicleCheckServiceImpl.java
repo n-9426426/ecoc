@@ -256,8 +256,8 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void confirmTemplate(Long vehicleId, String confirmedBy, String uploadAffirmCause) {
-        vehicleInfoMapper.confirmTemplateFlag(vehicleId, confirmedBy, uploadAffirmCause);
+    public void confirmTemplate(Long vehicleId, String confirmedBy) {
+        vehicleInfoMapper.confirmTemplateFlag(vehicleId, confirmedBy);
         VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleId);
 
         int newUploadAffirm = vehicleInfo.getUploadAffirm();
@@ -368,7 +368,7 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
     //  字典开关
     // ===================================================================
 
-    private boolean isSwitchOn(String key) {
+    public boolean isSwitchOn(String key) {
         try {
             R<List<SysDictData>> result = remoteDictService.getDictDataByType(DICT_TYPE);
             if (result == null || !R.isSuccess(result) || result.getData() == null) {

@@ -1237,39 +1237,42 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
      * @param templateId   车辆模版 ID（字符串）
      */
     private void applyFirstVehicleAffirm(VehicleInfo vehicleInfo, String materialNo, String templateId) {
-        // ── 物料号维度：generate_affirm ──────────────────────────────────────
-        if (StringUtils.isNotBlank(materialNo)) {
+        boolean materialSwitchOn = firstVehicleCheckService.isSwitchOn("new_material");
+        boolean templateSwitchOn = firstVehicleCheckService.isSwitchOn("new_template");
+
+        boolean materialNeedsConfirm = false;
+        boolean templateNeedsConfirm = false;
+
+        // ── 物料号维度 ────────────────────────────────────────────────────────
+        if (StringUtils.isNotBlank(materialNo) && materialSwitchOn) {
             Long earliestMaterialId = vehicleInfoMapper.findEarliestIdByMaterialNo(materialNo);
             if (earliestMaterialId == null) {
-                // 该物料号在库中尚无记录，当前这条就是第一条 → 置为 0
-                vehicleInfo.setGenerateAffirm(0);
-                vehicleInfo.setUploadAffirm(0);
+                materialNeedsConfirm = true;
             } else {
-                // 已有记录，取最早那条的 generate_affirm 值
                 VehicleInfo earliest = vehicleInfoMapper.selectVehicleInfoById(earliestMaterialId);
-                if (earliest != null) {
-                    vehicleInfo.setGenerateAffirm(earliest.getGenerateAffirm());
-                    vehicleInfo.setUploadAffirm(earliest.getUploadAffirm());
+                if (earliest != null && Integer.valueOf(0).equals(earliest.getGenerateAffirm())) {
+                    materialNeedsConfirm = true;
                 }
             }
         }
 
-        // ── 模版维度：upload_affirm ──────────────────────────────────────────
-        if (StringUtils.isNotBlank(templateId)) {
+        // ── 模板维度 ──────────────────────────────────────────────────────────
+        if (StringUtils.isNotBlank(templateId) && templateSwitchOn) {
             Long earliestTemplateId = vehicleInfoMapper.findEarliestIdByTemplateId(templateId);
             if (earliestTemplateId == null) {
-                // 该模版在库中尚无关联车辆，当前这条就是第一条 → 置为 0
-                vehicleInfo.setGenerateAffirm(0);
-                vehicleInfo.setUploadAffirm(0);
+                templateNeedsConfirm = true;
             } else {
-                // 已有记录，取最早那条的 upload_affirm 值
                 VehicleInfo earliest = vehicleInfoMapper.selectVehicleInfoById(earliestTemplateId);
-                if (earliest != null) {
-                    vehicleInfo.setGenerateAffirm(earliest.getGenerateAffirm());
-                    vehicleInfo.setUploadAffirm(earliest.getUploadAffirm());
+                if (earliest != null && Integer.valueOf(0).equals(earliest.getUploadAffirm())) {
+                    templateNeedsConfirm = true;
                 }
             }
         }
+
+        // ── 任意一个维度需要待确认，两个字段都置 0，否则置 1 ─────────────────
+        int affirm = (materialNeedsConfirm || templateNeedsConfirm) ? 0 : 1;
+        vehicleInfo.setGenerateAffirm(affirm);
+        vehicleInfo.setUploadAffirm(affirm);
     }
 
     /**
