@@ -172,6 +172,7 @@ public class MaterialServiceImpl implements IMaterialService {
         }
         material.setVersion(template.getVersion());
         material.setVehicleTemplateId(template.getTemplateId());
+        applyMaterialAffirm(material);
         return materialMapper.insertMaterial(material);
     }
 
@@ -209,6 +210,7 @@ public class MaterialServiceImpl implements IMaterialService {
         }
         material.setVersion(template.getVersion());
         material.setVehicleTemplateId(template.getTemplateId());
+        applyMaterialAffirm(material);
         LoginUser loginUser = SecurityUtils.getLoginUser();
         material.setUpdateBy(loginUser.getUsername());
         material.setUpdateTime(new Date());
