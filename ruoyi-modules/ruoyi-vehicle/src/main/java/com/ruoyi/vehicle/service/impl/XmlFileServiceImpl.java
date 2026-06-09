@@ -232,12 +232,77 @@ public class XmlFileServiceImpl implements IXmlFileService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public AjaxResult deleteXmlFileByIds(Long[] xmlIds) {
+        List<XmlFile> xmlFileList = xmlFileMapper.selectXmlFileByIds(xmlIds);
+
+        // 1. 根据xmlIds查询不到的xmlFile集合
+        Set<Long> foundIds = xmlFileList.stream()
+                .map(XmlFile::getId)
+                .collect(Collectors.toSet());
+        List<Long> notFoundIds = Arrays.stream(xmlIds)
+                .filter(id -> !foundIds.contains(id))
+                .collect(Collectors.toList());
+
+        // 2. 取出vehicleInfoId，查询vehicleInfo
+        List<Long> vehicleInfoIds = xmlFileList.stream()
+                .map(XmlFile::getVehicleInfoId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+
+        List<VehicleInfo> vehicleInfoList = vehicleInfoIds.isEmpty()
+                ? Collections.emptyList()
+                : vehicleInfoMapper.selectVehicleInfoByIds(vehicleInfoIds.toArray(new Long[0]));
+
+        Set<Long> foundVehicleInfoIds = vehicleInfoList.stream()
+                .map(VehicleInfo::getVehicleId)
+                .collect(Collectors.toSet());
+
+        // 查询到vehicleInfo的xmlFile集合（不可删除）
+        List<XmlFile> xmlFilesWithVehicle = xmlFileList.stream()
+                .filter(xml -> xml.getVehicleInfoId() != null
+                        && foundVehicleInfoIds.contains(xml.getVehicleInfoId()))
+                .collect(Collectors.toList());
+
+        // 查询不到vehicleInfo的xmlFile集合（可删除）
+        List<XmlFile> xmlFilesWithoutVehicle = xmlFileList.stream()
+                .filter(xml -> xml.getVehicleInfoId() == null
+                        || !foundVehicleInfoIds.contains(xml.getVehicleInfoId()))
+                .collect(Collectors.toList());
+
+        // 拼装提示信息
+        StringBuilder message = new StringBuilder();
+
+        if (!notFoundIds.isEmpty()) {
+            message.append("部分XML文件不存在，无法删除；");
+        }
+
+        if (!xmlFilesWithVehicle.isEmpty()) {
+            message.append("以下XML文件已关联车辆信息，无法删除：")
+                    .append(xmlFilesWithVehicle.stream()
+                            .map(xml -> xml.getVin())
+                            .collect(Collectors.joining("、")))
+                    .append("；");
+        }
+
         try {
-            int deleteRows = xmlFileMapper.deleteXmlFileByIds(xmlIds);
-            Map<String, Integer> result = new HashMap<>();
-            result.put("deleteRows", deleteRows);
+            Map<String, Object> result = new HashMap<>();
+
+            // 3. 仅删除查询不到vehicleInfo的xmlFile
+            if (!xmlFilesWithoutVehicle.isEmpty()) {
+                Long[] deletableIds = xmlFilesWithoutVehicle.stream()
+                        .map(XmlFile::getId)
+                        .toArray(Long[]::new);
+                int deleteRows = xmlFileMapper.deleteXmlFileByIds(deletableIds);
+                result.put("deleteRows", deleteRows);
+                message.append("成功删除").append(deleteRows).append("条XML文件。");
+            } else {
+                result.put("deleteRows", 0);
+                message.append("无可删除的XML文件。");
+            }
+
+            result.put("message", message.toString());
             return AjaxResult.success(result);
-        } catch (Exception e){
+        } catch (Exception e) {
             return AjaxResult.error(e.getMessage());
         }
     }

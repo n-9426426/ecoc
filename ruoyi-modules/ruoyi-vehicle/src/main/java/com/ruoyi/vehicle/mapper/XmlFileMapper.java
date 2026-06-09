@@ -66,4 +66,6 @@ public interface XmlFileMapper {
     List<XmlFile> checkXmlFileTimeoutUpload();
 
     void updateXmlFileTimeoutUpload(@Param("xmlFileIds") List<Long> xmlFileIds, @Param("status") Integer status);
+
+    List<XmlFile> selectXmlFileByIds(@Param("xmlIds") Long[] xmlIds);
 }

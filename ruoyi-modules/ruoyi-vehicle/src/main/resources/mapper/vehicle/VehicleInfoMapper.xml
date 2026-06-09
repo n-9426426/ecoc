@@ -626,8 +626,17 @@
 		<include refid="selectVehicleInfoVo"/>
 		<where>
 			AND vi.deleted = 0
-
-			<!-- 维度过滤 -->
+			<if test="affirm != null">
+				<choose>
+					<when test="affirm == 1">
+						AND vi.generate_affirm = 1
+						AND vi.upload_affirm = 1
+					</when>
+					<when test="affirm == 0">
+						AND (vi.generate_affirm = 0 OR vi.upload_affirm = 0)
+					</when>
+				</choose>
+			</if>
 			<choose>
 				<when test="dimension == 'material'">
 					AND vi.first_material_flag = 1
@@ -636,7 +645,6 @@
 					AND vi.first_template_flag = 1
 				</when>
 			</choose>
-
 			<!-- 以下复用通用查询条件，vehicleInfo 参数前缀为 vehicleInfo. -->
 			<if test="vehicleInfo.vinList != null and vehicleInfo.vinList.size() > 0">
 				AND (

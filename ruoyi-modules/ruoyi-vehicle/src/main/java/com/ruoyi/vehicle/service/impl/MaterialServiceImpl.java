@@ -118,28 +118,6 @@ public class MaterialServiceImpl implements IMaterialService {
             if (material.getVehicleModel() == null) {
                 throw new RuntimeException("车型代码不存在");
             }
-
-            List<SysDictData> factoryDictData = remoteDictService.getDictDataByType("factory").getData();
-            for (SysDictData dictData : factoryDictData) {
-                if (dictData.getDictLabel().equals(material.getFactoryCode())) {
-                    material.setFactoryCode(dictData.getDictValue());
-                    break;
-                }
-            }
-            if (material.getFactoryCode() == null) {
-                throw new RuntimeException("工厂代码不存在");
-            }
-
-            List<SysDictData> countryDictData = remoteDictService.getDictDataByType("country").getData();
-            for (SysDictData dictData : countryDictData) {
-                if (dictData.getDictLabel().equals(material.getFactoryCode())) {
-                    material.setCountry(dictData.getDictValue());
-                    break;
-                }
-            }
-            if (material.getCountry() == null) {
-                throw new RuntimeException("国家代码不存在");
-            }
         }
         material.setCreateBy(createBy);
         material.setCreateTime(new Date());
@@ -394,31 +372,6 @@ public class MaterialServiceImpl implements IMaterialService {
                         throw new IllegalArgumentException("车型[" + vehicleModelLabel + "]在字典中未找到对应值");
                     }
                     material.setVehicleModel(vehicleModelValue);
-
-                    Map<String, String> factoryLabelToValueMap = remoteDictService
-                            .getDictDataByType("factory")
-                            .getData().stream()
-                            .collect(Collectors.toMap(SysDictData::getDictLabel, SysDictData::getDictValue, (k1, k2) -> k1));
-                    String factoryLabel = material.getFactoryCode();
-                    String factoryValue = factoryLabelToValueMap.get(factoryLabel);
-                    if (factoryValue == null) {
-                        throw new IllegalArgumentException("工厂代码[" + factoryLabel + "]在字典中未找到对应值");
-                    }
-                    material.setFactoryCode(factoryValue);
-
-                    Map<String, String> countryLabelToValueMap = remoteDictService
-                            .getDictDataByType("country")
-                            .getData().stream()
-                            .collect(Collectors.toMap(
-                                    SysDictData::getDictLabel,
-                                    SysDictData::getDictValue,
-                                    (k1, k2) -> k1));
-                    String countryLabel = material.getCountry();
-                    String countryValue = countryLabelToValueMap.get(countryLabel);
-                    if (countryValue == null) {
-                        throw new IllegalArgumentException("国家[" + countryLabel + "]在字典中未找到对应值");
-                    }
-                    material.setCountry(countryValue);
 
                     Material existing = materialMapper.selectByMaterialNo(material.getMaterialNo());
                     if (existing == null) {

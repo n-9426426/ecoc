@@ -43,6 +43,7 @@ public enum RuleItemType {
     CONDITIONAL_FIELD_COMPARE,
 
     // ===== 聚合函数 =====
+    COUNT_AGGREGATE_FIELD,
     COUNT_AGGREGATE,
     SUM_AGGREGATE,
     COUNT_AS_VALUE,
@@ -121,6 +122,7 @@ public enum RuleItemType {
             case CONDITIONAL_REGEX:             return "条件正则";
             case CONDITIONAL_VALUE_COMPARE:     return "条件数值比较";
             case CONDITIONAL_FIELD_COMPARE:     return "条件跨字段比较";
+            case COUNT_AGGREGATE_FIELD:         return "动态阈值比较";
             case COUNT_AGGREGATE:               return "COUNT聚合校验";
             case SUM_AGGREGATE:                 return "SUM聚合校验";
             case COUNT_AS_VALUE:                return "COUNT赋值校验";

@@ -198,6 +198,14 @@ public class FinalRuleParser {
                     "VALUE\\s+(>=|<=|>|<|=|!=)\\s+@([\\w.]+)\\s+IF\\s+ALL\\s+(.+)",
                     Pattern.CASE_INSENSITIVE);
 
+    // ===== COUNT 动态阈值（与字段比较）=====
+    // 格式: COUNT(@listField, @targetField) op @fieldName
+    // 用途: COUNT(@AxleGroup, @AxleNumber) = @NumberOfAxles
+    private static final Pattern COUNT_FIELD_PATTERN =
+            Pattern.compile(
+                    "COUNT\\s*\\(@?([^,]+?),\\s*@?([^)]+?)\\)\\s*(>=|<=|>|<|=|!=)\\s*@([\\w.]+)",
+                    Pattern.CASE_INSENSITIVE);
+
     // ===== D. 列表字段成员检查（VALUE_IN_LIST_FIELD）=====
     // 格式: VALUE = ANY @listField.fieldName
     // 用途: [169] MechanicalCouplingNumberVerticalMass, [242] AxleNumberCombination
@@ -397,7 +405,28 @@ public class FinalRuleParser {
                         .build();
             }
 
-            // 8. COUNT
+            // 8-a. COUNT 动态阈值：COUNT(@listField, @targetField) op @fieldName
+            m = COUNT_FIELD_PATTERN.matcher(body);
+            if (m.matches()) {
+                String listField   = m.group(1).trim().replace("@", "");
+                String targetField = m.group(2).trim().replace("@", "");
+                String operator    = m.group(3).trim();
+                String refField    = m.group(4).trim();
+                AggregateFunction af = AggregateFunction.builder()
+                        .functionType(AggregateFunction.Type.COUNT)
+                        .listField(listField)
+                        .condition(targetField)
+                        .operator(CompareOperator.fromSymbol(operator))
+                        .threshold(null)          // 动态阈值，threshold 留 null
+                        .build();
+                return RuleItem.builder()
+                        .type(RuleItemType.COUNT_AGGREGATE_FIELD)
+                        .aggregateFunction(af)
+                        .refFieldName(refField)   // 动态阈值字段名存入 refFieldName
+                        .build();
+            }
+
+            // 8-b. COUNT
             m = COUNT_PATTERN.matcher(body);
             if (m.matches()) {
                 String listField = m.group(1).trim().replace("@", "");

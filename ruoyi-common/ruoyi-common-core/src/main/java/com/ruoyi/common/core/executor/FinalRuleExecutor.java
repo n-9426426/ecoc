@@ -229,6 +229,9 @@ public class FinalRuleExecutor {
                 case COUNT_AGGREGATE:
                     return checkCountAggregate(fieldName, actualValue, rule, context);
 
+                case COUNT_AGGREGATE_FIELD:
+                    return checkCountAggregateField(fieldName, actualValue, rule, context);
+
                 case SUM_AGGREGATE:
                     return checkSumAggregate(fieldName, actualValue, rule, context);
 
@@ -1105,5 +1108,52 @@ public class FinalRuleExecutor {
                 .ruleType(rule.getType())
                 .ruleTypeLabel(com.ruoyi.common.core.enums.RuleItemType.getRuleType(rule.getType()))
                 .build();
+    }
+
+    private static RuleViolation checkCountAggregateField(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        AggregateFunction af = rule.getAggregateFunction();
+        String refFieldName  = rule.getRefFieldName();
+
+        // 从 context 取动态阈值字段
+        Object refObj = context.get(refFieldName);
+        if (isAbsent(refObj)) return null;   // 阈值字段为空，跳过校验
+
+        double threshold;
+        try {
+            threshold = toDouble(refObj);
+        } catch (Exception e) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "COUNT_AGGREGATE_FIELD: refField '@" + refFieldName + "' is not numeric",
+                    "COUNT_AGGREGATE_FIELD：动态阈值字段 @" + refFieldName + " 不是数值");
+        }
+
+        // 从 context 取列表字段
+        Object listObj = context.get(af.getListField());
+        if (!(listObj instanceof List)) return null;
+
+        List<?> list = (List<?>) listObj;
+        ConditionExpression condExpr = ConditionExpression.parse(af.getCondition());
+        long count = list.stream()
+                .filter(item -> {
+                    if (!(item instanceof Map)) return false;
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> itemMap = (Map<String, Object>) item;
+                    if (condExpr == null) return true;
+                    return condExpr.evaluate(itemMap);
+                })
+                .count();
+
+        if (!af.getOperator().apply((double) count, threshold)) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "COUNT(" + af.getListField() + ", " + af.getCondition() + ") "
+                            + af.getOperator().getSymbol()
+                            + " @" + refFieldName + "(" + (long) threshold + ") failed"
+                            + " (actual count=" + count + ")",
+                    "列表中满足条件的元素数量（" + count + "）与字段 @"
+                            + refFieldName + "（" + (long) threshold + "）比较不通过");
+        }
+        return null;
     }
 }

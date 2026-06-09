@@ -122,4 +122,6 @@ public class XmlFile extends BaseEntity {
 
     /** 状态显示文本（导出用） */
     private String statusLabel;
+
+    private Long vehicleInfoId;
 }

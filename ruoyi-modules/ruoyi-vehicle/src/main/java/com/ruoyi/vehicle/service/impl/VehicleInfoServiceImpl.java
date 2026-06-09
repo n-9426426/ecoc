@@ -578,29 +578,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setCustomerNo(vehicle.getCustomerNumber());
         vehicleInfo.setCreateTime(now);
 
-        List<SysDictData> factoryDictData = remoteDictService.getDictDataByType("factory").getData();
-        for (SysDictData dictData : factoryDictData) {
-            if (dictData.getDictLabel().equals(vehicle.getFactoryCode())) {
-                vehicleInfo.setFactoryCode(dictData.getDictValue());
-                vehicleInfo.setFactoryName(dictData.getDictLabel());
-                break;
-            }
-        }
-        if (vehicleInfo.getFactoryCode() == null) {
-            throw new RuntimeException("工厂代码不存在");
-        }
-
-        List<SysDictData> countryDictData = remoteDictService.getDictDataByType("country").getData();
-        for (SysDictData dictData : countryDictData) {
-            if (dictData.getDictLabel().equals(vehicle.getFactoryCode())) {
-                vehicleInfo.setCountry(dictData.getDictValue());
-                break;
-            }
-        }
-        if (vehicleInfo.getCountry() == null) {
-            throw new RuntimeException("国家代码不存在");
-        }
-
         vehicleInfo.setColor(vehicleInfo.getColor().substring(0, 2));
 
         // 复合色拆分映射表从字典中查询：dict_label=色码(Z3)，dict_value=主色,副色(UU,CP)
@@ -753,32 +730,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 }
 
                 try {
-                    Map<String, String> factoryLabelToValueMap = remoteDictService
-                            .getDictDataByType("factory")
-                            .getData().stream()
-                            .collect(Collectors.toMap(SysDictData::getDictLabel, SysDictData::getDictValue, (k1, k2) -> k1));
-                    String factoryLabel = vehicleInfo.getFactoryCode();
-                    String factoryValue = factoryLabelToValueMap.get(factoryLabel);
-                    if (factoryValue == null) {
-                        throw new IllegalArgumentException("工厂代码[" + factoryLabel + "]在字典中未找到对应值");
-                    }
-                    vehicleInfo.setFactoryCode(factoryValue);
-                    vehicleInfo.setFactoryName(factoryLabel);
-
-                    Map<String, String> countryLabelToValueMap = remoteDictService
-                            .getDictDataByType("country")
-                            .getData().stream()
-                            .collect(Collectors.toMap(
-                                    SysDictData::getDictLabel,
-                                    SysDictData::getDictValue,
-                                    (k1, k2) -> k1));
-                    String countryLabel = vehicleInfo.getCountry();
-                    String countryValue = countryLabelToValueMap.get(countryLabel);
-                    if (countryValue == null) {
-                        throw new IllegalArgumentException("国家[" + countryLabel + "]在字典中未找到对应值");
-                    }
-                    vehicleInfo.setCountry(countryValue);
-
                     // 1. 先用 dict_label 查出原始色码（如 "Z3"）
                     vehicleInfo.setColor(vehicleInfo.getColor().substring(0, 2));
 
