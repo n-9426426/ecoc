@@ -48,6 +48,17 @@
     <select id="selectVehicleTemplateList" parameterType="com.ruoyi.vehicle.domain.VehicleTemplate" resultMap="VehicleTemplateResult">
         <include refid="selectVehicleTemplateVo"/>
         WHERE del_flag = '0'
+        <if test="affirm != null">
+            <choose>
+                <when test="affirm == 1">
+                    AND generate_affirm = 1
+                    AND upload_affirm = 1
+                </when>
+                <when test="affirm == 0">
+                    AND (generate_affirm = 0 OR upload_affirm = 0)
+                </when>
+            </choose>
+        </if>
         <if test="isLast != null">
             and is_last = #{isLast}
         </if>

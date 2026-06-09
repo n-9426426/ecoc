@@ -70,6 +70,9 @@ public interface VehicleInfoMapper {
     int updateVehicleInfoOldTemplate(@Param("vehicleIds") List<Long> vehicleIds,
                                      @Param("status") Integer status);
 
+    int updateVehicleInfoGenerateTimeout(@Param("vehicleIds") List<Long> vehicleIds,
+                                         @Param("status") Integer status);
+
     List<VehicleInfo> selectVehicleInfoByVinManufactureDate(String vin);
 
     int updateTempVersionByVin(@Param("vin") String vin, @Param("tempVersion") String tempVersion);
@@ -216,4 +219,6 @@ public interface VehicleInfoMapper {
      * 模版维度待确认首台车，每个 vehicle_template_id 取制造日期最早一条
      */
     List<VehicleInfo> listFirstTemplateUnconfirmedEarliest();
+
+    List<VehicleInfo> checkVehicleInfoTimeoutGenerate(@Param("noticeStatus") Integer noticeStatus);
 }

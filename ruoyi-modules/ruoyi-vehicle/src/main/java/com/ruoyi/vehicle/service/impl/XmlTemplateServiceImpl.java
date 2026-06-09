@@ -77,6 +77,8 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int insertTemplate(XmlTemplate template) {
+        checkDuplicate(template.getCountry(), template.getModelDictCode(),
+                template.getEnergyType(), null);
         if (StringUtils.isBlank(template.getUuid())) {
             template.setUuid(template.getTemplateCode());
         }
@@ -105,6 +107,10 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
         if (dbTemplate == null) {
             throw new ServiceException("模板不存在");
         }
+
+        // ★ 唯一性校验：排除自身
+        checkDuplicate(template.getCountry(), template.getModelDictCode(),
+                template.getEnergyType(), template.getTemplateId());
 
 //        template.setUuid(dbTemplate.getUuid());
 //        template.setVersion(String.valueOf(new BigDecimal(StringUtils.isBlank(dbTemplate.getVersion()) ? "0.0" : dbTemplate.getVersion()).add(new BigDecimal(1))));
@@ -349,5 +355,65 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
             map.putIfAbsent(d.getUuid(), d);
         }
         return map;
+    }
+
+    /**
+     * 校验 适用国家 + 车辆类型 + 能源类型 是否存在交集冲突
+     * 三个字段均为逗号分隔的多选值，例如 "1049,1034,1050"
+     * 只要三个维度同时各有至少一个值重叠，则判定为冲突
+     *
+     * @param excludeTemplateId 编辑时排除自身ID，新增传 null
+     */
+    private void checkDuplicate(String country, String vehicleType,
+                                Long energyType, Long excludeTemplateId) {
+
+        // 1. 查询所有有效模板（isLast=1，未删除）
+        XmlTemplate query = new XmlTemplate();
+        query.setIsLast(1);
+        List<XmlTemplate> existList = templateMapper.selectTemplateList(query);
+
+        // 2. 将当前入参拆成 Set
+        Set<String> newCountries  = splitToSet(country);
+        Set<String> newVehicles   = splitToSet(vehicleType);
+        Set<String> newEnergies   = splitToSet(String.valueOf(energyType));
+
+        // 3. 逐条比对
+        for (XmlTemplate exist : existList) {
+            // 编辑时跳过自身
+            if (excludeTemplateId != null && excludeTemplateId.equals(exist.getTemplateId())) {
+                continue;
+            }
+
+            boolean countryConflict = hasIntersection(newCountries,  splitToSet(exist.getCountry()));
+            boolean vehicleConflict = hasIntersection(newVehicles,   splitToSet(exist.getModelDictCode()));
+            boolean energyConflict  = hasIntersection(newEnergies,   splitToSet(String.valueOf(exist.getEnergyType())));
+
+            // 三个维度同时有交集 → 冲突
+            if (countryConflict && vehicleConflict && energyConflict) {
+                throw new ServiceException(
+                        String.format("与模板【%s】存在冲突：适用国家、车辆类型、能源类型均有重叠，不允许保存",
+                                exist.getTemplateName())
+                );
+            }
+        }
+    }
+
+    /**
+     * 逗号分隔字符串 → Set，自动过滤空值
+     */
+    private Set<String> splitToSet(String value) {
+        if (StringUtils.isBlank(value)) return Collections.emptySet();
+        return Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * 判断两个 Set 是否有交集
+     */
+    private boolean hasIntersection(Set<String> a, Set<String> b) {
+        if (a.isEmpty() || b.isEmpty()) return false;
+        return a.stream().anyMatch(b::contains);
     }
 }

@@ -63,7 +63,7 @@ public interface XmlFileMapper {
 
     void updateIsLatestToFalse(String fileName);
 
-    List<XmlFile> checkXmlFileTimeoutUpload();
+    List<XmlFile> checkXmlFileTimeoutUpload(@Param("noticeStatus") Integer noticeStatus);
 
     void updateXmlFileTimeoutUpload(@Param("xmlFileIds") List<Long> xmlFileIds, @Param("status") Integer status);
 

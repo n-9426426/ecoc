@@ -84,6 +84,17 @@
 	<select id="selectVehicleInfoList" parameterType="VehicleInfo" resultMap="VehicleInfoResult">
 		<include refid="selectVehicleInfoVo"/>
 		<where>
+			<if test="affirm != null">
+				<choose>
+					<when test="affirm == 1">
+						AND vi.generate_affirm = 1
+						AND vi.upload_affirm = 1
+					</when>
+					<when test="affirm == 0">
+						AND (vi.generate_affirm = 0 OR vi.upload_affirm = 0)
+					</when>
+				</choose>
+			</if>
 			<if test="vehicleIds != null and vehicleIds.size() > 0">
 				and vehicle_id in
 				<foreach item="vehicleId" collection="vehicleIds" open="(" separator="," close=")">
@@ -452,6 +463,17 @@
 		AND deleted = 0
 	</update>
 
+	<update id="updateVehicleInfoGenerateTimeout">
+		UPDATE vehicle_info
+		SET generate_timeout_notice = #{status},
+		update_time = NOW()
+		WHERE vehicle_id IN
+		<foreach collection="vehicleIds" item="id" open="(" separator="," close=")">
+			#{id}
+		</foreach>
+		AND deleted = 0
+	</update>
+
 	<select id="selectVehicleInfoByVinManufactureDate" parameterType="String" resultMap="VehicleInfoResult">
 		<include refid="selectVehicleInfoVo"/>
 		where vi.deleted = 0
@@ -626,13 +648,13 @@
 		<include refid="selectVehicleInfoVo"/>
 		<where>
 			AND vi.deleted = 0
-			<if test="affirm != null">
+			<if test="vehicleInfo.affirm != null">
 				<choose>
-					<when test="affirm == 1">
+					<when test="vehicleInfo.affirm == 1">
 						AND vi.generate_affirm = 1
 						AND vi.upload_affirm = 1
 					</when>
-					<when test="affirm == 0">
+					<when test="vehicleInfo.affirm == 0">
 						AND (vi.generate_affirm = 0 OR vi.upload_affirm = 0)
 					</when>
 				</choose>
@@ -877,5 +899,21 @@
 				 LEFT JOIN (SELECT template_id, filepath, coc_template_no, is_last, version, model_no, tvv FROM vehicle_template) vt
 						   ON vi.vehicle_template_id = vt.template_id
 		WHERE vi.rn = 1
+	</select>
+
+	<select id="checkVehicleInfoTimeoutGenerate" resultMap="VehicleInfoResult">
+		SELECT vi.*
+		FROM vehicle_info vi
+				 INNER JOIN (
+			SELECT *
+			FROM sys_dict_data
+			WHERE dict_type = 'reminder_time' AND status = '0' AND dict_sort = 5
+		) sdd ON 1 = 1
+		WHERE vi.deleted = 0
+		  <if test="noticeStatus != null">
+			  and vi.generate_timeout_notice = #{noticeStatus}
+		  </if>
+		  AND vi.upload_status = 0
+		  AND TIMESTAMPDIFF(MICROSECOND, vi.create_time, NOW()) / 1000 &gt;= CAST(sdd.dict_value AS SIGNED)
 	</select>
 </mapper>

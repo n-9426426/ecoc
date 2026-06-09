@@ -296,15 +296,11 @@
             from sys_dict_data
             where dict_type = 'reminder_time' AND status = '0' and dict_sort = 1
         ) sdd ON 1 = 1
-        INNER JOIN (
-            SELECT entry_id, MAX(time) AS latest_time
-            FROM vehicle_lifecycle
-            WHERE operate = '3'
-            GROUP BY entry_id
-        ) vl_latest ON vl_latest.entry_id = xl.id
-        INNER JOIN vehicle_lifecycle vl ON vl.operate = '3' AND vl.entry_id = xl.id AND vl.time = vl_latest.latest_time
-        WHERE xl.upload_result = 2 AND xl.deleted = '0' AND xl.is_latest = 1 and xl.timeout_notice = 0
-            AND TIMESTAMPDIFF(MICROSECOND, NOW(), vl.time) / 1000 &lt;= CAST(sdd.dict_value AS SIGNED)
+        WHERE xl.upload_result = 2 AND xl.deleted = '0' AND xl.is_latest = 1
+            <if test="noticeStatus != null">
+                and xl.timeout_notice = #{noticeStatus}
+            </if>
+            AND TIMESTAMPDIFF(MICROSECOND, xl.create_time, NOW()) / 1000 &gt;= CAST(sdd.dict_value AS SIGNED)
     </select>
 
     <update id="updateXmlFileTimeoutUpload">

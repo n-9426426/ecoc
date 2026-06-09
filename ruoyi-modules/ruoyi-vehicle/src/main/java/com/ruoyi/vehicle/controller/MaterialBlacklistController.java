@@ -8,6 +8,7 @@ import com.ruoyi.common.log.enums.BusinessType;
 import com.ruoyi.common.security.annotation.RequiresPermissions;
 import com.ruoyi.vehicle.domain.MaterialBlacklist;
 import com.ruoyi.vehicle.service.IMaterialBlacklistService;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -76,5 +77,15 @@ public class MaterialBlacklistController extends BaseController {
     @PostMapping("/remove/{ids}")
     public AjaxResult removeToMaterial(@PathVariable Long[] ids) {
         return AjaxResult.success(materialBlacklistService.removeToMaterial(ids));
+    }
+
+    /** 查询列表 */
+    @Operation(summary = "首页-重点提醒统计-黑名单统计，无分页")
+    @RequiresPermissions("material:blacklist:list")
+    @GetMapping("/materialBlacklistAll")
+    public AjaxResult materialBlacklistAll() {
+        MaterialBlacklist materialBlacklist = new MaterialBlacklist();
+        List<MaterialBlacklist> list = materialBlacklistService.selectMaterialBlacklistList(materialBlacklist);
+        return AjaxResult.success(list);
     }
 }

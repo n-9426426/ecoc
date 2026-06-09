@@ -29,7 +29,8 @@ public class XmlFileTimeoutUploadTask {
 
     @Scheduled(cron = "0 * * * * ?")
     public void xmlFileTimeoutUploadJobHandler(){
-        List<XmlFile> xmlFileList = xmlFileMapper.checkXmlFileTimeoutUpload();
+        Integer noticeStatus = 0;
+        List<XmlFile> xmlFileList = xmlFileMapper.checkXmlFileTimeoutUpload(noticeStatus);
         if (xmlFileList.isEmpty()) {
             return;
         }

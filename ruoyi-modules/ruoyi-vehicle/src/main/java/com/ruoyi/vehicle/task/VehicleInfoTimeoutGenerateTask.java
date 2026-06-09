@@ -17,7 +17,7 @@ import java.util.*;
 
 @Slf4j
 @Component
-public class VehicleInfoUseOldTemplateTask {
+public class VehicleInfoTimeoutGenerateTask {
 
     @Autowired
     private VehicleInfoMapper vehicleInfoMapper;
@@ -27,22 +27,26 @@ public class VehicleInfoUseOldTemplateTask {
 
     @Scheduled(cron = "0 * * * * *")
     public void vehicleInfoUseOldTemplateJobHandler(){
-        List<VehicleInfo> vehicleInfoList = vehicleInfoMapper.checkOldTemplate();
+        Integer noticeStatus = 0;
+        List<VehicleInfo> vehicleInfoList = vehicleInfoMapper.checkVehicleInfoTimeoutGenerate(noticeStatus);
         if (vehicleInfoList.isEmpty()) {
             return;
         }
         for (VehicleInfo vehicleInfo : vehicleInfoList) {
-            vehicleInfoMapper.updateVehicleInfoOldTemplate(Collections.singletonList(vehicleInfo.getVehicleId()), 1);
+            vehicleInfoMapper.updateVehicleInfoGenerateTimeout(Collections.singletonList(vehicleInfo.getVehicleId()), 1);
             StringBuilder msg = new StringBuilder();
             msg.append("车辆vin ").append(vehicleInfo.getVin())
-                    .append(" 生成车辆信息时使用的车辆模版不是最新版本的车辆模版");
+                    .append(" 超时未生成，该信息创建时间为 ")
+                    .append(com.alibaba.fastjson2.util.DateUtils.format(vehicleInfo.getCreateTime(), "yyyy-MM-dd HH:mm:ss"));
             Map<String, String> params = new HashMap<>();
             params.put("id", String.valueOf(vehicleInfo.getVehicleId()));
             params.put("vin", vehicleInfo.getVin());
             params.put("vehicleModel", vehicleInfo.getVehicleModel());
             params.put("factoryCode", vehicleInfo.getFactoryCode());
             params.put("country", vehicleInfo.getCountry());
-            params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            if (vehicleInfo.getIssueDate() != null) {
+                params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            }
             params.put("materialNo", vehicleInfo.getMaterialNo());
             sentNotice(msg, params);
         }
@@ -55,11 +59,11 @@ public class VehicleInfoUseOldTemplateTask {
         sysNotice.setIsRead(false);
         sysNotice.setStatus("0");
         sysNotice.setNoticeType("1");
-        sysNotice.setNoticeTitle("车辆信息生成时使用非最新模版通知");
+        sysNotice.setNoticeTitle("车辆信息超时未生成XML文件通知");
         sysNotice.setNoticeContent(msg.toString());
         sysNotice.setCreateBy("自动提醒");
         sysNotice.setCreateTime(new Date());
-        sysNotice.setSorts(Arrays.asList(0, 1));
+        sysNotice.setSorts(Arrays.asList(22, 23));
         return remoteNoticeService.innerAdd(sysNotice);
     }
 }

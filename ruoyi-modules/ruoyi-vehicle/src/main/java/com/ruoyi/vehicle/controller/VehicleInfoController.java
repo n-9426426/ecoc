@@ -129,7 +129,8 @@ public class VehicleInfoController extends BaseController {
                 result.add(resultItem);
             }
         }
-        return AjaxResult.success(result);
+//        return AjaxResult.success(result);
+        return AjaxResult.success();
     }
     /**
      * 查询车辆信息列表
@@ -453,6 +454,7 @@ public class VehicleInfoController extends BaseController {
      * 查询所有待确认首台车（无分页）
      * 物料号维度（generate_affirm=0）和模版维度（upload_affirm=0）各取每组制造日期最早一条后合并返回
      */
+    @Operation(summary = "首页-重点提醒统计-首台待办提醒，无分页")
     @GetMapping("/first/unconfirmedAll")
     public AjaxResult listAllFirstVehicleUnconfirmed() {
         List<VehicleInfo> list = vehicleInfoService.listAllFirstVehicleUnconfirmed();

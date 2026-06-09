@@ -57,6 +57,17 @@
         FROM material m
         LEFT JOIN vehicle_template vt ON vt.template_id = m.vehicle_template_id
         <where>
+            <if test="affirm != null">
+                <choose>
+                    <when test="affirm == 1">
+                        AND generate_affirm = 1
+                        AND upload_affirm = 1
+                    </when>
+                    <when test="affirm == 0">
+                        AND (generate_affirm = 0 OR upload_affirm = 0)
+                    </when>
+                </choose>
+            </if>
             <if test="name != null and name != ''">
                 AND m.name LIKE CONCAT('%', #{name}, '%')
             </if>

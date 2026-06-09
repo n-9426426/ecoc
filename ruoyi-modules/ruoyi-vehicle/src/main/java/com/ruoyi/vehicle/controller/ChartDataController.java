@@ -53,9 +53,22 @@ public class ChartDataController extends BaseController {
     }
 
     @Operation(summary = "XML统计")
-    @PostMapping("/statistics/xml/{year}")
-    public AjaxResult statisticsXml(@PathVariable Integer year) {
-        return AjaxResult.success(chartDataService.statisticsXml(year));
+    @PostMapping({"/statistics/xml/{timestamp}", "/statistics/xml"})
+    public AjaxResult statisticsXml(@PathVariable(required = false) Long timestamp) {
+        timestamp = (timestamp != null) ? timestamp : System.currentTimeMillis();
+        return AjaxResult.success(chartDataService.statisticsXml(timestamp));
+    }
+
+    @Operation(summary = "首页-重点提醒统计-超时统计")
+    @GetMapping("/timeout")
+    public AjaxResult timeoutStatistics() {
+        return AjaxResult.success(chartDataService.timeoutStatistics());
+    }
+
+    @Operation(summary = "首页-重点提醒统计-校验统计")
+    @GetMapping("/validate")
+    public AjaxResult validateStatistics() {
+        return AjaxResult.success(chartDataService.validateStatistics());
     }
 
     @GetMapping("/vin")

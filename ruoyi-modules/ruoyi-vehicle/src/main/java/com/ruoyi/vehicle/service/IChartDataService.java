@@ -17,7 +17,7 @@ public interface IChartDataService {
 
     List<ChartDataXmlTotalVo> statisticsTrend(ChartDataStatisticsDto statisticsDto);
 
-    Map<String, Object> statisticsXml(Integer year);
+    Map<String, Object> statisticsXml(Long timestamp);
 
     List<String> selectAllVinsByDateRange(Date startTime, Date endTime);
 
@@ -26,4 +26,8 @@ public interface IChartDataService {
     List<AbnormalStatisticsVo> statisticsAbnormal(ChartDataStatisticsDto statisticsDto);
 
     CalendarDayDetailVo getCalendarOfDay(LocalDate date);
+
+    Map<String, Map<String, Object>> timeoutStatistics();
+
+    Map<String, Map<String, Object>> validateStatistics();
 }

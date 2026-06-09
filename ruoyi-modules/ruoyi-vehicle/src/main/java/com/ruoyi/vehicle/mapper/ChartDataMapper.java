@@ -37,4 +37,12 @@ public interface ChartDataMapper {
     List<AbnormalStatisticsVo> selectStatisticsAbnormal(ChartDataStatisticsDto statisticsDto);
 
     List<CalendarDayDetailVo.OperateItem> selectDistinctOperateByDateRange(@Param("startTime") LocalDateTime startTime, @Param("endTime") LocalDateTime endTime);
+
+    Integer selectStatisticsUploadNumber(@Param("startTime")LocalDateTime start, @Param("endTime") LocalDateTime end);
+
+    Integer selectStatisticsUploadWaitNumber(@Param("startTime")LocalDateTime start, @Param("endTime") LocalDateTime end);
+
+    Integer selectStatisticsExpiringTemplateNumber(@Param("startTime") LocalDateTime start, @Param("endTime") LocalDateTime end);
+
+    Integer selectStatisticsOverdateTemplateNumber(@Param("startTime") LocalDateTime start, @Param("endTime") LocalDateTime end);
 }

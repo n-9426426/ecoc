@@ -1730,7 +1730,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             // 19. 更新状态
             VehicleInfo updateObj = new VehicleInfo();
             updateObj.setVehicleId(vehicle.getVehicleId());
-            updateObj.setUploadStatus(1);
+            updateObj.setUploadStatus(2);
 
             // 20. 记录生命周期
             vehicleLifecycle.setEntryId(vehicle.getVehicleId());

@@ -111,4 +111,6 @@ public class VehicleTemplate extends BaseEntity {
     private String uploadAffirmRaw;
 
     private Map<String, Map<String, Object>> otherSystem;
+
+    private Integer affirm;
 }

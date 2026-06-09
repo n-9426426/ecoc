@@ -3,11 +3,15 @@ package com.ruoyi.vehicle.service.impl;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.domain.SysDictData;
+import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.VehicleLifecycle;
+import com.ruoyi.vehicle.domain.XmlFile;
 import com.ruoyi.vehicle.domain.dto.ChartDataStatisticsDto;
 import com.ruoyi.vehicle.domain.vo.*;
 import com.ruoyi.vehicle.mapper.ChartDataMapper;
+import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
 import com.ruoyi.vehicle.mapper.VehicleLifecycleMapper;
+import com.ruoyi.vehicle.mapper.XmlFileMapper;
 import com.ruoyi.vehicle.service.IChartDataService;
 import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +19,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -32,6 +37,12 @@ public class ChartDataServiceImpl implements IChartDataService {
 
     @Autowired
     private RemoteDictService remoteDictService;
+
+    @Autowired
+    private VehicleInfoMapper vehicleInfoMapper;
+
+    @Autowired
+    private XmlFileMapper xmlFileMapper;
 
     @Override
     public List<ChartDataXmlTotalAndValidateVo> xmlTotalAndValidate(Integer year) {
@@ -117,15 +128,21 @@ public class ChartDataServiceImpl implements IChartDataService {
     }
 
     @Override
-    public Map<String, Object> statisticsXml(Integer year) {
-        LocalDateTime start = LocalDateTime.of(year, 1, 1, 0, 0, 0);
-        LocalDateTime end   = LocalDateTime.of(year, 12, 31, 23, 59, 59, 999_999_999);
+    public Map<String, Object> statisticsXml(Long timestamp) {
+        LocalDateTime start = LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault())
+                .toLocalDate()
+                .atStartOfDay();
+        LocalDateTime end = start.toLocalDate().atTime(23, 59, 59, 999_999_999);
         ChartDataStatisticsDto chartDataStatisticsDto = new ChartDataStatisticsDto();
         chartDataStatisticsDto.setStartTime(Date.from(start.atZone(ZoneId.systemDefault()).toInstant()));
         chartDataStatisticsDto.setEndTime(Date.from(end.atZone(ZoneId.systemDefault()).toInstant()));
         Map<String, Object> result = new HashMap<>();
         result = statisticsCard(chartDataStatisticsDto);
         result.put("vehicleWaitNumber", chartDataMapper.selectStatisticsVehicleWaitNumber(start, end));
+        result.put("uploadNumber", chartDataMapper.selectStatisticsUploadNumber(start, end));
+        result.put("uploadWaitNumber", chartDataMapper.selectStatisticsUploadWaitNumber(start, end));
+        result.put("expiringTemplateNumber", chartDataMapper.selectStatisticsExpiringTemplateNumber(start, end));
+        result.put("overdateTemplateNumber", chartDataMapper.selectStatisticsOverdateTemplateNumber(start, end));
         return result;
     }
 
@@ -299,6 +316,58 @@ public class ChartDataServiceImpl implements IChartDataService {
                 .date(date.toString())
                 .operates(operates)
                 .build();
+    }
+
+    @Override
+    public Map<String, Map<String, Object>> timeoutStatistics() {
+        Integer noticeStatus = null;
+        List<VehicleInfo> vehicleInfoList = vehicleInfoMapper.checkVehicleInfoTimeoutGenerate(noticeStatus);
+        List<XmlFile> xmlFileList = xmlFileMapper.checkXmlFileTimeoutUpload(noticeStatus);
+
+        // vin -> 数据map
+        Map<String, Map<String, Object>> statusMap = new HashMap<>();
+
+        for (VehicleInfo v : vehicleInfoList) {
+            Map<String, Object> data = new HashMap<>();
+            data.put("status", "超时未生成");
+            data.put("vehicleId", v.getVehicleId());
+            data.put("createTime", v.getCreateTime());
+            statusMap.put(v.getVin(), data);
+        }
+
+        for (XmlFile x : xmlFileList) {
+            if (statusMap.containsKey(x.getVin())) {
+                Map<String, Object> data = statusMap.get(x.getVin());
+                data.put("status", "超时未生成，超时未上传");
+                data.put("xmlFileId", x.getId());
+            } else {
+                Map<String, Object> data = new HashMap<>();
+                data.put("status", "超时未上传");
+                data.put("xmlFileId", x.getId());
+                data.put("createTime", x.getCreateTime());
+                statusMap.put(x.getVin(), data);
+            }
+        }
+
+        // 按createTime排序后构建LinkedHashMap
+        Map<String, Map<String, Object>> result = statusMap.entrySet().stream()
+                .sorted(Comparator.comparing(
+                        e -> (Date) e.getValue().get("createTime"),
+                        Comparator.nullsLast(Comparator.naturalOrder())
+                ))
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (a, b) -> a,
+                        LinkedHashMap::new
+                ));
+
+        return result;
+    }
+
+    public Map<String, Map<String, Object>> validateStatistics() {
+
+        return null;
     }
 
     /**
