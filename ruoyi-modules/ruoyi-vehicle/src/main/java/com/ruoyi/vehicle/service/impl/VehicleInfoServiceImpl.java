@@ -732,6 +732,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 try {
                     // 1. 先用 dict_label 查出原始色码（如 "Z3"）
                     vehicleInfo.setColor(vehicleInfo.getColor().substring(0, 2));
+                    String color = vehicleInfo.getColor().substring(0, 2);
 
                     // 2. 查复合色字典，判断是否需要拆分主色和副色（dict_label=Z3，dict_value=UU,CP）
                     Map<String, String> compositeColorMap = remoteDictService
@@ -775,8 +776,23 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
                         vehicleInfo.setCreateBy(createBy);
                         vehicleInfo.setVehicleModel(materialList.get(0).getVehicleModel());
+
+                        // 手动写入mes中传进来的值
+                        Map<String, Object> excelMap = new LinkedHashMap<>();
+                        // VehicleIdentificationNumber
+                        excelMap.put("vin", vehicleInfo.getVin());
+                        // DateManufactureVehicle
+                        excelMap.put("manufactureDate", com.alibaba.fastjson2.util.DateUtils.format(vehicleInfo.getManufactureDate(), "dd/MM/yyyy"));
+                        // SignatureDate
+                        excelMap.put("issueDate", com.alibaba.fastjson2.util.DateUtils.format(vehicleInfo.getIssueDate(), "dd/MM/yyyy"));
+                        // CommercialName
+                        excelMap.put("customerNo", vehicleInfo.getCustomerNo());
+                        // Colour
+                        excelMap.put("color", color);
+                        String convertedMesJson = jsonConvertFromMesExcel(excelMap);
+
                         // 每行独立事务插入
-                        self.insertSingleVehicleInfoRow(vehicleInfo, template, materialList.get(0));
+                        self.insertSingleVehicleInfoRow(vehicleInfo, template, materialList.get(0), convertedMesJson);
                         importedList.add(vehicleInfo);
                         successCount++;
 
@@ -838,7 +854,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
      * 与其他并发导入事务不形成循环等待，根治死锁问题。
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
-    public void insertSingleVehicleInfoRow(VehicleInfo vehicleInfo, VehicleTemplate template, Material material) {
+    public void insertSingleVehicleInfoRow(VehicleInfo vehicleInfo, VehicleTemplate template, Material material, String convertedMesJson) {
         String vin = vehicleInfo.getVin();
 
         // 补充模板关联字段
@@ -852,6 +868,23 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             // 扁平化并替换字段值
             replaceFieldValues(rootNode, material);
             vehicleInfo.setJson(objectMapper.writeValueAsString(rootNode));
+
+            // 将 MES 转换结果覆盖合并进模板 JSON：
+            // MES 字段的 key 已为 dict_label，与模板 JSON 的 key 一致，直接覆盖对应键的值。
+            if (StringUtils.isNotBlank(convertedMesJson)) {
+                try {
+                    Map<String, Object> baseMap = objectMapper.readValue(
+                            vehicleInfo.getJson(),
+                            new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                    Map<String, Object> mesMap = objectMapper.readValue(
+                            convertedMesJson,
+                            new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                    baseMap.putAll(mesMap);
+                    vehicleInfo.setJson(objectMapper.writeValueAsString(baseMap));
+                } catch (Exception mergeEx) {
+                    log.warn("[insertSingleVehicleInfoRow] MES 字段合并失败，vin={}, 跳过合并", vin, mergeEx);
+                }
+            }
         } catch (JsonProcessingException e) {
             throw new RuntimeException("动态参数替换失败");
         }
@@ -1327,6 +1360,221 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             vehicleInfo.setUploadAffirm(affirm);
             vehicleInfo.setAffirmCause(String.join("、", causes));
         }
+    }
+
+    /**
+     * 将 MES Excel 行数据（表头 → 值 的 Map）按 vehicle_attribute 字典中 keyMap 以 "MES_" 开头的规则
+     * 做字段映射，返回映射后的 JSON 字符串。
+     * 逻辑与 VehicleTemplateServiceImpl#jsonConvertFromTemplateJson 完全一致，
+     * 区别仅在于：输入为已解析好的 Map&lt;String, Object&gt;，且只处理 keyMap 以 "MES_" 开头的字典条目。
+     *
+     * @param excelRowMap Excel 行中特定列的表头 → 值映射（由调用方按需截取后传入）
+     * @return 映射后的 JSON 字符串
+     */
+    private String jsonConvertFromMesExcel(Map<String, Object> excelRowMap) {
+        if (excelRowMap == null || excelRowMap.isEmpty()) {
+            try {
+                return objectMapper.writeValueAsString(new LinkedHashMap<>());
+            } catch (Exception e) {
+                throw new RuntimeException("MES Excel JSON 序列化失败: " + e.getMessage());
+            }
+        }
+
+        Map<String, Object> map = new LinkedHashMap<>(excelRowMap);
+        Map<String, Object> finalMap = map;
+
+        try {
+            List<SysDictData> allDictData =
+                    remoteDictService.getDictDataByType("vehicle_attribute").getData();
+
+            if (allDictData != null && !allDictData.isEmpty()) {
+
+                // ── 第一步：全量按 uuid 分组，无 uuid 的每条独立 ──────────────────
+                Map<String, List<SysDictData>> uuidGroups = new LinkedHashMap<>();
+                for (SysDictData rule : allDictData) {
+                    String groupKey = com.ruoyi.common.core.utils.StringUtils.isNotBlank(rule.getUuid())
+                            ? rule.getUuid()
+                            : "$$solo$$" + rule.getDictCode();
+                    uuidGroups.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(rule);
+                }
+
+                // ── 第二步：识别单 key_map 链 vs 多 key_map 链 ────────────────
+                // keyMap 索引只取 originalSystem 以 "MES_" 开头的那条记录，
+                // chain 保持完整（包含所有 originalSystem 的记录），保证链式转换不断裂。
+                Map<String, List<List<SysDictData>>> keyToChains = new LinkedHashMap<>();
+                Map<String, List<SysDictData>> multiKeyChainMap = new LinkedHashMap<>();
+
+                for (Map.Entry<String, List<SysDictData>> groupEntry : uuidGroups.entrySet()) {
+                    List<SysDictData> chain = groupEntry.getValue();
+                    chain.sort(Comparator.comparingLong(SysDictData::getDictCode));
+
+                    // 在 chain 中找出 originalSystem 以 "MES_" 开头的记录，取其 keyMap 作为索引
+                    long distinctKeyMapCount = chain.stream()
+                            .filter(d -> com.ruoyi.common.core.utils.StringUtils.isNotBlank(d.getOriginalSystem())
+                                    && d.getOriginalSystem().startsWith("MES_"))
+                            .map(SysDictData::getKeyMap)
+                            .filter(com.ruoyi.common.core.utils.StringUtils::isNotBlank)
+                            .distinct()
+                            .count();
+
+                    if (distinctKeyMapCount > 1) {
+                        multiKeyChainMap.put(groupEntry.getKey(), chain);
+                    } else {
+                        String keyMap = chain.stream()
+                                .filter(d -> com.ruoyi.common.core.utils.StringUtils.isNotBlank(d.getOriginalSystem())
+                                        && d.getOriginalSystem().startsWith("MES_"))
+                                .map(SysDictData::getKeyMap)
+                                .filter(com.ruoyi.common.core.utils.StringUtils::isNotBlank)
+                                .findFirst()
+                                .orElse(null);
+                        if (keyMap == null) continue;
+                        keyToChains.computeIfAbsent(keyMap, k -> new ArrayList<>()).add(chain);
+                    }
+                }
+
+                Map<String, Object> result = new LinkedHashMap<>();
+
+                // ── 第三步：执行单 key_map 链式规则 ──────────────────────────
+                for (Map.Entry<String, Object> entry : map.entrySet()) {
+                    String fieldName = entry.getKey();
+                    List<List<SysDictData>> chains = keyToChains.get(fieldName);
+
+                    // 无规则：跳过（传入的 key 是 MES 列头，无映射规则则不写入 result）
+                    if (chains == null || chains.isEmpty()) {
+                        continue;
+                    }
+
+                    String rawValue = entry.getValue() == null
+                            ? null : String.valueOf(entry.getValue());
+
+                    boolean isMultiLine = rawValue != null && rawValue.contains("\n");
+
+                    if (isMultiLine && chains.size() > 1) {
+                        String[] lines = rawValue.split("\n", -1);
+                        for (int lineIdx = 0; lineIdx < chains.size(); lineIdx++) {
+                            List<SysDictData> singleChain = chains.get(lineIdx);
+                            String lineValue = lineIdx < lines.length ? lines[lineIdx].trim() : "";
+                            String converted = applyMesChain(lineValue, singleChain, fieldName);
+                            String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
+                            if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
+                                result.put(targetLabel, null);
+                            } else if (com.ruoyi.common.core.utils.StringUtils.isNotBlank(converted)) {
+                                result.put(targetLabel, converted);
+                            }
+                        }
+                    } else if (isMultiLine && chains.size() == 1) {
+                        List<SysDictData> singleChain = chains.get(0);
+                        String converted = applyMesChain(rawValue, singleChain, fieldName);
+                        String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
+                        if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
+                            result.put(targetLabel, null);
+                        } else if (com.ruoyi.common.core.utils.StringUtils.isNotBlank(converted)) {
+                            result.put(targetLabel, converted);
+                        }
+                    } else {
+                        for (List<SysDictData> singleChain : chains) {
+                            String converted = applyMesChain(rawValue, singleChain, fieldName);
+                            String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
+                            if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
+                                result.put(targetLabel, null);
+                            } else if (com.ruoyi.common.core.utils.StringUtils.isNotBlank(converted)) {
+                                result.put(targetLabel, converted);
+                            }
+                        }
+                    }
+                }
+
+                // ── 第四步：执行多 key_map 链 ────────────────────────────────
+                for (List<SysDictData> multiChain : multiKeyChainMap.values()) {
+                    multiChain.sort(Comparator.comparingLong(SysDictData::getDictCode));
+
+                    String[] groupSeps = multiChain.stream()
+                            .map(SysDictData::getValueMap)
+                            .map(com.ruoyi.common.core.parser.ValueMappingParser::extractGroupJoinSep)
+                            .filter(Objects::nonNull)
+                            .findFirst()
+                            .orElse(null);
+
+                    String outSep = (groupSeps != null) ? groupSeps[1] : ",";
+
+                    for (SysDictData rule : multiChain) {
+                        if (com.ruoyi.common.core.utils.StringUtils.isBlank(rule.getDictLabel())) continue;
+                        if (com.ruoyi.common.core.utils.StringUtils.isNotBlank(rule.getValueMap())
+                                && rule.getValueMap().trim().toUpperCase().startsWith("GROUP_JOIN_SEP")) {
+                            continue;
+                        }
+
+                        Object rawObj = com.ruoyi.common.core.utils.StringUtils.isNotBlank(rule.getKeyMap())
+                                ? map.get(rule.getKeyMap()) : null;
+                        String rawValue = rawObj == null ? null : String.valueOf(rawObj);
+                        String converted = rawValue;
+
+                        if (com.ruoyi.common.core.utils.StringUtils.isNotBlank(rule.getValueMap())) {
+                            Map<String, String> mergedMap =
+                                    com.ruoyi.common.core.parser.ValueMappingParser.mergeValueConnection(rule.getValueConnection());
+                            String stepped =
+                                    com.ruoyi.common.core.parser.ValueMappingParser.convertWithDictMap(rawValue, rule.getValueMap(), mergedMap);
+
+                            if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
+                                if (!result.containsKey(rule.getDictLabel())) {
+                                    result.put(rule.getDictLabel(), null);
+                                }
+                                continue;
+                            }
+                            if (stepped != null) {
+                                converted = stepped;
+                            } else {
+                                log.warn("[jsonConvertFromMesExcel] 多key_map链转换返回 null，dict_code={}, keyMap={}",
+                                        rule.getDictCode(), rule.getKeyMap());
+                            }
+                        }
+
+                        converted = com.ruoyi.common.core.utils.StringUtils.isNotBlank(converted) ? converted : rawValue;
+                        converted = "N/A".equals(converted) ? "" : converted;
+
+                        if (com.ruoyi.common.core.utils.StringUtils.isNotBlank(converted)) {
+                            String label = rule.getDictLabel();
+                            Object existing = result.get(label);
+                            if (existing != null && com.ruoyi.common.core.utils.StringUtils.isNotBlank(String.valueOf(existing))) {
+                                result.put(label, existing + outSep + converted);
+                            } else {
+                                result.put(label, converted);
+                            }
+                        }
+                    }
+                }
+
+                finalMap = result;
+            }
+        } catch (Exception e) {
+            log.error("[jsonConvertFromMesExcel] 字段映射异常，返回原始 map", e);
+        }
+
+        try {
+            return objectMapper.writeValueAsString(finalMap);
+        } catch (Exception e) {
+            throw new RuntimeException("MES Excel JSON 映射后序列化失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 链式规则执行（供 jsonConvertFromMesExcel 使用，与 VehicleTemplateServiceImpl#applyChain 逻辑一致）
+     */
+    private String applyMesChain(String rawValue, List<SysDictData> chain, String fieldName) {
+        String current = rawValue;
+        for (SysDictData rule : chain) {
+            Map<String, String> mergedMap = com.ruoyi.common.core.parser.ValueMappingParser.mergeValueConnection(rule.getValueConnection());
+            current = com.ruoyi.common.core.parser.ValueMappingParser.convertWithDictMap(current, rule.getValueMap(), mergedMap);
+            if (current == null) {
+                log.warn("[applyMesChain] 转换返回 null, fieldName={}, dictCode={}, valueMap={}",
+                        fieldName, rule.getDictCode(), rule.getValueMap());
+                return null;
+            }
+            if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(current)) {
+                return com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL;
+            }
+        }
+        return current;
     }
 
     /**

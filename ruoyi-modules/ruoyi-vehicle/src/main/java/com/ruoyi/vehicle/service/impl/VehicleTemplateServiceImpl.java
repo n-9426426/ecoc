@@ -899,6 +899,18 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
             if (dictDataList != null && !dictDataList.isEmpty()) {
 
+                // DEBUG: print a sample of records to see actual originalSystem values
+                log.info("[jsonConvert DEBUG] dictDataList size={}", dictDataList.size());
+                dictDataList.stream()
+                        .filter(d -> d.getKeyMap() != null && (
+                                d.getKeyMap().contains("0.2.a") ||
+                                        d.getKeyMap().contains("Type") ||
+                                        d.getKeyMap().contains("Commercial") ||
+                                        d.getKeyMap().contains("customerNo")))
+                        .forEach(d -> log.info("[jsonConvert DEBUG] record: dictCode={}, label={}, keyMap={}, originalSystem=[{}], uuid={}",
+                                d.getDictCode(), d.getDictLabel(), d.getKeyMap(),
+                                d.getOriginalSystem(), d.getUuid()));
+
                 // ── 第一步：按 uuid 分组，无 uuid 的每条独立 ──────────────────
                 Map<String, List<SysDictData>> uuidGroups = new LinkedHashMap<>();
                 for (SysDictData rule : dictDataList) {
@@ -909,6 +921,8 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 }
 
                 // ── 第二步：识别单 key_map 链 vs 多 key_map 链 ────────────────
+                // 对于 COC 模版导入，keyMap 索引只取 originalSystem 以 "COC模版_" 开头的那条记录，
+                // 以确保用 COC Excel 的列头去匹配，而不是 MES 或其他系统的列头。
                 Map<String, List<List<SysDictData>>> keyToChains = new LinkedHashMap<>();
                 Map<String, List<SysDictData>> multiKeyChainMap = new LinkedHashMap<>();
 
@@ -916,7 +930,10 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                     List<SysDictData> chain = groupEntry.getValue();
                     chain.sort(Comparator.comparingLong(SysDictData::getDictCode));
 
+                    // 在 chain 中找出 originalSystem 以 "COC模版_" 开头的记录，取其 keyMap 作为索引
                     long distinctKeyMapCount = chain.stream()
+                            .filter(d -> StringUtils.isNotBlank(d.getOriginalSystem())
+                                    && d.getOriginalSystem().startsWith("COC模版_"))
                             .map(SysDictData::getKeyMap)
                             .filter(StringUtils::isNotBlank)
                             .distinct()
@@ -926,6 +943,8 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                         multiKeyChainMap.put(groupEntry.getKey(), chain);
                     } else {
                         String keyMap = chain.stream()
+                                .filter(d -> StringUtils.isNotBlank(d.getOriginalSystem())
+                                        && d.getOriginalSystem().startsWith("COC模版_"))
                                 .map(SysDictData::getKeyMap)
                                 .filter(StringUtils::isNotBlank)
                                 .findFirst()

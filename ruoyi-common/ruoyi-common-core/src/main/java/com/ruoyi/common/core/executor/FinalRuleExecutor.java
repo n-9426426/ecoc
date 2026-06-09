@@ -1078,7 +1078,10 @@ public class FinalRuleExecutor {
 
     public static boolean isAbsent(Object value) {
         if (value == null) return true;
-        if (value instanceof String) return ((String) value).trim().isEmpty();
+        if (value instanceof String) {
+            String s = ((String) value).trim();
+            return s.isEmpty() || "null".equalsIgnoreCase(s);
+        }
         if (value instanceof Collection) return ((Collection<?>) value).isEmpty();
         if (value instanceof Map) return ((Map<?, ?>) value).isEmpty();
         return false;
