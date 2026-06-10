@@ -53,6 +53,8 @@ import java.util.regex.Pattern;
  *  RIM_SPEC:BOTH                     提取轮毂规格235/50R19 103V 19x7J ET47 6.28N/kN C1
  *                                              215/55R18 99H 18x7 1/2J ET33 5.96N/kN C1
  *                                    输出示例：19,7  /  18,7.5
+ *  AXIS_DRIVE                        格式：AXIS_DRIVE:{sep}:{trueVal}:{falseVal}:{keyword1}:{keyword2}
+ *                                    默认：sep=; trueVal=Y falseVal=N keyword1=front keyword2=rear
  *  管道链式执行：PIPE:{rule1}|{rule2}|  将多个 value_map 规则串联，前一步输出作为下一步输入
  * </pre>
  *
@@ -415,6 +417,18 @@ public class ValueMappingParser {
                         if (EMPTY_SENTINEL.equals(current)) return EMPTY_SENTINEL;
                     }
                     return current;
+                }
+
+                case "AXIS_DRIVE": {
+                    String sep      = (parts.length >= 2) ? unescapeSep(parts[1]) : ";";
+                    String trueVal  = (parts.length >= 3) ? parts[2] : "Y";
+                    String falseVal = (parts.length >= 4) ? parts[3] : "N";
+                    String keyword1 = (parts.length >= 5) ? parts[4] : "front";
+                    String keyword2 = (parts.length >= 6) ? parts[5] : "rear";
+                    String rawLower = raw.toLowerCase();
+                    String val1 = rawLower.contains(keyword1.toLowerCase()) ? trueVal : falseVal;
+                    String val2 = rawLower.contains(keyword2.toLowerCase()) ? trueVal : falseVal;
+                    return val1 + sep + val2;
                 }
 
                 default:
