@@ -365,9 +365,75 @@ public class ChartDataServiceImpl implements IChartDataService {
         return result;
     }
 
+    @Override
     public Map<String, Map<String, Object>> validateStatistics() {
+        VehicleInfo vehicleInfoQuery = new VehicleInfo();
+        vehicleInfoQuery.setValidationResult(2);
+        vehicleInfoQuery.setStatus(0);
+        vehicleInfoQuery.setReclaim(false);
+        List<VehicleInfo> vehicleInfoList = vehicleInfoMapper.selectVehicleInfoList(vehicleInfoQuery);
 
-        return null;
+        XmlFile xmlFileValidateQuery = new XmlFile();
+        xmlFileValidateQuery.setValidateResult(2);
+        xmlFileValidateQuery.setStatus("0");
+        xmlFileValidateQuery.setReclaim(false);
+        List<XmlFile> xmlFileValidateList = xmlFileMapper.selectXmlFileList(xmlFileValidateQuery);
+
+        XmlFile xmlFileUploadQuery = new XmlFile();
+        xmlFileUploadQuery.setUploadResult("5");
+        xmlFileUploadQuery.setStatus("0");
+        xmlFileUploadQuery.setReclaim(false);
+        List<XmlFile> xmlFileUploadList = xmlFileMapper.selectXmlFileList(xmlFileUploadQuery);
+
+        Map<String, Map<String, Object>> statusMap = new HashMap<>();
+
+        for (VehicleInfo v : vehicleInfoList) {
+            Map<String, Object> data = new HashMap<>();
+            data.put("status", "校验失败");
+            data.put("vehicleId", v.getVehicleId());
+            data.put("createTime", v.getCreateTime());
+            statusMap.put(v.getVin(), data);
+        }
+
+        for (XmlFile x : xmlFileValidateList) {
+            if (statusMap.containsKey(x.getVin())) {
+                Map<String, Object> data = statusMap.get(x.getVin());
+                data.put("status", data.get("status") + "，XML校验失败");
+                data.put("xmlFileId", x.getId());
+            } else {
+                Map<String, Object> data = new HashMap<>();
+                data.put("status", "XML校验失败");
+                data.put("xmlFileId", x.getId());
+                data.put("createTime", x.getCreateTime());
+                statusMap.put(x.getVin(), data);
+            }
+        }
+
+        for (XmlFile x : xmlFileUploadList) {
+            if (statusMap.containsKey(x.getVin())) {
+                Map<String, Object> data = statusMap.get(x.getVin());
+                data.put("status", data.get("status") + "，上传失败");
+                data.put("xmlFileId", x.getId());
+            } else {
+                Map<String, Object> data = new HashMap<>();
+                data.put("status", "上传失败");
+                data.put("xmlFileId", x.getId());
+                data.put("createTime", x.getCreateTime());
+                statusMap.put(x.getVin(), data);
+            }
+        }
+
+        return statusMap.entrySet().stream()
+                .sorted(Comparator.comparing(
+                        e -> (Date) e.getValue().get("createTime"),
+                        Comparator.nullsLast(Comparator.naturalOrder())
+                ))
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (a, b) -> a,
+                        LinkedHashMap::new
+                ));
     }
 
     /**

@@ -235,7 +235,9 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
         params.put("vehicleModel", vehicleInfo.getVehicleModel());
         params.put("factoryCode", vehicleInfo.getFactoryCode());
         params.put("country", vehicleInfo.getCountry());
-        params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+        if (vehicleInfo.getIssueDate() != null) {
+            params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+        }
         params.put("materialNo", vehicleInfo.getMaterialNo());
         params.put("wvtaNo", vehicleInfo.getWvtaNo());
         params.put("cocTemplateNo", vehicleInfo.getCocTemplateNo());
@@ -281,7 +283,9 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
         params.put("vehicleModel", vehicleInfo.getVehicleModel());
         params.put("factoryCode", vehicleInfo.getFactoryCode());
         params.put("country", vehicleInfo.getCountry());
-        params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+        if (vehicleInfo.getIssueDate() != null) {
+            params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+        }
         params.put("materialNo", vehicleInfo.getMaterialNo());
         params.put("wvtaNo", vehicleInfo.getWvtaNo());
         params.put("cocTemplateNo", vehicleInfo.getCocTemplateNo());

@@ -777,7 +777,7 @@
 		LEFT JOIN vehicle_template vt1 ON vt1.template_id = vi.vehicle_template_id
 		LEFT JOIN material m ON m.material_no = vi.material_no
 		LEFT JOIN vehicle_template vt2 ON vt2.template_id = m.vehicle_template_id
-		WHERE vi.material_no IN
+		WHERE vi.deleted = 0 and vi.material_no IN
 		<foreach collection="list" item="materialNo" open="(" separator="," close=")">
 			#{materialNo}
 		</foreach>

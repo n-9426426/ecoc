@@ -80,8 +80,8 @@
             <if test="country != null and country != ''">
                 AND m.country = #{country}
             </if>
-            <if test="vehicleType != null and vehicleType != ''">
-                AND m.vehicle_model = #{vehicleType}
+            <if test="vehicleModel != null and vehicleModel != ''">
+                AND m.vehicle_model = #{vehicleModel}
             </if>
             <if test="factoryCode != null and factoryCode != ''">
                 and m.factory_code = #{factoryCode}

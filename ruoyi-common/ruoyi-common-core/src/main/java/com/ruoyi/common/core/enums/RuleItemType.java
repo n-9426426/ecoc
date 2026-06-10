@@ -43,6 +43,8 @@ public enum RuleItemType {
     CONDITIONAL_FIELD_COMPARE,
 
     // ===== 聚合函数 =====
+    VALUE_COUNT_SIMPLE,
+    VALUE_COUNT_WITHIN,
     COUNT_AGGREGATE_FIELD,
     COUNT_AGGREGATE,
     SUM_AGGREGATE,
@@ -98,7 +100,8 @@ public enum RuleItemType {
     // ===== 结构校验 =====
     STRUCTURE,
     // ===== 解析错误占位 =====
-    PARSE_ERROR;
+    PARSE_ERROR,
+    ;
 
     /**
      * 获取规则类型的中文标签（用于违规报告 ruleTypeLabel 字段）
@@ -122,6 +125,8 @@ public enum RuleItemType {
             case CONDITIONAL_REGEX:             return "条件正则";
             case CONDITIONAL_VALUE_COMPARE:     return "条件数值比较";
             case CONDITIONAL_FIELD_COMPARE:     return "条件跨字段比较";
+            case VALUE_COUNT_SIMPLE:            return "标签个数比较";
+            case VALUE_COUNT_WITHIN:            return "标签个数比较（带条件）";
             case COUNT_AGGREGATE_FIELD:         return "动态阈值比较";
             case COUNT_AGGREGATE:               return "COUNT聚合校验";
             case SUM_AGGREGATE:                 return "SUM聚合校验";

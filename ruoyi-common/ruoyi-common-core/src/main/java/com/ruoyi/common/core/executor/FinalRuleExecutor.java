@@ -247,6 +247,14 @@ public class FinalRuleExecutor {
                 case COUNT_AS_VALUE:
                     return checkCountAsValue(fieldName, actualValue, rule, context);
 
+                // ★ 修复：VALUE = COUNT(@AxleGroup) → 统计 context 中列表的行数，与 actualValue 比较
+                case VALUE_COUNT_SIMPLE:
+                    return checkValueCountSimple(fieldName, actualValue, rule, context);
+
+                // ★ 修复：VALUE = COUNT(PoweredAxleIndicator IN ['Y']) → 统计满足条件的行数，与 actualValue 比较
+                case VALUE_COUNT_WITHIN:
+                    return checkValueCountWithin(fieldName, actualValue, rule, context);
+
                 case LIST_COUNT:
                     return checkListCount(fieldName, actualValue, rule, context);
 
@@ -384,25 +392,40 @@ public class FinalRuleExecutor {
         if (!(listObj instanceof List)) return null;
 
         List<?> list = (List<?>) listObj;
-        double sum = list.stream()
-                .filter(item -> item instanceof Map)
-                .mapToDouble(item -> {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> itemMap = (Map<String, Object>) item;
-                    Object val = itemMap.get(af.getField());
-                    return toDouble(val);
-                })
-                .sum();
 
         double threshold = af.getThreshold() != null
                 ? af.getThreshold()
                 : toDouble(actualValue);
 
-        if (!af.getOperator().apply(sum, threshold)) {
-            return buildViolation(rule, fieldName, actualValue,
-                    "SUM(" + af.getListField() + ", " + af.getField() + ") "
-                            + af.getOperator().getSymbol() + " " + threshold + " failed",
-                    "列表字段求和不符合要求");
+        // ★ 每行独立校验：将该行 TechnicallyPermissibleMassAxle 的所有 "/" 分隔值求和，
+        //   每行的和分别与 threshold 比较，任一行不满足即报错。
+        int rowIndex = 0;
+        for (Object item : list) {
+            rowIndex++;
+            if (!(item instanceof Map)) continue;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> itemMap = (Map<String, Object>) item;
+            Object val = itemMap.get(af.getField());
+            if (val == null) continue;
+
+            String strVal = val.toString().trim();
+            double rowSum = 0.0;
+            for (String segment : strVal.split("/")) {
+                try {
+                    rowSum += Double.parseDouble(segment.trim());
+                } catch (NumberFormatException ignored) {
+                }
+            }
+
+            if (!af.getOperator().apply(rowSum, threshold)) {
+                return buildViolation(rule, fieldName, actualValue,
+                        "SUM(" + af.getListField() + "[" + rowIndex + "], " + af.getField() + "="
+                                + strVal + ") = " + rowSum + " " + af.getOperator().getSymbol()
+                                + " " + threshold + " failed",
+                        af.getListField() + " 第" + rowIndex + "行 " + af.getField()
+                                + "（" + strVal + "）各值之和为 " + rowSum
+                                + "，不满足要求 " + af.getOperator().getSymbol() + " " + threshold);
+            }
         }
         return null;
     }
@@ -735,6 +758,86 @@ public class FinalRuleExecutor {
     // COUNT_AS_VALUE / LIST_COUNT 聚合校验
     // ==========================================
 
+    /**
+     * VALUE = COUNT(@AxleGroup)
+     * 统计 context 中 listField 列表的总行数，与当前字段值比较（必须相等）。
+     * 对应规则：R3: VALUE = COUNT(@AxleGroup)
+     */
+    private static RuleViolation checkValueCountSimple(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        String listField = rule.getRefFieldName();   // 解析器把 AxleGroup 存入 refFieldName
+        if (listField == null || listField.isEmpty()) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "VALUE_COUNT_SIMPLE: listField is null",
+                    "VALUE_COUNT_SIMPLE 规则缺少列表字段名");
+        }
+
+        Object listObj = context.get(listField);
+        long count = (listObj instanceof List) ? ((List<?>) listObj).size() : 0L;
+
+        double actualDouble = toDouble(actualValue);
+        if ((double) count != actualDouble) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "VALUE = COUNT(" + listField + ") failed: expected " + count
+                            + " but field value is " + actualValue,
+                    "COUNT(" + listField + ") = " + count + "，与字段值 " + actualValue + " 不符");
+        }
+        return null;
+    }
+
+    /**
+     * VALUE = COUNT(@AxleGroup, @PoweredAxleIndicator IN [Y])
+     * 统计列表中满足条件的行数，与当前字段值比较（必须相等）。
+     * 对应规则：R2: COUNT(@AxleGroup, @PoweredAxleIndicator IN [Y]) = VALUE
+     * 注意：该规则语法与 COUNT_AS_VALUE 相同，VALUE_COUNT_WITHIN 对应 VALUE = COUNT(field IN [vals])（无列表参数的简化写法）。
+     */
+    private static RuleViolation checkValueCountWithin(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        AggregateFunction af = rule.getAggregateFunction();
+        if (af == null) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "VALUE_COUNT_WITHIN: aggregateFunction is null",
+                    "VALUE_COUNT_WITHIN 规则缺少聚合函数描述");
+        }
+
+        String listField = af.getListField();
+        String condField = af.getField();
+        List<String> allowed = af.getEnumValues();
+
+        Object listObj = context.get(listField);
+        long count;
+        if (listObj instanceof List) {
+            List<?> list = (List<?>) listObj;
+            count = list.stream()
+                    .filter(item -> item instanceof Map)
+                    .filter(item -> {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> row = (Map<String, Object>) item;
+                        Object val = row.get(condField);
+                        if (val == null) return false;
+                        String strVal = val.toString().trim();
+                        return allowed == null || allowed.contains(strVal);
+                    })
+                    .count();
+        } else {
+            count = 0L;
+        }
+
+        double actualDouble = toDouble(actualValue);
+        if ((double) count != actualDouble) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "VALUE = COUNT(" + listField + ", " + condField + " IN " + allowed + ") failed: expected "
+                            + count + " but field value is " + actualValue,
+                    "COUNT(" + listField + ", " + condField + " IN " + allowed + ") = " + count
+                            + "，与字段值 " + actualValue + " 不符");
+        }
+        return null;
+    }
+
+
+
     private static RuleViolation checkCountAsValue(
             String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
 
@@ -752,23 +855,32 @@ public class FinalRuleExecutor {
         String condField = af.getField();
         List<String> allowed = af.getEnumValues();
 
-        long count = list.stream()
-                .filter(item -> item instanceof Map)
-                .filter(item -> {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> row = (Map<String, Object>) item;
-                    Object val = row.get(condField);
-                    if (val == null) return false;
-                    String strVal = val.toString();
-                    return allowed == null || allowed.contains(strVal);
-                })
-                .count();
+        long count;
+        if (condField == null || condField.isEmpty()) {
+            // ★ 修复：VALUE = COUNT(@AxleGroup) 无条件字段时，直接统计列表总行数
+            count = list.stream().filter(item -> item instanceof Map).count();
+        } else {
+            // 有条件字段时，统计满足条件的行数
+            count = list.stream()
+                    .filter(item -> item instanceof Map)
+                    .filter(item -> {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> row = (Map<String, Object>) item;
+                        Object val = row.get(condField);
+                        if (val == null) return false;
+                        String strVal = val.toString();
+                        return allowed == null || allowed.contains(strVal);
+                    })
+                    .count();
+        }
 
         double actualDouble = toDouble(actualValue);
         if ((double) count != actualDouble) {
+            String desc = (condField == null || condField.isEmpty())
+                    ? "COUNT(" + af.getListField() + ")"
+                    : "COUNT(" + af.getListField() + ", " + condField + " IN " + allowed + ")";
             return buildViolation(rule, fieldName, actualValue,
-                    "COUNT(" + af.getListField() + ", " + condField + " IN " + allowed + ") = " + count
-                            + " but field value is " + actualValue,
+                    desc + " = " + count + " but field value is " + actualValue,
                     "列表中满足条件的行数为 " + count + "，与字段值 " + actualValue + " 不符");
         }
         return null;

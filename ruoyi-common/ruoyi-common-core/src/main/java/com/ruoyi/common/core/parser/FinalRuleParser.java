@@ -140,21 +140,21 @@ public class FinalRuleParser {
                     Pattern.CASE_INSENSITIVE);
 
     // ===== VALUE = COUNT(field IN [vals])（带条件的列表计数赋值）=====
-    // 格式: VALUE = COUNT(FieldName IN ['val1', 'val2'])
-    // 用途: NumberOfPoweredAxles → VALUE = COUNT(PoweredAxleIndicator IN ['Y'])
+    // 格式: VALUE = COUNT(FieldName IN ['val1', 'val2'])  或  VALUE = COUNT(@FieldName IN ['val1', 'val2'])
+    // 用途: NumberOfPoweredAxles → VALUE = COUNT(@PoweredAxleIndicator IN ['Y'])
     // 注意: 必须在 VALUE_COUNT_SIMPLE 和 VALUE_COMPARE 之前匹配
     private static final Pattern VALUE_COUNT_WITHIN_PATTERN =
             Pattern.compile(
-                    "VALUE\\s*=\\s*COUNT\\s*\\(\\s*(\\w+)\\s+IN\\s+\\[([^\\]]+)\\]\\s*\\)",
+                    "VALUE\\s*=\\s*COUNT\\s*\\(\\s*@?(\\w+)\\s+IN\\s+\\[([^\\]]+)\\]\\s*\\)",
                     Pattern.CASE_INSENSITIVE);
 
     // ===== VALUE = COUNT(field)（简单列表计数赋值）=====
-    // 格式: VALUE = COUNT(FieldName)
-    // 用途: NumberOfAxles → VALUE = COUNT(AxleGroup)
+    // 格式: VALUE = COUNT(FieldName)  或  VALUE = COUNT(@FieldName)
+    // 用途: NumberOfAxles → VALUE = COUNT(@AxleGroup)
     // 注意: 必须在 VALUE_COMPARE 之前匹配
     private static final Pattern VALUE_COUNT_SIMPLE_PATTERN =
             Pattern.compile(
-                    "VALUE\\s*=\\s*COUNT\\s*\\(\\s*(\\w+)\\s*\\)",
+                    "VALUE\\s*=\\s*COUNT\\s*\\(\\s*@?(\\w+)\\s*\\)",
                     Pattern.CASE_INSENSITIVE);
 
     // ===== COUNT = VALUE（列表字段计数赋值给当前字段）=====

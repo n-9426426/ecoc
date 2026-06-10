@@ -111,6 +111,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
     @Override
     public List<VehicleTemplate> selectVehicleTemplateList(VehicleTemplate template) {
+        template.setIsLast(1);
         return templateMapper.selectVehicleTemplateList(template);
     }
 
@@ -266,6 +267,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         Map<String, String> jsonMap = JSONObject.parseObject(
                 mappedJson, new TypeReference<Map<String, String>>() {});
         template.setTvv(jsonMap.get("Type") + "," + jsonMap.get("Variant") + "," + jsonMap.get("Version"));
+        template.setIsLast(1);
         templateMapper.updateAllTemplateNotIsLast(template.getUuid());
         int rows = templateMapper.insertVehicleTemplate(template);
         if (rows > 0) {

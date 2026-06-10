@@ -94,12 +94,9 @@ public interface IVehicleInfoService {
 
     /**
      * 批量修改关联模版（只允许同一整车物料号下的车辆）
-     *
-     * @param vehicleIds 车辆ID列表
-     * @param templateId 目标模版ID
      * @return 成功更新行数
      */
-    int batchUpdateVehicleTemplate(List<Long> vehicleIds);
+    int batchUpdateVehicleTemplate(Map<Long, Long> vehicleUpdateTemplateIds);
 
     /**
      * 根据 vehicleIds 汇总所有车辆 JSON 键的并集，并关联字典 label 信息
@@ -118,7 +115,7 @@ public interface IVehicleInfoService {
      */
     int batchUpdateVehicleJsonFields(List<Long> vehicleIds, Map<String, String> fieldValues);
 
-    Map<String, List<Map<String, String>>> getTemplateVersion(List<Long> vehicleIds);
+    Map<String, List<Map<String, Object>>> getTemplateVersion(List<Long> vehicleIds);
 
     List<VehicleInfo> listFirstVehicleUnconfirmed(VehicleInfo vehicleInfo, String dimension);
 

@@ -124,4 +124,7 @@ public class XmlFile extends BaseEntity {
     private String statusLabel;
 
     private Long vehicleInfoId;
+
+    /** 生成次数 */
+    private Integer generateCount;
 }

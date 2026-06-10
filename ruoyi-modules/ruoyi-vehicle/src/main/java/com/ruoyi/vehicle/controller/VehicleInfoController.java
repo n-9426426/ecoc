@@ -129,6 +129,7 @@ public class VehicleInfoController extends BaseController {
                 result.add(resultItem);
             }
         }
+        log.info("MES数据推送至本系统:{}", result.toString());
 //        return AjaxResult.success(result);
         return AjaxResult.success();
     }
@@ -309,7 +310,7 @@ public class VehicleInfoController extends BaseController {
     @PostMapping("/getTemplateVersion")
     public AjaxResult getTemplateVersion(@RequestBody BatchUpdateTemplateDto dto) {
         try {
-            Map<String, List<Map<String, String>>> map = vehicleInfoService.getTemplateVersion(dto.getVehicleIds());
+            Map<String, List<Map<String, Object>>> map = vehicleInfoService.getTemplateVersion(dto.getVehicleIds());
             return AjaxResult.success(map);
         } catch (ServiceException e) {
             return AjaxResult.error(e.getMessage());
@@ -323,7 +324,7 @@ public class VehicleInfoController extends BaseController {
     @PostMapping("/batchUpdateTemplate")
     public AjaxResult batchUpdateTemplate(@RequestBody BatchUpdateTemplateDto dto) {
         try {
-            int count = vehicleInfoService.batchUpdateVehicleTemplate(dto.getVehicleIds());
+            int count = vehicleInfoService.batchUpdateVehicleTemplate(dto.getVehicleUpdateTemplateIds());
             return AjaxResult.success("成功更新 " + count + " 辆车辆的关联模版");
         } catch (ServiceException e) {
             return AjaxResult.error(e.getMessage());

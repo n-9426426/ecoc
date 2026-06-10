@@ -281,7 +281,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             params.put("vehicleModel", vehicleInfo.getVehicleModel());
             params.put("factoryCode", vehicleInfo.getFactoryCode());
             params.put("country", vehicleInfo.getCountry());
-            params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            if (vehicleInfo.getIssueDate() != null) {
+                params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            }
             params.put("materialNo", vehicleInfo.getMaterialNo());
             SysNotice sysNotice = new SysNotice();
             sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
@@ -309,7 +311,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             params.put("vehicleModel", vehicleInfo.getVehicleModel());
             params.put("factoryCode", vehicleInfo.getFactoryCode());
             params.put("country", vehicleInfo.getCountry());
-            params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            if (vehicleInfo.getIssueDate() != null) {
+                params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            }
             params.put("materialNo", vehicleInfo.getMaterialNo());
             SysNotice sysNotice = new SysNotice();
             sysNotice.setModel(SysNoticeModel.FIRST_VEHICLE_GENERATE_AFFIRM.getModel());
@@ -337,7 +341,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             params.put("vehicleModel", vehicleInfo.getVehicleModel());
             params.put("factoryCode", vehicleInfo.getFactoryCode());
             params.put("country", vehicleInfo.getCountry());
-            params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            if (vehicleInfo.getIssueDate() != null) {
+                params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            }
             params.put("materialNo", vehicleInfo.getMaterialNo());
             SysNotice sysNotice = new SysNotice();
             sysNotice.setModel(SysNoticeModel.FIRST_VEHICLE_UPLOAD_AFFIRM.getModel());
@@ -540,7 +546,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             params.put("vehicleModel", vehicleInfo.getVehicleModel());
             params.put("factoryCode", vehicleInfo.getFactoryCode());
             params.put("country", vehicleInfo.getCountry());
-            params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            if (vehicleInfo.getIssueDate() != null) {
+                params.put("issueDate", DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", vehicleInfo.getIssueDate()));
+            }
             params.put("materialNo", vehicleInfo.getMaterialNo());
             params.put("validationResult", validationReport.isAllValid() ? "1": "2");
             SysNotice sysNotice = new SysNotice();
@@ -717,7 +725,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 if (StringUtils.isBlank(vehicleInfo.getColor()))        missingFields.add("Color");
                 if (StringUtils.isBlank(vehicleInfo.getCountry()))      missingFields.add("Country");
                 if (vehicleInfo.getManufactureDate() == null)           missingFields.add("Manufacture Date");
-                if (vehicleInfo.getIssueDate() == null)                 missingFields.add("Issue Date");
 
                 if (!missingFields.isEmpty()) {
                     failCount++;
@@ -784,7 +791,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                         // DateManufactureVehicle
                         excelMap.put("manufactureDate", com.alibaba.fastjson2.util.DateUtils.format(vehicleInfo.getManufactureDate(), "dd/MM/yyyy"));
                         // SignatureDate
-                        excelMap.put("issueDate", com.alibaba.fastjson2.util.DateUtils.format(vehicleInfo.getIssueDate(), "dd/MM/yyyy"));
+                        if (vehicleInfo.getIssueDate() != null) {
+                            excelMap.put("issueDate", com.alibaba.fastjson2.util.DateUtils.format(vehicleInfo.getIssueDate(), "dd/MM/yyyy"));
+                        }
                         // CommercialName
                         excelMap.put("customerNo", vehicleInfo.getCustomerNo());
                         // Colour
@@ -927,13 +936,12 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public int batchUpdateVehicleTemplate(List<Long> vehicleIds) {
-        if (vehicleIds == null || vehicleIds.isEmpty()) {
+    public int batchUpdateVehicleTemplate(Map<Long, Long> vehicleUpdateTemplateIds) {
+        if (vehicleUpdateTemplateIds == null || vehicleUpdateTemplateIds.isEmpty()) {
             throw new ServiceException("请选择需要修改的车辆");
         }
 
-        // 1. 批量查出车辆信息
-        Long[] idArray = vehicleIds.toArray(new Long[0]);
+        Long[] idArray = vehicleUpdateTemplateIds.keySet().toArray(new Long[0]);
         List<VehicleInfo> vehicleList = vehicleInfoMapper.selectVehicleInfoByIds(idArray);
         if (vehicleList.isEmpty()) {
             throw new ServiceException("未找到对应的车辆信息");
@@ -943,8 +951,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         Set<String> materialNos = vehicleList.stream()
                 .map(VehicleInfo::getMaterialNo)
                 .filter(StringUtils::isNotBlank)
-                .collect(java.util.stream.Collectors.toSet());
-
+                .collect(Collectors.toSet());
         if (materialNos.size() > 1) {
             throw new ServiceException("批量修改关联模版只允许操作同一整车物料号下的车辆，"
                     + "当前选中了 " + materialNos.size() + " 种不同物料号：" + materialNos);
@@ -953,57 +960,61 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             throw new ServiceException("所选车辆物料号为空，无法执行批量修改");
         }
 
-        Material query = new Material();
-        query.setMaterialNo(materialNos.iterator().next());
-        query.setStatus(0);
-        List<Material> materialList = materialMapper.selectMaterialList(query);
-        if (materialList.isEmpty()) {
-            throw new ServiceException("物料号管理信息为空，无法切换版本");
-        }
-        Long templateId = materialList.get(0).getVehicleTemplateId();
-
-        VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(templateId);
-        if (template == null) {
-            throw new ServiceException("目标模版不存在，templateId=" + templateId);
-        }
-        // 模版需处于启用状态（status='0'）
-        if (!"0".equals(template.getStatus())) {
-            throw new ServiceException("目标模版已停用，请选择启用状态的模版");
+        // 3. 预校验所有 templateId 合法性，避免更新到一半报错
+        Map<Long, VehicleTemplate> templateCache = new HashMap<>();
+        for (Long templateId : new HashSet<>(vehicleUpdateTemplateIds.values())) {
+            VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(templateId);
+            if (template == null) {
+                throw new ServiceException("目标模版不存在，templateId=" + templateId);
+            }
+            if (!"0".equals(template.getStatus())) {
+                throw new ServiceException("目标模版已停用，请选择启用状态的模版，templateId=" + templateId);
+            }
+            templateCache.put(templateId, template);
         }
 
+        // 4. 按vehicleId找到对应车辆和模版逐条更新
+        Map<Long, VehicleInfo> vehicleMap = vehicleList.stream()
+                .collect(Collectors.toMap(VehicleInfo::getVehicleId, v -> v));
 
-        // 4. 逐条更新（保留触发校验、生命周期记录的完整链路）
         String operator = SecurityUtils.getUsername();
-        int successCount = 0;
         List<String> failVins = new ArrayList<>();
+        int successCount = 0;
 
-        for (VehicleInfo vehicle : vehicleList) {
+        for (Map.Entry<Long, Long> entry : vehicleUpdateTemplateIds.entrySet()) {
+            Long vehicleId = entry.getKey();
+            Long templateId = entry.getValue();
+            VehicleInfo vehicle = vehicleMap.get(vehicleId);
+            VehicleTemplate template = templateCache.get(templateId);
+
+            if (vehicle == null) {
+                failVins.add(String.valueOf(vehicleId));
+                continue;
+            }
+
             try {
                 vehicle.setVehicleTemplateId(String.valueOf(templateId));
                 vehicle.setWvtaNo(template.getWvtaCocNo());
                 vehicle.setCocTemplateNo(template.getCocTemplateNo());
                 vehicle.setJson(template.getJson());
-                vehicle.setVin(null);
                 vehicle.setUpdateBy(operator);
                 vehicle.setUpdateTime(DateUtils.getNowDate());
-                // 重置校验状态，等待重新校验
                 vehicle.setValidationResult(0);
                 vehicle.setUploadStatus(0);
 
                 vehicleInfoMapper.updateVehicleInfo(vehicle);
-
                 successCount++;
             } catch (Exception e) {
-                log.error("批量修改模版：vehicleId={} 更新失败", vehicle.getVehicleId(), e);
-                failVins.add(String.valueOf(vehicle.getVehicleId()));
+                log.error("批量修改模版：vehicleId={} 更新失败", vehicleId, e);
+                failVins.add(String.valueOf(vehicleId));
             }
         }
 
-        // 5. 批量触发校验（只校验成功更新的）
+        // 5. 批量触发校验
         List<Long> updatedIds = vehicleList.stream()
                 .map(VehicleInfo::getVehicleId)
                 .filter(id -> !failVins.contains(String.valueOf(id)))
-                .collect(java.util.stream.Collectors.toList());
+                .collect(Collectors.toList());
         if (!updatedIds.isEmpty()) {
             validateVehicleInfo(updatedIds);
         }
@@ -1028,6 +1039,18 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         // 1. 批量查出车辆，收集 JSON 键并集（保持键首次出现的顺序）
         Long[] idArray = vehicleIds.toArray(new Long[0]);
         List<VehicleInfo> vehicleList = vehicleInfoMapper.selectVehicleInfoByIds(idArray);
+
+        Set<String> materialNos = vehicleList.stream()
+                .map(VehicleInfo::getMaterialNo)
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toSet());
+        if (materialNos.size() > 1) {
+            throw new ServiceException("批量修改关联模版只允许操作同一整车物料号下的车辆，"
+                    + "当前选中了 " + materialNos.size() + " 种不同物料号：" + materialNos);
+        }
+        if (materialNos.isEmpty()) {
+            throw new ServiceException("所选车辆物料号为空，无法执行批量修改");
+        }
 
         // 使用 LinkedHashSet 保证顺序同时去重
         Set<String> keyUnion = new LinkedHashSet<>();
@@ -1173,7 +1196,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     }
 
     @Override
-    public Map<String, List<Map<String, String>>> getTemplateVersion(List<Long> vehicleIds) {
+    public Map<String, List<Map<String, Object>>> getTemplateVersion(List<Long> vehicleIds) {
         List<VehicleInfo> vehicleInfoList = vehicleInfoMapper.selectVehicleInfoByIds(vehicleIds.toArray(new Long[0]));
         if (vehicleInfoList.isEmpty()) {
             throw new ServiceException("请传入车辆ID列表");
@@ -1182,10 +1205,54 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 .map(VehicleInfo::getMaterialNo)
                 .filter(StringUtils::isNotBlank)
                 .distinct()
-                .collect(java.util.stream.Collectors.toList());
-        Map<String, List<Map<String, String>>> result = new HashMap<>();
-        List<Map<String, String>> map = vehicleInfoMapper.selectOldVersionAndNewVersion(materialNoList);
-        result.put(materialNoList.get(0), map);
+                .collect(Collectors.toList());
+
+        Map<String, VehicleInfo> vinToVehicleInfo = vehicleInfoList.stream()
+                .collect(Collectors.toMap(VehicleInfo::getVin, v -> v, (a, b) -> a));
+
+        List<Map<String, Object>> mapList = vehicleInfoMapper.selectOldVersionAndNewVersion(materialNoList)
+                .stream()
+                .map(m -> {
+                    LinkedHashMap<String, Object> newMap = new LinkedHashMap<>(m);
+                    // 假设 vehicleId 可以从某个地方获取，比如根据 vin 查询
+                    String vin = (String) m.get("vin");
+                    Long vehicleId = vinToVehicleInfo.get(vin).getVehicleId();
+                    newMap.put("vehicleId", vehicleId);
+                    return newMap;
+                })
+                .collect(Collectors.toList());
+
+        for (Map<String, Object> map : mapList) {
+            String vin = (String) map.get("vin");
+            VehicleInfo vehicleInfo = vinToVehicleInfo.get(vin);
+            if (vehicleInfo != null && vehicleInfo.getVehicleTemplateId() != null) {
+                VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(Long.valueOf(vehicleInfo.getVehicleTemplateId()));
+                if (template != null) {
+                    VehicleTemplate query = new VehicleTemplate();
+                    query.setUuid(template.getUuid());
+                    query.setIsLast(0);
+                    List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectVehicleTemplateList(query);
+                    Map<String, Object> versionMap = new LinkedHashMap<>();
+                    for (VehicleTemplate vehicleTemplate : vehicleTemplateList) {
+                        versionMap.put(vehicleTemplate.getWvtaCocNo() + "(" + vehicleTemplate.getVersion() + ")", vehicleTemplate.getTemplateId());
+                    }
+                    map.put("versions", versionMap);
+                }
+            }
+        }
+
+        Map<String, List<Map<String, Object>>> result = new LinkedHashMap<>();
+        for (String materialNo : materialNoList) {
+            Set<String> materialVins = vehicleInfoList.stream()
+                    .filter(v -> materialNo.equals(v.getMaterialNo()))
+                    .map(VehicleInfo::getVin)
+                    .collect(Collectors.toSet());
+            List<Map<String, Object>> materialMapList = mapList.stream()
+                    .filter(m -> materialVins.contains((String) m.get("vin")))
+                    .collect(Collectors.toList());
+            result.put(materialNo, materialMapList);
+        }
+
         return result;
     }
 
@@ -1662,6 +1729,61 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
                 // 根据字段名进行替换
                 switch (fieldName) {
+                    case "TyreSize":
+                        String tyreSizeRaw = fieldValue.asText();
+                        if (material.getTire() != null && tyreSizeRaw != null && tyreSizeRaw.contains(";")) {
+                            String[] tyreSizeParts = tyreSizeRaw.split(";", -1);
+
+                            // 找到 material.getTire() 匹配的是第几段（0=前半段，1=后半段，以此类推）
+                            int matchIndex = -1;
+                            for (int i = 0; i < tyreSizeParts.length; i++) {
+                                if (tyreSizeParts[i].trim().equals(material.getTire().trim())) {
+                                    matchIndex = i;
+                                    break;
+                                }
+                            }
+
+                            if (matchIndex >= 0) {
+                                // 需要同步裁剪的轮胎相关字段
+                                List<String> tyreFields = Arrays.asList(
+                                        "TyreNumber", "TyreSize", "LoadCapacityIndexSingleWheel",
+                                        "SpeedCategorySymbol", "RimSize", "RimOffSet", "RollingResistanceClass",
+                                        "TyreFittedProductionIndicator", "TyreCategory", "TyreMaximumSpeedIndicator"
+                                );
+
+                                final int finalMatchIndex = matchIndex;
+                                for (String tyreField : tyreFields) {
+                                    JsonNode tyreFieldNode = objectNode.get(tyreField);
+                                    if (tyreFieldNode == null || tyreFieldNode.isNull()) continue;
+
+                                    String rawVal = tyreFieldNode.asText();
+                                    if (rawVal == null || rawVal.isEmpty()) continue;
+
+                                    String[] parts = rawVal.split(";", -1);
+                                    if (finalMatchIndex < parts.length) {
+                                        // 保留匹配到的那一段
+                                        objectNode.put(tyreField, parts[finalMatchIndex].trim());
+                                    }
+                                    // 若该字段段数不够（如单值字段），保持原值不变
+                                }
+                            }
+                        }
+                        break;
+                    case "ActualMass":
+                        if (material.getWeight() != null) {
+                            objectNode.put(fieldName, material.getWeight());
+                        }
+                        break;
+                    case "Make":
+                        if (material.getBrand() != null) {
+                            objectNode.put(fieldName, material.getBrand());
+                        }
+                        break;
+                    case "CommercialName":
+                        if (material.getSaleName() != null) {
+                            objectNode.put(fieldName, material.getSaleName());
+                        }
+                        break;
                     case "RollingResistanceClass":
                         List<SysDictData> tireResistanceGradeData = remoteDictService.getDictDataByType("rolling_resistance_class").getData();
                         Map<String, String> tireResistanceGradeMap = tireResistanceGradeData.stream()
@@ -1671,26 +1793,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                             String rawGrade = material.getTireResistanceGrade().replaceAll("[^\\d.].*$", "").trim();
                             String tireResistanceGradeValue = tireResistanceGradeMap.get(rawGrade);
                             objectNode.put(fieldName, tireResistanceGradeValue != null ? tireResistanceGradeValue : fieldValue.asText());
-                        }
-                        break;
-                    case "CommercialName":
-                        if (material.getSaleName() != null) {
-                            objectNode.put(fieldName, material.getSaleName());
-                        }
-                        break;
-                    case "Make":
-                        if (material.getBrand() != null) {
-                            objectNode.put(fieldName, material.getBrand());
-                        }
-                        break;
-                    case "ActualMass":
-                        if (material.getWeight() != null) {
-                            objectNode.put(fieldName, material.getWeight());
-                        }
-                        break;
-                    case "TechnicallyPermissibleMaximumTowableMass":
-                        if (material.getTire() != null) {
-                            objectNode.put(fieldName, material.getTire());
                         }
                         break;
                     default:
