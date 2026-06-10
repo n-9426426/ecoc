@@ -77,14 +77,23 @@
             <if test="tvv != null and tvv != ''">
                 AND m.tvv LIKE CONCAT('%', #{tvv}, '%')
             </if>
-            <if test="country != null and country != ''">
-                AND m.country = #{country}
+            <if test="countries != null and countries.size() > 0">
+                AND m.country in
+                <foreach item="country" collection="countries" open="(" separator="," close=")">
+                    #{country}
+                </foreach>
             </if>
-            <if test="vehicleModel != null and vehicleModel != ''">
-                AND m.vehicle_model = #{vehicleModel}
+            <if test="vehicleModels != null and vehicleModels.size() > 0">
+                AND m.vehicle_model in
+                <foreach item="vehicleModel" collection="vehicleModels" open="(" separator="," close=")">
+                    #{vehicleModel}
+                </foreach>
             </if>
-            <if test="factoryCode != null and factoryCode != ''">
-                and m.factory_code = #{factoryCode}
+            <if test="factoryCodes != null and factoryCodes.size() > 0">
+                and m.factory_code in
+                <foreach item="factoryCode" collection="factoryCodes" open="(" separator="," close=")">
+                    #{factoryCode}
+                </foreach>
             </if>
             <if test="cocTemplateNo != null and cocTemplateNo != ''">
                 AND vt.coc_template_no LIKE CONCAT('%', #{cocTemplateNo}, '%')

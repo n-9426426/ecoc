@@ -34,6 +34,8 @@ public class Material extends BaseEntity {
     /** 销售区域 */
     private String country;
 
+    private List<String> countries;
+
     /** 轮胎 */
     private String tire;
 
@@ -74,6 +76,8 @@ public class Material extends BaseEntity {
 
     private String vehicleModel;
 
+    private List<String> vehicleModels;
+
     private Integer status;
 
     /** 生成确认 */
@@ -89,6 +93,8 @@ public class Material extends BaseEntity {
     private String vehicleType;
 
     private String factoryCode;
+
+    private List<String> factoryCodes;
 
     private String cocTemplateNo;
 

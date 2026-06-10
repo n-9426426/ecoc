@@ -12,6 +12,7 @@ import com.ruoyi.system.api.RemoteTranslateService;
 import com.ruoyi.system.api.enums.FileTypeEnum;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
+import com.ruoyi.vehicle.domain.vo.VehicleJsonKeyVo;
 import com.ruoyi.vehicle.service.IVehicleTemplateService;
 import com.ruoyi.vehicle.utils.ExcelUtil;
 import io.swagger.v3.oas.annotations.Operation;
@@ -178,8 +179,8 @@ public class VehicleTemplateController extends BaseController {
 
     @RequiresPermissions("vehicle:template:history")
     @PostMapping("/history")
-    public AjaxResult historyVersion(@RequestBody VehicleTemplate template) {
-        return AjaxResult.success(vehicleTemplateService.historyVersion(template));
+    public AjaxResult historyVehicleTemplate(@RequestBody VehicleTemplate template) {
+        return AjaxResult.success(vehicleTemplateService.historyVehicleTemplate(template));
     }
 
     /**
@@ -246,5 +247,12 @@ public class VehicleTemplateController extends BaseController {
     @GetMapping("/params")
     public AjaxResult getTemplateParams() {
         return AjaxResult.success(vehicleTemplateService.getTemplateParams());
+    }
+
+    @PostMapping("/jsonKeys")
+    public AjaxResult listJsonKeys(@RequestBody Map<String, List<Long>> body) {
+        List<Long> vehicleTemplateIds = body.get("vehicleTemplateIds");
+        List<VehicleJsonKeyVo> result = vehicleTemplateService.listJsonKeysByVehicleTemplateIds(vehicleTemplateIds);
+        return AjaxResult.success(result);
     }
 }

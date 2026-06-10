@@ -24,6 +24,7 @@ import com.ruoyi.system.api.enums.SysNoticeModel;
 import com.ruoyi.vehicle.domain.AbnormalClassify;
 import com.ruoyi.vehicle.domain.Material;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
+import com.ruoyi.vehicle.domain.vo.VehicleJsonKeyVo;
 import com.ruoyi.vehicle.mapper.AbnormalClassifyMapper;
 import com.ruoyi.vehicle.mapper.MaterialMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMapper;
@@ -863,13 +864,81 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     }
 
     @Override
-    public List<VehicleTemplate> historyVersion(VehicleTemplate template) {
+    public List<VehicleTemplate> historyVehicleTemplate(VehicleTemplate template) {
         Long templateId = template.getTemplateId();
         VehicleTemplate vehicleTemplate = templateMapper.selectVehicleTemplateById(templateId);
+
+        // 1. 获取历史记录列表
         VehicleTemplate query = new VehicleTemplate();
         query.setIsLast(0);
         query.setUuid(vehicleTemplate.getUuid());
-        return templateMapper.selectVehicleTemplateList(query);
+        List<VehicleTemplate> vehicleTemplateList = templateMapper.selectVehicleTemplateList(query);
+
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        try {
+            // 2. 解析基准（isLast=1）JSON
+            Map<String, Object> baseMap = objectMapper.readValue(
+                    vehicleTemplate.getJson(),
+                    objectMapper.getTypeFactory().constructMapType(HashMap.class, String.class, Object.class)
+            );
+
+            // 3. 解析所有历史记录的 JSON
+            List<Map<String, Object>> historyMapList = new ArrayList<>();
+            for (VehicleTemplate vt : vehicleTemplateList) {
+                Map<String, Object> jsonMap = objectMapper.readValue(
+                        vt.getJson(),
+                        objectMapper.getTypeFactory().constructMapType(HashMap.class, String.class, Object.class)
+                );
+                historyMapList.add(jsonMap);
+            }
+
+            // 4. 处理历史记录的 diffFields（与基准不同的字段，存自己的值）
+            for (int i = 0; i < vehicleTemplateList.size(); i++) {
+                VehicleTemplate vt = vehicleTemplateList.get(i);
+                Map<String, Object> currMap = historyMapList.get(i);
+                Map<String, Object> diffFields = new HashMap<>();
+
+                for (String key : baseMap.keySet()) {
+                    Object baseVal = baseMap.get(key);
+                    Object currVal = currMap.get(key);
+                    if (!Objects.equals(baseVal, currVal)) {
+                        diffFields.put(key, currVal);
+                    }
+                }
+                // 历史记录中有但基准没有的 key
+                for (String key : currMap.keySet()) {
+                    if (!baseMap.containsKey(key)) {
+                        diffFields.put(key, currMap.get(key));
+                    }
+                }
+
+                vt.setDiffFields(diffFields);
+            }
+
+            // 5. 处理基准（isLast=1）的 diffFields
+            //    找出基准中：在任意历史记录里值不同或不存在的字段
+            Map<String, Object> baseDiffFields = new HashMap<>();
+            for (String key : baseMap.keySet()) {
+                Object baseVal = baseMap.get(key);
+                boolean isDiff = historyMapList.stream().anyMatch(histMap -> {
+                    Object histVal = histMap.get(key);
+                    return !Objects.equals(baseVal, histVal);
+                });
+                if (isDiff) {
+                    baseDiffFields.put(key, baseVal);
+                }
+            }
+            vehicleTemplate.setDiffFields(baseDiffFields);
+
+            // 6. 将基准插入列表一起返回
+            vehicleTemplateList.add(vehicleTemplate);
+
+        } catch (Exception e) {
+            log.error("解析 json 失败, templateId: {}", vehicleTemplate.getTemplateId(), e);
+        }
+
+        return vehicleTemplateList;
     }
 
     /**
@@ -1138,6 +1207,65 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             throw new RuntimeException("读取 Excel 模板文件失败: " + filePath, e);
         }
         return params;
+    }
+
+    @Override
+    public List<VehicleJsonKeyVo> listJsonKeysByVehicleTemplateIds(List<Long> vehicleTemplateIds) {
+        if (vehicleTemplateIds.isEmpty()) {
+            throw new ServiceException("请传入车辆模版ID列表");
+        }
+        VehicleTemplate query = new VehicleTemplate();
+        query.setTemplateIds(vehicleTemplateIds);
+        List<VehicleTemplate> vehicleTemplateList = templateMapper.selectVehicleTemplateList(query);
+        Set<String> keyUnion = new LinkedHashSet<>();
+        for (VehicleTemplate vehicleTemplate : vehicleTemplateList) {
+            if (StringUtils.isBlank(vehicleTemplate.getJson())) {
+                continue;
+            }
+            try {
+                Map<String, Object> jsonMap = objectMapper.readValue(
+                        vehicleTemplate.getJson(),
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                keyUnion.addAll(jsonMap.keySet());
+            } catch (Exception e) {
+                log.warn("解析 vehicle template JSON 失败, vehicleTemplateId={}", vehicleTemplate.getTemplateId(), e);
+            }
+        }
+
+        if (keyUnion.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 2. 拉取 vehicle_attribute 字典，构建 dictLabel -> SysDictData 映射
+        Map<String, SysDictData> dictLabelMap = Collections.emptyMap();
+        try {
+            com.ruoyi.common.core.domain.R<List<SysDictData>> dictResult =
+                    remoteDictService.getDictDataByType("vehicle_attribute");
+            if (dictResult != null && dictResult.getData() != null) {
+                dictLabelMap = dictResult.getData().stream()
+                        .filter(d -> StringUtils.isNotBlank(d.getDictLabel()))
+                        .collect(java.util.stream.Collectors.toMap(
+                                SysDictData::getDictLabel,
+                                d -> d,
+                                (existing, replacement) -> existing
+                        ));
+            }
+        } catch (Exception e) {
+            log.warn("获取 vehicle_attribute 字典失败", e);
+        }
+
+        // 3. 组装 VO 列表
+        List<VehicleJsonKeyVo> result = new ArrayList<>(keyUnion.size());
+        for (String key : keyUnion) {
+            SysDictData dictData = dictLabelMap.get(key);
+            result.add(new VehicleJsonKeyVo(
+                    key,
+                    dictData != null ? dictData.getOtherLabel()       : null,
+                    dictData != null ? dictData.getOtherLabelSystem() : null,
+                    dictData != null ? dictData.getCocOrder()         : null
+            ));
+        }
+        return result;
     }
 
     /**

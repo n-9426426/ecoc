@@ -26,11 +26,17 @@ public class VehicleInfo extends BaseEntity {
     /** 上传状态(0=未生成 1=已生成 2=已上传 3=未上传 4=上传失败) */
     private Integer uploadStatus;
 
+    private List<Integer> uploadStatusList;
+
     /** 国家 */
     private String country;
 
+    private List<String> countries;
+
     /** 颜色 */
     private String color;
+
+    private List<String> colors;
 
     /** 证书版本 */
     private String certificateVersion;
@@ -81,6 +87,8 @@ public class VehicleInfo extends BaseEntity {
     /** 工厂代码 */
     private String factoryCode;
 
+    private List<String> factoryCodes;
+
     /** 工厂名称 */
     private String factoryName;
 
@@ -90,11 +98,15 @@ public class VehicleInfo extends BaseEntity {
     /** 校验结果(0=未校验 1=校验通过 2=校验失败) */
     private Integer validationResult;
 
+    private List<Integer> validationResults;
+
     /** 状态(0=正常 1=停用) */
     private Integer status;
 
     /** 双色的次色 */
     private String secondaryColor;
+
+    private List<String> secondaryColors;
 
     private String vehicleTemplateId;
 

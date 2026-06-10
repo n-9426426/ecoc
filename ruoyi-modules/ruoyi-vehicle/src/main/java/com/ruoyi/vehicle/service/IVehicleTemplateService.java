@@ -2,6 +2,7 @@ package com.ruoyi.vehicle.service;
 
 import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
+import com.ruoyi.vehicle.domain.vo.VehicleJsonKeyVo;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
@@ -37,7 +38,7 @@ public interface IVehicleTemplateService {
 
     List<VehicleTemplate> selectVehicleTemplateOption();
 
-    List<VehicleTemplate> historyVersion(VehicleTemplate template);
+    List<VehicleTemplate> historyVehicleTemplate(VehicleTemplate template);
 
     // 提交任务，返回 taskId（内部创建 sink 并异步执行）
     String submitImportTask(MultipartFile file);
@@ -52,4 +53,6 @@ public interface IVehicleTemplateService {
     List<Map<String, Object>> selectVehicleTemplateIdByCondition(String materialNo, String brand, String weight, String saleName, String tire, String tvv);
 
     Map<String, String> getTemplateParams();
+
+    List<VehicleJsonKeyVo> listJsonKeysByVehicleTemplateIds(List<Long> vehicleTemplateIds);
 }

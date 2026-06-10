@@ -6,6 +6,8 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
 
+import java.util.List;
+
 /**
  * 字典数据表 sys_dict_data
  * 
@@ -30,8 +32,12 @@ public class SysDictData extends BaseEntity
     /** 字典键值 */
     private String dictValue;
 
+    private List<String> dictValues;
+
     /** 字典类型 */
     private String dictType;
+
+    private List<String> ruleTypes;
 
     private String dictTypeStr;
 
@@ -54,6 +60,8 @@ public class SysDictData extends BaseEntity
     private String valueMap;
 
     private Long dictTypeAffiliation;
+
+    private List<Long> dictTypeAffiliations;
 
     private String dictTypeAffiliationStr;
 

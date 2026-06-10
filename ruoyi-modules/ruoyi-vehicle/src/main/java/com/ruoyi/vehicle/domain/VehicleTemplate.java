@@ -42,6 +42,9 @@ public class VehicleTemplate extends BaseEntity {
     /** 校验结果（0=未校验 1=通过 2=不通过） */
     private String validateResult;
 
+    // 列表查询用
+    private List<String> validateResults;
+
     /** 最近校验时间 */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date validateTime;
@@ -113,4 +116,6 @@ public class VehicleTemplate extends BaseEntity {
     private Map<String, Map<String, Object>> otherSystem;
 
     private Integer affirm;
+
+    private Map<String, Object> diffFields;
 }

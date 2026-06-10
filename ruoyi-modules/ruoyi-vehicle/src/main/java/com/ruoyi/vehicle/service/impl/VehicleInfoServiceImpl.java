@@ -181,6 +181,35 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
      */
     @Override
     public List<VehicleInfo> selectVehicleInfoList(VehicleInfo vehicleInfo) {
+        List<String> colors = vehicleInfo.getColors();
+        List<String> secondaryColors = vehicleInfo.getSecondaryColors();
+        List<SysDictData> colorDict = remoteDictService.getDictDataByType("color").getData();
+        Map<String, String> colorMap = colorDict.stream().collect(Collectors.toMap(
+                SysDictData::getDictValue,
+                SysDictData::getDictLabel,
+                (oldVal, newVal) -> oldVal
+        ));
+        Set<String> targetLabels = colors.stream()
+                .map(colorMap::get)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Set<String> targetSecondaryLabels = secondaryColors.stream()
+                .map(colorMap::get)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        colors = colorMap.entrySet().stream()
+                .filter(entry -> targetLabels.contains(entry.getValue()))
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
+
+        secondaryColors = colorMap.entrySet().stream()
+                .filter(entry -> targetSecondaryLabels.contains(entry.getValue()))
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
+        vehicleInfo.setColors(colors);
+        vehicleInfo.setSecondaryColors(secondaryColors);
         List<VehicleInfo> list = vehicleInfoMapper.selectVehicleInfoList(vehicleInfo);
         for (VehicleInfo vehicle : list) {
             if (StringUtils.isNotBlank(vehicle.getJson())) {

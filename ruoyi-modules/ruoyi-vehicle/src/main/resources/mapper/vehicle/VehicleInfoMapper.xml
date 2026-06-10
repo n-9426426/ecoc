@@ -134,17 +134,35 @@
 				</foreach>
 				)
 			</if>
-			<if test="factoryCode != null and factoryCode != ''">
-				AND factory_code like concat('%', #{factoryCode}, '%')
+			<if test="factoryCodes != null and factoryCodes.size() > 0">
+				and factory_code in
+				<foreach item="factoryCode" collection="factoryCodes" open="(" separator="," close=")">
+					#{factoryCode}
+				</foreach>
 			</if>
 			<if test="color != null and color != ''">
-				AND color like concat('%', #{color}, '%')
+				AND color = #{color}
+			</if>
+			<if test="colors != null and colors.size() > 0">
+				AND color in
+				<foreach item="color" collection="colors" open="(" separator="," close=")">
+					#{color}
+				</foreach>
 			</if>
 			<if test="secondaryColor != null and secondaryColor != ''">
 				AND secondary_color like concat('%', #{secondaryColor}, '%')
 			</if>
-			<if test="country != null and country != ''">
-				AND country like concat('%', #{country}, '%')
+			<if test="secondaryColors != null and secondaryColors.size() > 0">
+				AND color in
+				<foreach item="secondaryColor" collection="secondaryColors" open="(" separator="," close=")">
+					#{secondaryColor}
+				</foreach>
+			</if>
+			<if test="countries != null and countries.size() > 0">
+				AND country in
+				<foreach item="country" collection="countries" open="(" separator="," close=")">
+					#{country}
+				</foreach>
 			</if>
 			<if test="manufactureBeginTime != null">
 				AND manufacture_date >= #{manufactureBeginTime}
@@ -194,8 +212,17 @@
 			<if test="validationResult != null">
 				AND validation_result = #{validationResult}
 			</if>
-			<if test="uploadStatus != null">
-				AND upload_status = #{uploadStatus}
+			<if test="validationResults != null and validationResults.size() > 0">
+				AND validate_result in
+				<foreach item="validationResult" collection="validationResults" open="(" separator="," close=")">
+					#{validationResult}
+				</foreach>
+			</if>
+			<if test="uploadStatusList != null and uploadStatusList.size() > 0">
+				AND upload_status in
+				<foreach item="uploadStatus" collection="uploadStatusList" open="(" separator="," close=")">
+					#{uploadStatus}
+				</foreach>
 			</if>
 			<if test="generateAffirm != null">
 				and generate_affirm = #{generateAffirm}
@@ -696,13 +723,25 @@
 				)
 			</if>
 			<if test="vehicleInfo.factoryCode != null and vehicleInfo.factoryCode != ''">
-				AND vi.factory_code LIKE CONCAT('%', #{vehicleInfo.factoryCode}, '%')
+				AND vi.factory_code = #{vehicleInfo.factoryCode}
+			</if>
+			<if test="vehicleInfo.factoryCodes != null and vehicleInfo.factoryCodes.size() > 0">
+				and factory_code in
+				<foreach item="factoryCode" collection="vehicleInfo.factoryCodes" open="(" separator="," close=")">
+					#{factoryCode}
+				</foreach>
 			</if>
 			<if test="vehicleInfo.factoryName != null and vehicleInfo.factoryName != ''">
 				AND vi.factory_name LIKE CONCAT('%', #{vehicleInfo.factoryName}, '%')
 			</if>
 			<if test="vehicleInfo.country != null and vehicleInfo.country != ''">
-				AND vi.country LIKE CONCAT('%', #{vehicleInfo.country}, '%')
+				AND vi.country = #{vehicleInfo.country}
+			</if>
+			<if test="vehicleInfo.countries != null and vehicleInfo.countries.size() > 0">
+				AND country in
+				<foreach item="country" collection="vehicleInfo.countries" open="(" separator="," close=")">
+					#{country}
+				</foreach>
 			</if>
 			<if test="vehicleInfo.color != null and vehicleInfo.color != ''">
 				AND vi.color LIKE CONCAT('%', #{vehicleInfo.color}, '%')

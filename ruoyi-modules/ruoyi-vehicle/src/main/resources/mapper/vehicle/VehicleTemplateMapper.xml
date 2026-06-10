@@ -104,8 +104,11 @@
         <if test="status != null and status != ''">
             AND status = #{status}
         </if>
-        <if test="validateResult != null and validateResult != ''">
-            AND validate_result = #{validateResult}
+        <if test="validateResults != null and validateResults.size() > 0">
+            AND validate_result in
+            <foreach item="validateResult" collection="validateResults" open="(" separator="," close=")">
+                #{validateResult}
+            </foreach>
         </if>
         <if test="generateAffirm != null">
             and generate_affirm = #{generateAffirm}
