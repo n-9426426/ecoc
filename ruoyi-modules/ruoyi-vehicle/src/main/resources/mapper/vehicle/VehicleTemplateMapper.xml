@@ -75,7 +75,7 @@
             AND wvta_coc_no LIKE CONCAT('%', #{wvtaCocNo}, '%')
         </if>
         <if test="version != null and version != ''" >
-            and version = #{version}
+            and version like concat('%', #{version}, '%')
         </if>
         <if test="tvv != null and tvv != ''" >
             and REPLACE(tvv, ',', '') like concat('%', #{tvv}, '%')
@@ -296,12 +296,19 @@
     </select>
 
     <select id="selectVehicleTemplateIdByCondition" resultMap="VehicleTemplateResult">
-        select vt.*, vt.json->>'$.Make' AS brand, vt.json->>'$.ActualMass' AS weight, vt.json->>'$.CommercialName' AS sale_name, vt.json->>'$.TyreSize' AS tire
-        from vehicle_template vt
-        left join material m on m.vehicle_template_id = vt.template_id
-        where vt.del_flag = '0' and vt.status = '0'
+        SELECT vt.*, vt.json->>'$.Make' AS brand, vt.json->>'$.ActualMass' AS weight, vt.json->>'$.CommercialName' AS sale_name,
+            vt.json->>'$.TyreSize' AS tire, CASE WHEN vt.effective_date = max_ed.max_effective_date THEN 1 ELSE 0 END AS is_last
+        FROM vehicle_template vt
+        LEFT JOIN (
+            SELECT tvv, MAX(effective_date) AS max_effective_date
+            FROM vehicle_template
+            WHERE del_flag = '0' AND status = '0'
+            GROUP BY tvv
+        ) max_ed ON max_ed.tvv = vt.tvv
+        LEFT JOIN material m ON m.vehicle_template_id = vt.template_id
+        WHERE vt.del_flag = '0' AND vt.status = '0'
         <if test="materialNo != null and materialNo != ''">
-            and m.material_no = #{materialNo}
+            AND m.material_no = #{materialNo}
         </if>
         <if test="tvv != null and tvv != ''">
             AND REPLACE(vt.tvv, ',', '') = #{tvv}

@@ -247,10 +247,14 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             throw new RuntimeException("该模版不存在，无法更新");
         }
         String templateVersion = existTemplate.getVersion();
-        if (StringUtils.isBlank(templateVersion)) {
-            templateVersion = "1.0";
+        if (template.getVersion() == null) {
+            if (templateVersion == null) {
+                templateVersion = "1.0";
+            } else {
+                templateVersion = String.valueOf(new BigDecimal(templateVersion).add(new BigDecimal(1)));
+            }
         } else {
-            templateVersion = String.valueOf(new BigDecimal(templateVersion).add(new BigDecimal(1)));
+            templateVersion = template.getVersion();
         }
         template.setUuid(existTemplate.getUuid());
         template.setTemplateId(null);

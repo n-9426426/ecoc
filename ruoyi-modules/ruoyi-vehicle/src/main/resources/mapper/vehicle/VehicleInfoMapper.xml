@@ -213,7 +213,7 @@
 				AND validation_result = #{validationResult}
 			</if>
 			<if test="validationResults != null and validationResults.size() > 0">
-				AND validate_result in
+				AND validation_result in
 				<foreach item="validationResult" collection="validationResults" open="(" separator="," close=")">
 					#{validationResult}
 				</foreach>

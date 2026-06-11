@@ -1,5 +1,6 @@
 package com.ruoyi.vehicle.service.impl;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.core.exception.ServiceException;
@@ -29,7 +30,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
 import java.io.ByteArrayInputStream;
-import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -99,15 +99,15 @@ public class MaterialServiceImpl implements IMaterialService {
     @Override
     public int insertMaterial(Material material) {
         LoginUser loginUser = SecurityUtils.getLoginUser();
-        return insertMaterial(material, loginUser.getUsername(), false);
+        return insertMaterial(material, loginUser.getUsername(), true);
     }
 
     private int insertMaterial(Material material, String createBy, boolean needDictConvert) {
-        Material existMaterial = materialMapper.selectByMaterialNo(material.getMaterialNo());
-        if (existMaterial != null) {
-            throw new RuntimeException("该物料号已经定义过版本，无法继续定义");
-        }
         if (needDictConvert) {
+            Material existMaterial = materialMapper.selectByMaterialNo(material.getMaterialNo());
+            if (existMaterial != null) {
+                throw new RuntimeException("该物料号已经定义过版本，无法继续定义");
+            }
             List<SysDictData> sysDictData = remoteDictService.getDictDataByType("vehicle_model").getData();
             for (SysDictData dictData : sysDictData) {
                 if (dictData.getDictLabel().equals(material.getVehicleModel())) {
@@ -119,6 +119,8 @@ public class MaterialServiceImpl implements IMaterialService {
                 throw new RuntimeException("车型代码不存在");
             }
         }
+        // 按 MES 字段映射规则，将物料关键字段转换后写入 material.json
+        applyMesJsonToMaterial(material);
         material.setCreateBy(createBy);
         material.setCreateTime(new Date());
         material.setRemark(StringUtils.isBlank(material.getSwitchRemark()) ? null : material.getSwitchRemark());
@@ -126,30 +128,21 @@ public class MaterialServiceImpl implements IMaterialService {
                 material.getBrand(), material.getWeight(), material.getSaleName(), material.getTire(), material.getTvv()
         );
         if (templates.isEmpty()) {
+            applyMaterialAffirm(material);
             return materialMapper.insertMaterial(material);
         }
         Map<String, VehicleTemplate> templateMap = templates.stream()
-                .collect(Collectors.toMap(
-                        VehicleTemplate::getUuid,
-                        t -> t,
-                        (existing, replacement) -> existing
-                ));
-//        if (templateMap.size() > 1) {
-//            throw new RuntimeException("请输入正确的数据以匹配模版");
-//        }
-        templateMap = templates.stream()
                 .sorted(Comparator.comparing(
-                        t -> new BigDecimal(t.getVersion()),
-                        Comparator.reverseOrder()
+                        VehicleTemplate::getEffectiveDate,
+                        Comparator.nullsLast(Comparator.reverseOrder())
                 ))
                 .collect(Collectors.toMap(
-                        VehicleTemplate::getVersion,
+                        VehicleTemplate::getTvv,
                         t -> t,
                         (existing, replacement) -> existing,
                         LinkedHashMap::new
                 ));
         Map.Entry<String, VehicleTemplate> firstEntry = templateMap.entrySet().iterator().next();
-        String version = firstEntry.getKey();
         VehicleTemplate template = firstEntry.getValue();
         try {
             JsonNode templateJson = new ObjectMapper().readTree(template.getJson());
@@ -226,6 +219,8 @@ public class MaterialServiceImpl implements IMaterialService {
         String newVersion = material.getNewVersion();
         material.setVersion(newVersion);
         material.setVehicleTemplateId(template.getTemplateId());
+        // 按 MES 字段映射规则，将物料关键字段转换后写入 material.json
+        applyMesJsonToMaterial(material);
         applyMaterialAffirm(material);
         LoginUser loginUser = SecurityUtils.getLoginUser();
         material.setUpdateBy(loginUser.getUsername());
@@ -375,7 +370,7 @@ public class MaterialServiceImpl implements IMaterialService {
                     Material existing = materialMapper.selectByMaterialNo(material.getMaterialNo());
                     if (existing == null) {
                         // 新增
-                        insertMaterial(material, createBy, true);
+                        insertMaterial(material, createBy, false);
                         successCount++;
                         pushEvent(sink, "progress", String.format(
                                 "{\"row\":%d,\"total\":%d,\"status\":\"success\"}", rowNum, total));
@@ -387,19 +382,20 @@ public class MaterialServiceImpl implements IMaterialService {
                         material.setUpdateTime(new Date());
                         materialMapper.updateMaterial(material);
                         updateCount++;
+                        successCount++;
                         pushEvent(sink, "progress", String.format(
                                 "{\"row\":%d,\"total\":%d,\"status\":\"update\"}", rowNum, total));
 
                     } else {
                         // 不允许更新，跳过
                         skipCount++;
+                        successCount++;
                         String reason = "物料号[" + material.getMaterialNo() + "]已存在";
                         errorDetails.add("第" + rowNum + "行：" + reason);
                         pushEvent(sink, "progress", String.format(
                                 "{\"row\":%d,\"total\":%d,\"status\":\"skip\",\"reason\":\"%s\"}",
                                 rowNum, total, escapeJson(reason)));
                     }
-
                 } catch (Exception e) {
                     failCount++;
                     String reason = e.getMessage();
@@ -481,6 +477,290 @@ public class MaterialServiceImpl implements IMaterialService {
                 .map(String::trim)
                 .filter(StringUtils::isNotBlank)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 将 Material 中的关键字段按 vehicle_attribute 字典中 MES_ 开头的映射规则做转换，
+     * 并将映射结果回填到 material 对应的属性上。
+     * 映射逻辑与 VehicleInfoServiceImpl#jsonConvertFromMesExcel 完全一致。
+     *
+     * 字段对应关系（excelMap key → dictLabel → material setter）：
+     *   Brand                 → Make                   → material.setBrand()
+     *   Weight                → ActualMass             → material.setWeight()
+     *   Sale Name             → CommercialName         → material.setSaleName()
+     *   Tire                  → TyreSize               → material.setTire()
+     *   Tire resistance grade → RollingResistanceClass → material.setTireResistanceGrade()
+     */
+    private void applyMesJsonToMaterial(Material material) {
+        try {
+            Map<String, Object> excelMap = new LinkedHashMap<>();
+            if (material.getBrand() != null)               excelMap.put("Brand", material.getBrand());
+            if (material.getWeight() != null)              excelMap.put("Weight", material.getWeight());
+            if (material.getSaleName() != null)            excelMap.put("Sale Name", material.getSaleName());
+            if (material.getTire() != null)                excelMap.put("Tire", material.getTire());
+            if (material.getTireResistanceGrade() != null) excelMap.put("Tire resistance grade", material.getTireResistanceGrade());
+
+            String convertedJson = jsonConvertFromMesExcel(excelMap);
+            if (StringUtils.isBlank(convertedJson)) {
+                return;
+            }
+
+            // 将映射结果回填到 material 对应属性
+            Map<String, Object> resultMap = new ObjectMapper().readValue(
+                    convertedJson,
+                    new TypeReference<Map<String, Object>>() {});
+
+            // Make → brand
+            if (resultMap.containsKey("Make")) {
+                Object val = resultMap.get("Make");
+                material.setBrand(val != null ? String.valueOf(val) : null);
+            }
+            // ActualMass → weight
+            if (resultMap.containsKey("ActualMass")) {
+                Object val = resultMap.get("ActualMass");
+                material.setWeight(val != null ? String.valueOf(val) : null);
+            }
+            // CommercialName → saleName
+            if (resultMap.containsKey("CommercialName")) {
+                Object val = resultMap.get("CommercialName");
+                material.setSaleName(val != null ? String.valueOf(val) : null);
+            }
+            // TyreSize → tire
+            if (resultMap.containsKey("TyreSize")) {
+                Object val = resultMap.get("TyreSize");
+                material.setTire(val != null ? String.valueOf(val) : null);
+            }
+            // RollingResistanceClass → tireResistanceGrade
+            if (resultMap.containsKey("RollingResistanceClass")) {
+                Object val = resultMap.get("RollingResistanceClass");
+                material.setTireResistanceGrade(val != null ? String.valueOf(val) : null);
+            }
+
+        } catch (Exception e) {
+            log.warn("[applyMesJsonToMaterial] 物料字段 MES 映射失败，materialNo={}", material.getMaterialNo(), e);
+        }
+    }
+
+    /**
+     * 将物料字段 Map 按 vehicle_attribute 字典中 originalSystem 以 "CGBOM_" 开头的规则做映射，
+     * 返回映射后的 JSON 字符串。
+     * 逻辑与 VehicleInfoServiceImpl#jsonConvertFromMesExcel 完全一致。
+     *
+     * @param excelRowMap 物料字段 Map（key 为字典 keyMap 值，value 为字段原始值）
+     * @return 映射后的 JSON 字符串
+     */
+    private String jsonConvertFromMesExcel(Map<String, Object> excelRowMap) {
+        if (excelRowMap == null || excelRowMap.isEmpty()) {
+            try {
+                return new ObjectMapper().writeValueAsString(new LinkedHashMap<>());
+            } catch (Exception e) {
+                throw new RuntimeException("MES Excel JSON 序列化失败: " + e.getMessage());
+            }
+        }
+
+        Map<String, Object> map = new LinkedHashMap<>(excelRowMap);
+        Map<String, Object> finalMap = map;
+
+        try {
+            List<SysDictData> allDictData =
+                    remoteDictService.getDictDataByType("vehicle_attribute").getData();
+
+            if (allDictData != null && !allDictData.isEmpty()) {
+
+                // ── 第一步：全量按 uuid 分组，无 uuid 的每条独立 ──────────────────
+                Map<String, List<SysDictData>> uuidGroups = new LinkedHashMap<>();
+                for (SysDictData rule : allDictData) {
+                    String groupKey = StringUtils.isNotBlank(rule.getUuid())
+                            ? rule.getUuid()
+                            : "$$solo$$" + rule.getDictCode();
+                    uuidGroups.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(rule);
+                }
+
+                // ── 第二步：识别单 key_map 链 vs 多 key_map 链 ────────────────────
+                Map<String, List<List<SysDictData>>> keyToChains = new LinkedHashMap<>();
+                Map<String, List<SysDictData>> multiKeyChainMap = new LinkedHashMap<>();
+
+                for (Map.Entry<String, List<SysDictData>> groupEntry : uuidGroups.entrySet()) {
+                    List<SysDictData> chain = groupEntry.getValue();
+                    chain.sort(Comparator.comparingLong(SysDictData::getDictCode));
+
+                    long distinctKeyMapCount = chain.stream()
+                            .filter(d -> StringUtils.isNotBlank(d.getOriginalSystem())
+                                    && d.getOriginalSystem().startsWith("CGBOM_"))
+                            .map(SysDictData::getKeyMap)
+                            .filter(StringUtils::isNotBlank)
+                            .distinct()
+                            .count();
+
+                    if (distinctKeyMapCount > 1) {
+                        multiKeyChainMap.put(groupEntry.getKey(), chain);
+                    } else {
+                        String keyMap = chain.stream()
+                                .filter(d -> StringUtils.isNotBlank(d.getOriginalSystem())
+                                        && d.getOriginalSystem().startsWith("CGBOM_"))
+                                .map(SysDictData::getKeyMap)
+                                .filter(StringUtils::isNotBlank)
+                                .findFirst()
+                                .orElse(null);
+                        if (keyMap == null) continue;
+                        keyToChains.computeIfAbsent(keyMap, k -> new ArrayList<>()).add(chain);
+                    }
+                }
+
+                Map<String, Object> result = new LinkedHashMap<>();
+
+                // ── 第三步：执行单 key_map 链式规则 ──────────────────────────────
+                for (Map.Entry<String, Object> entry : map.entrySet()) {
+                    String fieldName = entry.getKey();
+                    List<List<SysDictData>> chains = keyToChains.get(fieldName);
+
+                    if (chains == null || chains.isEmpty()) {
+                        continue;
+                    }
+
+                    String rawValue = entry.getValue() == null
+                            ? null : String.valueOf(entry.getValue());
+
+                    boolean isMultiLine = rawValue != null && rawValue.contains("\n");
+
+                    if (isMultiLine && chains.size() > 1) {
+                        String[] lines = rawValue.split("\n", -1);
+                        for (int lineIdx = 0; lineIdx < chains.size(); lineIdx++) {
+                            List<SysDictData> singleChain = chains.get(lineIdx);
+                            String lineValue = lineIdx < lines.length ? lines[lineIdx].trim() : "";
+                            String converted = applyMesChain(lineValue, singleChain, fieldName);
+                            String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
+                            if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
+                                result.put(targetLabel, null);
+                            } else if (StringUtils.isNotBlank(converted)) {
+                                result.put(targetLabel, converted);
+                            }
+                        }
+                    } else if (isMultiLine && chains.size() == 1) {
+                        List<SysDictData> singleChain = chains.get(0);
+                        String converted = applyMesChain(rawValue, singleChain, fieldName);
+                        String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
+                        if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
+                            result.put(targetLabel, null);
+                        } else if (StringUtils.isNotBlank(converted)) {
+                            result.put(targetLabel, converted);
+                        }
+                    } else {
+                        for (List<SysDictData> singleChain : chains) {
+                            String converted = applyMesChain(rawValue, singleChain, fieldName);
+                            String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
+                            if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
+                                result.put(targetLabel, null);
+                            } else if (StringUtils.isNotBlank(converted)) {
+                                result.put(targetLabel, converted);
+                            }
+                        }
+                    }
+                }
+
+                // ── 第四步：执行多 key_map 链 ─────────────────────────────────────
+                for (List<SysDictData> multiChain : multiKeyChainMap.values()) {
+                    multiChain.sort(Comparator.comparingLong(SysDictData::getDictCode));
+
+                    String[] groupSeps = multiChain.stream()
+                            .map(SysDictData::getValueMap)
+                            .map(com.ruoyi.common.core.parser.ValueMappingParser::extractGroupJoinSep)
+                            .filter(Objects::nonNull)
+                            .findFirst()
+                            .orElse(null);
+
+                    String outSep = (groupSeps != null) ? groupSeps[1] : ",";
+
+                    for (SysDictData rule : multiChain) {
+                        if (StringUtils.isBlank(rule.getDictLabel())) continue;
+                        if (StringUtils.isNotBlank(rule.getValueMap())
+                                && rule.getValueMap().trim().toUpperCase().startsWith("GROUP_JOIN_SEP")) {
+                            continue;
+                        }
+
+                        Object rawObj = StringUtils.isNotBlank(rule.getKeyMap())
+                                ? map.get(rule.getKeyMap()) : null;
+                        String rawValue = rawObj == null ? null : String.valueOf(rawObj);
+                        String converted = rawValue;
+
+                        if (StringUtils.isNotBlank(rule.getValueMap())) {
+                            Map<String, String> mergedMap =
+                                    com.ruoyi.common.core.parser.ValueMappingParser.mergeValueConnection(rule.getValueConnection());
+                            String stepped =
+                                    com.ruoyi.common.core.parser.ValueMappingParser.convertWithDictMap(rawValue, rule.getValueMap(), mergedMap);
+
+                            if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
+                                if (!result.containsKey(rule.getDictLabel())) {
+                                    result.put(rule.getDictLabel(), null);
+                                }
+                                continue;
+                            }
+                            if (stepped != null) {
+                                converted = stepped;
+                            } else {
+                                log.warn("[jsonConvertFromMesExcel] 多key_map链转换返回 null，dict_code={}, keyMap={}",
+                                        rule.getDictCode(), rule.getKeyMap());
+                            }
+                        }
+
+                        converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
+                        converted = "N/A".equals(converted) ? "" : converted;
+
+                        if (StringUtils.isNotBlank(converted)) {
+                            String label = rule.getDictLabel();
+                            Object existing = result.get(label);
+                            if (existing != null && StringUtils.isNotBlank(String.valueOf(existing))) {
+                                result.put(label, existing + outSep + converted);
+                            } else {
+                                result.put(label, converted);
+                            }
+                        }
+                    }
+                }
+
+                finalMap = result;
+            }
+        } catch (Exception e) {
+            log.error("[jsonConvertFromMesExcel] 字段映射异常，返回原始 map", e);
+        }
+
+        try {
+            return new ObjectMapper().writeValueAsString(finalMap);
+        } catch (Exception e) {
+            throw new RuntimeException("MES Excel JSON 映射后序列化失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 链式规则执行（与 VehicleInfoServiceImpl#applyMesChain 逻辑一致）
+     */
+    private String applyMesChain(String rawValue, List<SysDictData> chain, String fieldName) {
+        String current = rawValue;
+        for (SysDictData rule : chain) {
+            // GROUP_JOIN_SEP 是分隔符声明行，不参与值转换，直接跳过
+            if (StringUtils.isNotBlank(rule.getValueMap())
+                    && rule.getValueMap().trim().toUpperCase().startsWith("GROUP_JOIN_SEP")) {
+                continue;
+            }
+            // 链内存在多条不同 key_map 的规则时（如 COC 模板轴1/轴2各自独立），
+            // 只执行 key_map 与入口字段名匹配的规则，避免将值串入其他轴的转换逻辑造成二次处理导致数据丢失
+            if (StringUtils.isNotBlank(rule.getKeyMap())
+                    && !rule.getKeyMap().equals(fieldName)) {
+                continue;
+            }
+            Map<String, String> mergedMap =
+                    com.ruoyi.common.core.parser.ValueMappingParser.mergeValueConnection(rule.getValueConnection());
+            current = com.ruoyi.common.core.parser.ValueMappingParser.convertWithDictMap(current, rule.getValueMap(), mergedMap);
+            if (current == null) {
+                log.warn("[applyMesChain] 转换返回 null, fieldName={}, dictCode={}, valueMap={}",
+                        fieldName, rule.getDictCode(), rule.getValueMap());
+                return null;
+            }
+            if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(current)) {
+                return com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL;
+            }
+        }
+        return current;
     }
 
     private void applyMaterialAffirm(Material material) {

@@ -46,17 +46,23 @@
         m.create_time, m.create_by, m.update_time, m.update_by, vt.remark, m.vehicle_template_id,
         m.tire_resistance_grade, m.factory_code, m.vehicle_model, m.status,
         ANY_VALUE(vt.version) AS version,
-        ANY_VALUE(vt.is_last) AS is_last,
+        ANY_VALUE(CASE WHEN vt.version = lv.last_version THEN 1 ELSE 0 END) AS is_last,
         ANY_VALUE(vt.effective_date) AS effective_date,
-        (
-            SELECT max_vt.version
-            FROM vehicle_template max_vt
-            WHERE max_vt.uuid = ANY_VALUE(vt.uuid)
-            AND max_vt.is_last = 1
-        ) AS last_version, vt.coc_template_no, vt.wvta_coc_no
+        ANY_VALUE(lv.last_version) AS last_version,
+        vt.coc_template_no, vt.wvta_coc_no
         FROM material m
         LEFT JOIN vehicle_template vt ON vt.template_id = m.vehicle_template_id
+        LEFT JOIN (
+            SELECT REPLACE(tvv, ',', '') AS tvv, version AS last_version
+            FROM (
+                SELECT tvv, version, ROW_NUMBER() OVER (PARTITION BY REPLACE(tvv, ',', '') ORDER BY effective_date DESC) AS rn
+                FROM vehicle_template
+                WHERE is_last = 1
+            ) ranked
+            WHERE rn = 1
+        ) lv ON lv.tvv = m.tvv
         <where>
+            AND (vt.is_last = 1 or vt.is_last is null)
             <if test="affirm != null">
                 <choose>
                     <when test="affirm == 1">
@@ -102,7 +108,7 @@
                 AND vt.wvta_coc_no LIKE CONCAT('%', #{wvtaCocNo}, '%')
             </if>
             <if test="version != null and version != ''" >
-                and vt.version = #{version}
+                and vt.version LIKE CONCAT('%', #{version}, '%')
             </if>
             <if test="status != null and status != ''" >
                 and m.status = #{status}
