@@ -902,7 +902,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 for (String key : baseMap.keySet()) {
                     Object baseVal = baseMap.get(key);
                     Object currVal = currMap.get(key);
-                    if (!Objects.equals(baseVal, currVal)) {
+                    if (!Objects.equals(normalizeValue(baseVal), normalizeValue(currVal))) {
                         diffFields.put(key, currVal);
                     }
                 }
@@ -923,7 +923,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 Object baseVal = baseMap.get(key);
                 boolean isDiff = historyMapList.stream().anyMatch(histMap -> {
                     Object histVal = histMap.get(key);
-                    return !Objects.equals(baseVal, histVal);
+                    return !Objects.equals(normalizeValue(baseVal), normalizeValue(histVal));
                 });
                 if (isDiff) {
                     baseDiffFields.put(key, baseVal);
@@ -1303,5 +1303,10 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             log.error("filterJsonByVehicleAttribute: JSON 过滤异常，返回原始 JSON", e);
             return json;
         }
+    }
+
+    private Object normalizeValue(Object val) {
+        if (val == null || "".equals(val)) return null;
+        return val;
     }
 }

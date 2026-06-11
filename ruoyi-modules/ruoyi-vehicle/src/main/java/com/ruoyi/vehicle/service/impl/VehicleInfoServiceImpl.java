@@ -10,6 +10,7 @@ import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.model.FieldValidationResult;
 import com.ruoyi.common.core.model.RuleViolation;
 import com.ruoyi.common.core.model.ValidationReport;
+import com.ruoyi.common.core.parser.ValueMappingParser;
 import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.utils.bean.BeanUtils;
@@ -1815,14 +1816,25 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                         }
                         break;
                     case "RollingResistanceClass":
-                        List<SysDictData> tireResistanceGradeData = remoteDictService.getDictDataByType("rolling_resistance_class").getData();
-                        Map<String, String> tireResistanceGradeMap = tireResistanceGradeData.stream()
-                                .collect(Collectors.toMap(SysDictData::getDictLabel, SysDictData::getDictValue, (a, b) -> a));
                         if (material.getTireResistanceGrade() != null) {
-                            // 去掉单位：取数字部分（如 "5.96N/kN" -> "5.96"）
-                            String rawGrade = material.getTireResistanceGrade().replaceAll("[^\\d.].*$", "").trim();
-                            String tireResistanceGradeValue = tireResistanceGradeMap.get(rawGrade);
-                            objectNode.put(fieldName, tireResistanceGradeValue != null ? tireResistanceGradeValue : fieldValue.asText());
+                            List<SysDictData> tireResistanceGradeData = remoteDictService
+                                    .getDictDataByType("rolling_resistance_class").getData();
+                            // 找到 dict_label = "RollingResistanceClass" 的字典条目，取其 value_connection
+                            SysDictData rrcDictData = tireResistanceGradeData.stream()
+                                    .filter(d -> "RollingResistanceClass".equals(d.getDictLabel()))
+                                    .findFirst()
+                                    .orElse(null);
+                            String converted = null;
+                            if (rrcDictData != null
+                                    && rrcDictData.getValueMap() != null
+                                    && rrcDictData.getValueConnection() != null) {
+                                Map<String, String> mergedMap = ValueMappingParser
+                                        .mergeValueConnection(rrcDictData.getValueConnection());
+                                converted = ValueMappingParser
+                                        .convertWithDictMap(material.getTireResistanceGrade(),
+                                                rrcDictData.getValueMap(), mergedMap);
+                            }
+                            objectNode.put(fieldName, converted != null ? converted : fieldValue.asText());
                         }
                         break;
                     default:
