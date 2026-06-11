@@ -60,11 +60,11 @@
             <if test="affirm != null">
                 <choose>
                     <when test="affirm == 1">
-                        AND generate_affirm = 1
-                        AND upload_affirm = 1
+                        AND m.generate_affirm = 1
+                        AND m.upload_affirm = 1
                     </when>
                     <when test="affirm == 0">
-                        AND (generate_affirm = 0 OR upload_affirm = 0)
+                        AND (m.generate_affirm = 0 OR m.upload_affirm = 0)
                     </when>
                 </choose>
             </if>
@@ -132,7 +132,7 @@
 
     <select id="selectMaterialById" parameterType="Long" resultMap="MaterialResult">
         <include refid="selectMaterialVo"/>
-        WHERE m.id = #{id} AND vt.version IS NOT NULL
+        WHERE m.id = #{id}
         ORDER BY vt.is_last DESC, vt.create_time DESC
         LIMIT 1
     </select>
