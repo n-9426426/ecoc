@@ -1210,62 +1210,38 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     }
 
     @Override
-    public List<VehicleJsonKeyVo> listJsonKeysByVehicleTemplateIds(List<Long> vehicleTemplateIds) {
-        if (vehicleTemplateIds.isEmpty()) {
-            throw new ServiceException("请传入车辆模版ID列表");
-        }
-        VehicleTemplate query = new VehicleTemplate();
-        query.setTemplateIds(vehicleTemplateIds);
-        List<VehicleTemplate> vehicleTemplateList = templateMapper.selectVehicleTemplateList(query);
-        Set<String> keyUnion = new LinkedHashSet<>();
-        for (VehicleTemplate vehicleTemplate : vehicleTemplateList) {
-            if (StringUtils.isBlank(vehicleTemplate.getJson())) {
-                continue;
-            }
-            try {
-                Map<String, Object> jsonMap = objectMapper.readValue(
-                        vehicleTemplate.getJson(),
-                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
-                keyUnion.addAll(jsonMap.keySet());
-            } catch (Exception e) {
-                log.warn("解析 vehicle template JSON 失败, vehicleTemplateId={}", vehicleTemplate.getTemplateId(), e);
-            }
-        }
-
-        if (keyUnion.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        // 2. 拉取 vehicle_attribute 字典，构建 dictLabel -> SysDictData 映射
-        Map<String, SysDictData> dictLabelMap = Collections.emptyMap();
+    public List<VehicleJsonKeyVo> listJsonKeysByVehicleTemplateIds(String vehicleModel) {
+        List<SysDictData> dictDataList = Collections.emptyList();
         try {
-            com.ruoyi.common.core.domain.R<List<SysDictData>> dictResult =
-                    remoteDictService.getDictDataByType("vehicle_attribute");
+            List<SysDictData> vehicleModelSysDictData = remoteDictService.getDictDataByType("vehicle_model").getData();
+            Long dictId = vehicleModelSysDictData.stream()
+                    .filter(dict -> vehicleModel.equals(dict.getDictLabel()) || vehicleModel.equals(dict.getDictValue()))
+                    .map(SysDictData::getDictCode)
+                    .findFirst()
+                    .orElse(null);
+            R<List<SysDictData>> dictResult = remoteDictService.getDictDataByType("vehicle_attribute");
             if (dictResult != null && dictResult.getData() != null) {
-                dictLabelMap = dictResult.getData().stream()
+                dictDataList = dictResult.getData().stream()
+                        .filter(d -> d.getDictTypeAffiliation().equals(dictId))
                         .filter(d -> StringUtils.isNotBlank(d.getDictLabel()))
-                        .collect(java.util.stream.Collectors.toMap(
-                                SysDictData::getDictLabel,
-                                d -> d,
-                                (existing, replacement) -> existing
-                        ));
+                        .collect(java.util.stream.Collectors.toList());
             }
         } catch (Exception e) {
             log.warn("获取 vehicle_attribute 字典失败", e);
         }
 
-        // 3. 组装 VO 列表
-        List<VehicleJsonKeyVo> result = new ArrayList<>(keyUnion.size());
-        for (String key : keyUnion) {
-            SysDictData dictData = dictLabelMap.get(key);
-            result.add(new VehicleJsonKeyVo(
-                    key,
-                    dictData != null ? dictData.getOtherLabel()       : null,
-                    dictData != null ? dictData.getOtherLabelSystem() : null,
-                    dictData != null ? dictData.getCocOrder()         : null
-            ));
+        if (dictDataList.isEmpty()) {
+            return Collections.emptyList();
         }
-        return result;
+
+        return dictDataList.stream()
+                .map(d -> new VehicleJsonKeyVo(
+                        d.getDictLabel(),
+                        d.getOtherLabel(),
+                        d.getOtherLabelSystem(),
+                        d.getCocOrder()
+                ))
+                .collect(java.util.stream.Collectors.toList());
     }
 
     /**
@@ -1304,8 +1280,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         }
         try {
             // 1. 从远程字典服务获取 vehicle_attribute 的所有 dict_label，构成白名单 Set
-            com.ruoyi.common.core.domain.R<List<SysDictData>> dictResult =
-                    remoteDictService.getDictDataByType("vehicle_attribute");
+            R<List<SysDictData>> dictResult = remoteDictService.getDictDataByType("vehicle_attribute");
             if (dictResult == null || dictResult.getData() == null) {
                 log.warn("filterJsonByVehicleAttribute: 获取 vehicle_attribute 字典失败，跳过过滤，返回原始 JSON");
                 return json;

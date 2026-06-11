@@ -46,10 +46,25 @@ import java.util.regex.Pattern;
  *                                     由 {@link #mergeValueConnection} 生成的映射表。
  *                                     value_connection 格式：
  *                                     {"来源A":{"原值":"目标值",...},"来源B":{...}}
- *                                     示例：value_map = "DICT_MAP"，rawValue = "法国"
+ *                                     示例（精确 key）：value_map = "DICT_MAP"，rawValue = "法国"
  *                                           → 合并后映射表中查找"法国"返回"F"
+ *                                     支持范围 key（精确匹配未命中时自动降级）：
+ *                                       key 格式（变量名任意，大小写不限）：
+ *                                         双侧：6.6<=RRC<=7.7 / 6.6<RRC<7.7
+ *                                         单侧：RRC<=7.7 / 6.6<=RRC
+ *                                       从 rawValue 提取第1个数字后逐 key 匹配范围；
+ *                                       所有范围均未命中时再尝试兜底键 *。
+ *                                     示例（范围 key）：rawValue = "6.8N/kN"
+ *                                           → 提取 6.8 → 命中"6.6<=RRC<=7.7" → 返回"B"
  *  STRIP_UNIT_JOIN:{inSep}:{outSep} 按 inSep 拆分，每项提取第1个数字，再用 outSep 拼接
  *  GROUP_JOIN_SEP:{inSep}:{outSep}  不做值转换，仅修改当前 uuid 组的多值拼接符。
+ *  RANGE_MAP:{条件1}={目标值1};{条件2}={目标值2};...
+ *                                    按数值范围映射。先从原值提取第1个数字，再逐条匹配范围表达式。
+ *                                    条件格式：{lo}{op1}VALUE{op2}{hi}，支持 <= 和 < 两种比较符。
+ *                                    也支持单侧条件：VALUE<={hi} 或 {lo}<=VALUE。
+ *                                    * 作为兜底默认值键（未命中时返回）。
+ *                                    示例：RANGE_MAP:6.6<=VALUE<=7.7=B;7.7<VALUE<=8.8=C;*=D
+ *                                          原值 "6.8N/kN" → 提取 6.8 → 命中 6.6<=VALUE<=7.7 → 返回 "B"
  *  RIM_SPEC:BOTH                     提取轮毂规格235/50R19 103V 19x7J ET47 6.28N/kN C1
  *                                              215/55R18 99H 18x7 1/2J ET33 5.96N/kN C1
  *                                    输出示例：19,7  /  18,7.5
@@ -344,6 +359,32 @@ public class ValueMappingParser {
                     return part1 + sep + part2;
                 }
 
+                // ── 数值范围映射 ──────────────────────────────────
+                // value_map 格式：RANGE_MAP:{条件1}={目标值1};{条件2}={目标值2};...
+                // 条件格式：{lo}{op1}VALUE{op2}{hi}，支持 <= 和 < 两种比较符，也支持单侧。
+                // * 作为兜底默认值键。
+                // 示例：RANGE_MAP:6.6<=VALUE<=7.7=B;7.7<VALUE<=8.8=C;*=D
+                case "RANGE_MAP": {
+                    if (parts.length < 2) return null;
+                    // 还原被转义的冒号，再取冒号后面的全部内容作为规则段
+                    String rangeSpec = descriptor.substring("RANGE_MAP:".length())
+                            .replace("\u0001", ":");
+                    // 先从原值提取第1个数字
+                    String numStr = extractNthNumber(raw, 1);
+                    if (numStr == null) {
+                        log.warn("[ValueMappingParser] RANGE_MAP 无法从原值提取数字: {}", raw);
+                        return null;
+                    }
+                    double numVal;
+                    try {
+                        numVal = Double.parseDouble(numStr);
+                    } catch (NumberFormatException e) {
+                        log.warn("[ValueMappingParser] RANGE_MAP 数字解析失败: {}", numStr);
+                        return null;
+                    }
+                    return applyRangeMap(numVal, rangeSpec, raw);
+                }
+
                 // ── 字典映射（value_connection 新路径）────────────
                 case "DICT_MAP": {
                     // value_map = "DICT_MAP"
@@ -513,11 +554,34 @@ public class ValueMappingParser {
                 log.error("[ValueMappingParser] DICT_MAP：mergedDictMap 为空，无法映射。raw={}", raw);
                 return null;
             }
+
+            // ① 精确匹配
             String result = mergedDictMap.get(raw);
-            if (result == null) {
-                log.warn("[ValueMappingParser] DICT_MAP 未命中: raw='{}', 可用键={}", raw, mergedDictMap.keySet());
+            if (result != null) return result;
+
+            // ② 范围 key 匹配：从原值提取第1个数字，遍历 map key 尝试解析为范围表达式。
+            //    支持格式（变量名任意，大小写不限，支持 <= 和 <）：
+            //      双侧：6.6<=RRC<=7.7  /  6.6<RRC<=7.7  /  6.6<=RRC<7.7  /  6.6<RRC<7.7
+            //      单侧左开：RRC<=7.7  /  RRC<7.7
+            //      单侧右开：6.6<=RRC  /  6.6<RRC
+            String numStr = extractNthNumber(raw, 1);
+            if (numStr != null) {
+                try {
+                    double numVal = Double.parseDouble(numStr);
+                    for (Map.Entry<String, String> entry : mergedDictMap.entrySet()) {
+                        if (matchesRangeKey(entry.getKey(), numVal)) {
+                            return entry.getValue();
+                        }
+                    }
+                } catch (NumberFormatException ignored) { }
             }
-            return result;
+
+            // ③ 兜底 * 键
+            result = mergedDictMap.get("*");
+            if (result != null) return result;
+
+            log.warn("[ValueMappingParser] DICT_MAP 未命中: raw='{}', 可用键={}", raw, mergedDictMap.keySet());
+            return null;
         }
 
         // ── PIPE 步骤：拆分子步骤，逐步执行，透传 mergedDictMap ──
@@ -623,6 +687,105 @@ public class ValueMappingParser {
                 return val.endsWith(".") ? val.substring(0, val.length() - 1) : val;
             }
         }
+        return null;
+    }
+
+    /**
+     * 判断数值是否命中范围 key 表达式。
+     *
+     * <p>支持的范围 key 格式（变量名任意字母，大小写不限）：
+     * <ul>
+     *   <li>双侧：{@code 6.6<=RRC<=7.7} / {@code 6.6<RRC<=7.7} / {@code 6.6<=RRC<7.7} / {@code 6.6<RRC<7.7}</li>
+     *   <li>单侧上界：{@code RRC<=7.7} / {@code RRC<7.7}</li>
+     *   <li>单侧下界：{@code 6.6<=RRC} / {@code 6.6<RRC}</li>
+     * </ul>
+     *
+     * <p>非范围 key（如普通字符串、纯数字）直接返回 false，由调用方继续精确匹配或兜底。
+     *
+     * @param key    value_connection 中的映射 key
+     * @param numVal 已从原值中提取的数字
+     * @return 数值是否落在该范围内
+     */
+    private static boolean matchesRangeKey(String key, double numVal) {
+        if (key == null || key.isEmpty()) return false;
+        // 双侧范围：{lo}{op1}{VAR}{op2}{hi}
+        // 例：6.6<=RRC<=7.7  /  6.6<RRC<=7.7  /  6.6<=RRC<7.7
+        Matcher dual = Pattern.compile(
+                "(-?\\d+(?:\\.\\d+)?)\\s*(<=|<)\\s*[A-Za-z_]+\\s*(<=|<)\\s*(-?\\d+(?:\\.\\d+)?)"
+        ).matcher(key.trim());
+        if (dual.matches()) {
+            double lo  = Double.parseDouble(dual.group(1));
+            String op1 = dual.group(2);
+            String op2 = dual.group(3);
+            double hi  = Double.parseDouble(dual.group(4));
+            boolean loOk = "<=".equals(op1) ? numVal >= lo : numVal > lo;
+            boolean hiOk = "<=".equals(op2) ? numVal <= hi : numVal < hi;
+            return loOk && hiOk;
+        }
+        // 单侧上界：{VAR}{op}{hi}  例：RRC<=7.7 / RRC<7.7
+        Matcher upperOnly = Pattern.compile(
+                "[A-Za-z_]+\\s*(<=|<)\\s*(-?\\d+(?:\\.\\d+)?)"
+        ).matcher(key.trim());
+        if (upperOnly.matches()) {
+            String op = upperOnly.group(1);
+            double hi = Double.parseDouble(upperOnly.group(2));
+            return "<=".equals(op) ? numVal <= hi : numVal < hi;
+        }
+        // 单侧下界：{lo}{op}{VAR}  例：6.6<=RRC / 10.6<RRC
+        Matcher lowerOnly = Pattern.compile(
+                "(-?\\d+(?:\\.\\d+)?)\\s*(<=|<)\\s*[A-Za-z_]+"
+        ).matcher(key.trim());
+        if (lowerOnly.matches()) {
+            double lo = Double.parseDouble(lowerOnly.group(1));
+            String op = lowerOnly.group(2);
+            return "<=".equals(op) ? numVal >= lo : numVal > lo;
+        }
+        return false;
+    }
+
+    /**
+     * 按范围规则串匹配数值，返回对应目标值。
+     *
+     * <p>{@code rangeSpec} 为分号分隔的条目列表，每条格式：{@code 条件表达式=目标值}。
+     * 条件表达式支持：
+     * <ul>
+     *   <li>双侧：{@code 6.6<=VALUE<=7.7}（变量名任意，大小写不限）</li>
+     *   <li>单侧上界：{@code VALUE<=7.7}</li>
+     *   <li>单侧下界：{@code 6.6<=VALUE}</li>
+     *   <li>兜底：{@code *}（未命中任何范围时返回）</li>
+     * </ul>
+     *
+     * <p>示例：{@code 6.6<=VALUE<=7.7=B;7.7<VALUE<=8.8=C;*=D}，numVal=6.8 → "B"
+     *
+     * @param numVal    从原值中已提取的数字
+     * @param rangeSpec 范围规则串（RANGE_MAP: 后面的部分，已还原转义冒号）
+     * @param rawForLog 原始值，仅用于日志
+     * @return 命中的目标值；全部未命中时返回 null
+     */
+    private static String applyRangeMap(double numVal, String rangeSpec, String rawForLog) {
+        if (rangeSpec == null || rangeSpec.isEmpty()) return null;
+        String fallback = null;
+        for (String entry : rangeSpec.split(";", -1)) {
+            entry = entry.trim();
+            if (entry.isEmpty()) continue;
+            // 最后一个 '=' 左边是条件，右边是目标值
+            int eqIdx = entry.lastIndexOf('=');
+            if (eqIdx < 0) {
+                log.warn("[ValueMappingParser] RANGE_MAP 条目格式错误（缺少 '='）: {}", entry);
+                continue;
+            }
+            String condition = entry.substring(0, eqIdx).trim();
+            String target    = entry.substring(eqIdx + 1).trim();
+            if ("*".equals(condition)) {
+                fallback = target;
+                continue;
+            }
+            if (matchesRangeKey(condition, numVal)) {
+                return target;
+            }
+        }
+        if (fallback != null) return fallback;
+        log.warn("[ValueMappingParser] RANGE_MAP 未命中任何范围: raw='{}', spec='{}'", rawForLog, rangeSpec);
         return null;
     }
 

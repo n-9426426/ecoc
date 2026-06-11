@@ -250,9 +250,9 @@ public class VehicleTemplateController extends BaseController {
     }
 
     @PostMapping("/jsonKeys")
-    public AjaxResult listJsonKeys(@RequestBody Map<String, List<Long>> body) {
-        List<Long> vehicleTemplateIds = body.get("vehicleTemplateIds");
-        List<VehicleJsonKeyVo> result = vehicleTemplateService.listJsonKeysByVehicleTemplateIds(vehicleTemplateIds);
+    public AjaxResult listJsonKeys(@RequestBody Map<String, String> body) {
+        String vehicleModel = body.get("vehicleModel");
+        List<VehicleJsonKeyVo> result = vehicleTemplateService.listJsonKeysByVehicleTemplateIds(vehicleModel);
         return AjaxResult.success(result);
     }
 }

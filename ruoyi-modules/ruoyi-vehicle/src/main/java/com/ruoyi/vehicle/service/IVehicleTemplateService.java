@@ -54,5 +54,5 @@ public interface IVehicleTemplateService {
 
     Map<String, String> getTemplateParams();
 
-    List<VehicleJsonKeyVo> listJsonKeysByVehicleTemplateIds(List<Long> vehicleTemplateIds);
+    List<VehicleJsonKeyVo> listJsonKeysByVehicleTemplateIds(String vehicleModel);
 }

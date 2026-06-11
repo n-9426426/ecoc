@@ -204,6 +204,7 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
         // 5. 一次性查询字典，所有模板共用
         Map<Long, SysDictData> attrDictMap = getDictMap("vehicle_attribute");
         Map<String, SysDictData> modelDictMap = getDictMapByValue("vehicle_model");
+        Map<Long, SysDictData> countryDictMap = getDictMap("country");
 
         // 6. 组装VO（每个模板均携带属性树）
         return templateList.stream().map(template -> {
@@ -213,6 +214,22 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
 
             SysDictData modelDict = modelDictMap.get(template.getModelDictCode());
             vo.setModelDictCode(modelDict != null ? modelDict.getDictCode() : null);
+
+            if (StringUtils.isNotBlank(template.getCountry())) {
+                String countryLabel = Arrays.stream(template.getCountry().split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .map(id -> {
+                            try {
+                                SysDictData d = countryDictMap.get(Long.parseLong(id));
+                                return d != null ? d.getDictValue() : id;
+                            } catch (NumberFormatException e) {
+                                return id;
+                            }
+                        })
+                        .collect(Collectors.joining(","));
+                vo.setCountry(countryLabel);
+            }
 
             List<XmlTemplateAttribute> attrList = attrGroupMap.getOrDefault(template.getTemplateId(), Collections.emptyList());
             Map<String, SysDictData> uuidDictMap = getUuidDictMap("vehicle_attribute");
