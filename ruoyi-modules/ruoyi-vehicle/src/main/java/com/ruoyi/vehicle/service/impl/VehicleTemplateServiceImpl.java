@@ -1230,11 +1230,17 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                     .orElse(null);
             R<List<SysDictData>> dictResult = remoteDictService.getDictDataByType("vehicle_attribute");
             if (dictResult != null && dictResult.getData() != null) {
-                dictDataList = dictResult.getData().stream()
+                dictDataList = new ArrayList<>(dictResult.getData().stream()
                         .filter(d -> d.getDictTypeAffiliation().equals(dictId))
                         .filter(d -> StringUtils.isNotBlank(d.getDictLabel()))
-                        .filter(d -> hasCocTemplateKey(d.getKeyMap()))
-                        .collect(java.util.stream.Collectors.toList());
+                        .filter(d -> hasCocTemplateKey(d.getOriginalSystem()))
+                        .collect(Collectors.toMap(
+                                SysDictData::getDictLabel,
+                                d -> d,
+                                (a, b) -> a.getDictCode() <= b.getDictCode() ? a : b,
+                                LinkedHashMap::new
+                        ))
+                        .values());
             }
         } catch (Exception e) {
             log.warn("获取 vehicle_attribute 字典失败", e);
@@ -1321,19 +1327,12 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     }
 
     /**
-     * 判断 key_map JSON 字符串中是否存在以 "COC模版_" 开头的键
+     * 判断 original_system 是否以 "COC模版_" 开头
      */
-    private boolean hasCocTemplateKey(String keyMap) {
-        if (StringUtils.isBlank(keyMap)) {
+    private boolean hasCocTemplateKey(String originalSystem) {
+        if (StringUtils.isBlank(originalSystem)) {
             return false;
         }
-        try {
-            com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            java.util.Map<String, Object> map = objectMapper.readValue(keyMap, new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() {});
-            return map.keySet().stream().anyMatch(key -> key.startsWith("COC模版_"));
-        } catch (Exception e) {
-            log.warn("解析 key_map 失败: {}", keyMap, e);
-            return false;
-        }
+        return originalSystem.startsWith("COC模版_");
     }
 }
