@@ -179,7 +179,7 @@ public class ValueMappingParser {
                     .replace("(?!", "\u0004")
                     .replace("(?<=", "\u0005")
                     .replace("(?<!", "\u0006");
-            String[] parts = safeDescriptor.split(":", 5);
+            String[] parts = safeDescriptor.split(":", 7);
             String type = parts[0].toUpperCase();
 
             switch (type) {

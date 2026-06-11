@@ -829,6 +829,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                         excelMap.put("customerNo", vehicleInfo.getCustomerNo());
                         // Colour
                         excelMap.put("color", color);
+                        excelMap.put("country", vehicleInfo.getCountry());
                         String convertedMesJson = jsonConvertFromMesExcel(excelMap);
 
                         // 每行独立事务插入
