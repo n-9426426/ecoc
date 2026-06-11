@@ -212,9 +212,6 @@ public class MaterialServiceImpl implements IMaterialService {
                         t -> t,
                         (existing, replacement) -> existing
                 ));
-//        if (templateMap.size() > 1) {
-//            throw new RuntimeException("请输入正确的数据以匹配模版");
-//        }
         Map<String, VehicleTemplate> map = templates.stream()
                 .collect(Collectors.toMap(
                         VehicleTemplate::getVersion,
@@ -225,18 +222,20 @@ public class MaterialServiceImpl implements IMaterialService {
         if (template == null) {
             throw new RuntimeException("该模版不存在");
         }
-        material.setVersion(template.getVersion());
+        String oldVersion = material.getVersion();
+        String newVersion = material.getNewVersion();
+        material.setVersion(newVersion);
         material.setVehicleTemplateId(template.getTemplateId());
         applyMaterialAffirm(material);
         LoginUser loginUser = SecurityUtils.getLoginUser();
         material.setUpdateBy(loginUser.getUsername());
         material.setUpdateTime(new Date());
         int row = materialMapper.updateMaterial(material);
-        if (!material.getVersion().equals(material.getNewVersion())) {
+        if (!oldVersion.equals(newVersion)) {
             MaterialHistory history = new MaterialHistory();
             history.setMaterialId(material.getId());
-            history.setOldVersion(material.getVersion());
-            history.setNewVersion(material.getNewVersion());
+            history.setOldVersion(oldVersion);
+            history.setNewVersion(newVersion);
             history.setChangeTime(new Date());
             history.setOperator(loginUser.getUsername());
             history.setRemark(material.getSwitchRemark());

@@ -243,15 +243,14 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     @Transactional(rollbackFor = Exception.class)
     public int updateVehicleTemplate(VehicleTemplate template) {
         VehicleTemplate existTemplate = templateMapper.selectVehicleByUuid(template.getUuid());
+        if (existTemplate == null) {
+            throw new RuntimeException("该模版不存在，无法更新");
+        }
         String templateVersion = existTemplate.getVersion();
-        if (template.getVersion() == null) {
-            if (templateVersion == null) {
-                templateVersion = "1.0";
-            } else {
-                templateVersion = String.valueOf(new BigDecimal(templateVersion).add(new BigDecimal(1)));
-            }
+        if (StringUtils.isBlank(templateVersion)) {
+            templateVersion = "1.0";
         } else {
-            templateVersion = template.getVersion();
+            templateVersion = String.valueOf(new BigDecimal(templateVersion).add(new BigDecimal(1)));
         }
         template.setUuid(existTemplate.getUuid());
         template.setTemplateId(null);
@@ -703,11 +702,15 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                         template.setGenerateAffirm(1);
                     } else if ("No".equalsIgnoreCase(generateRaw)) {
                         template.setGenerateAffirm(0);
+                    } else {
+                        template.setGenerateAffirm(0);
                     }
                     String uploadRaw = template.getUploadAffirmRaw();
                     if ("Yes".equalsIgnoreCase(uploadRaw)) {
                         template.setUploadAffirm(1);
                     } else if ("No".equalsIgnoreCase(uploadRaw)) {
+                        template.setUploadAffirm(0);
+                    } else {
                         template.setUploadAffirm(0);
                     }
                     template.setCreateBy(createBy);
@@ -1172,6 +1175,8 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             templateMap.put("vehicleTemplateId", template.getTemplateId());
             templateMap.put("version", template.getVersion());
             templateMap.put("tvv", template.getTvv());
+            templateMap.put("cocTemplateNo", template.getCocTemplateNo());
+            templateMap.put("wvtaCocNo", template.getWvtaCocNo());
             result.add(templateMap);
         }
         return result;
@@ -1224,6 +1229,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 dictDataList = dictResult.getData().stream()
                         .filter(d -> d.getDictTypeAffiliation().equals(dictId))
                         .filter(d -> StringUtils.isNotBlank(d.getDictLabel()))
+                        .filter(d -> hasCocTemplateKey(d.getKeyMap()))
                         .collect(java.util.stream.Collectors.toList());
             }
         } catch (Exception e) {
@@ -1308,5 +1314,22 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     private Object normalizeValue(Object val) {
         if (val == null || "".equals(val)) return null;
         return val;
+    }
+
+    /**
+     * 判断 key_map JSON 字符串中是否存在以 "COC模版_" 开头的键
+     */
+    private boolean hasCocTemplateKey(String keyMap) {
+        if (StringUtils.isBlank(keyMap)) {
+            return false;
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            java.util.Map<String, Object> map = objectMapper.readValue(keyMap, new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() {});
+            return map.keySet().stream().anyMatch(key -> key.startsWith("COC模版_"));
+        } catch (Exception e) {
+            log.warn("解析 key_map 失败: {}", keyMap, e);
+            return false;
+        }
     }
 }
