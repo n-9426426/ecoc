@@ -1516,25 +1516,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (StringUtils.isBlank((String) (jsonMap.get("SignatureDate")))) {
                 jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
             }
-            String methodAttachmentStatutoryPlate = jsonMap.get("MethodAttachmentStatutoryPlate").toString();
-            if (methodAttachmentStatutoryPlate != null) {
-                switch (methodAttachmentStatutoryPlate) {
-                    case "A0": {
-                        jsonMap.put("LocationMarkingsSubject", "STAT;VIN");
-                        jsonMap.put("LocationMarkingsVehiclePart", "BPILR;PASCT");
-                        jsonMap.put("LocationMarkingsVehiclePartSide", "RIGHTSIDE;RIGHTSIDE");
-                        jsonMap.put("LocationMarkingsVehiclePartsidesection", ";FRONT");
-                        break;
-                    }
-                    case "B2": {
-                        jsonMap.put("LocationMarkingsSubject", "STAT;VIN");
-                        jsonMap.put("LocationMarkingsVehiclePart", "BPILR;ENGCT");
-                        jsonMap.put("LocationMarkingsVehiclePartSide", "RIGHTSIDE;RIGHTSIDE");
-                        break;
-                    }
-                    default: {}
-                }
-            }
 
             // 2.匹配模板
             XmlTemplate xmlTemplate = matchTemplate(vehicle);
@@ -1567,6 +1548,43 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 sysNotice.setSorts(Arrays.asList(14, 15));
                 remoteNoticeService.innerAdd(sysNotice);
                 throw new ServiceException("模板无属性定义，无法生成XML");
+            }
+
+            String methodAttachmentStatutoryPlate = null;
+            Object methodAttachmentStatutoryPlateObj = jsonMap.get("MethodAttachmentStatutoryPlate");
+            if (methodAttachmentStatutoryPlateObj != null
+                    && StringUtils.isNotBlank(methodAttachmentStatutoryPlateObj.toString())) {
+                methodAttachmentStatutoryPlate = methodAttachmentStatutoryPlateObj.toString();
+            }
+            if (StringUtils.isBlank(methodAttachmentStatutoryPlate)) {
+                for (XmlTemplateAttribute attr : attrList) {
+                    String[] parts = attr.getAttrPath().split("\\.");
+                    SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
+                    if (dict == null) continue;
+                    if ("MethodAttachmentStatutoryPlate".equals(sanitizeXmlTagName(dict.getDictLabel()))
+                            && StringUtils.isNotBlank(attr.getDefaultValue())) {
+                        methodAttachmentStatutoryPlate = attr.getDefaultValue();
+                        break;
+                    }
+                }
+            }
+            if (StringUtils.isNotBlank(methodAttachmentStatutoryPlate)) {
+                switch (methodAttachmentStatutoryPlate) {
+                    case "A0": {
+                        jsonMap.put("LocationMarkingsSubject", "STAT;VIN");
+                        jsonMap.put("LocationMarkingsVehiclePart", "BPILR;PASCT");
+                        jsonMap.put("LocationMarkingsVehiclePartSide", "RIGHTSIDE;RIGHTSIDE");
+                        jsonMap.put("LocationMarkingsVehiclePartsidesection", ";FRONT");
+                        break;
+                    }
+                    case "B2": {
+                        jsonMap.put("LocationMarkingsSubject", "STAT;VIN");
+                        jsonMap.put("LocationMarkingsVehiclePart", "BPILR;ENGCT");
+                        jsonMap.put("LocationMarkingsVehiclePartSide", "RIGHTSIDE;RIGHTSIDE");
+                        break;
+                    }
+                    default: {}
+                }
             }
 
             // 5. 单根节点校验
