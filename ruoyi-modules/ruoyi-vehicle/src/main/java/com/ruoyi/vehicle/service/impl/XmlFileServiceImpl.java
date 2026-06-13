@@ -1570,7 +1570,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
             if (StringUtils.isNotBlank(methodAttachmentStatutoryPlate)) {
                 switch (methodAttachmentStatutoryPlate) {
-                    case "A0": {
+                    case "A1": {
                         jsonMap.put("LocationMarkingsSubject", "STAT;VIN");
                         jsonMap.put("LocationMarkingsVehiclePart", "BPILR;PASCT");
                         jsonMap.put("LocationMarkingsVehiclePartSide", "RIGHTSIDE;RIGHTSIDE");
