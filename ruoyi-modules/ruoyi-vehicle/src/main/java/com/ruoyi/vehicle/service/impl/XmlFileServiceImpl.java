@@ -1516,6 +1516,26 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (StringUtils.isBlank((String) (jsonMap.get("SignatureDate")))) {
                 jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
             }
+            String methodAttachmentStatutoryPlate = jsonMap.get("MethodAttachmentStatutoryPlate").toString();
+            if (methodAttachmentStatutoryPlate != null) {
+                switch (methodAttachmentStatutoryPlate) {
+                    case "A0": {
+                        jsonMap.put("LocationMarkingsSubject", "STAT;VIN");
+                        jsonMap.put("LocationMarkingsVehiclePart", "BPILR;PASCT");
+                        jsonMap.put("LocationMarkingsVehiclePartSide", "RIGHTSIDE;RIGHTSIDE");
+                        jsonMap.put("LocationMarkingsVehiclePartsidesection", ";FRONT");
+                        break;
+                    }
+                    case "B2": {
+                        jsonMap.put("LocationMarkingsSubject", "STAT;VIN");
+                        jsonMap.put("LocationMarkingsVehiclePart", "BPILR;ENGCT");
+                        jsonMap.put("LocationMarkingsVehiclePartSide", "RIGHTSIDE;RIGHTSIDE");
+                        break;
+                    }
+                    default: {}
+                }
+            }
+
             // 2.匹配模板
             XmlTemplate xmlTemplate = matchTemplate(vehicle);
             if (xmlTemplate == null) {

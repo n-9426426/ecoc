@@ -511,10 +511,11 @@ public class MaterialServiceImpl implements IMaterialService {
                     new TypeReference<Map<String, Object>>() {});
 
             // Make → brand
-            if (resultMap.containsKey("Make")) {
-                Object val = resultMap.get("Make");
-                material.setBrand(val != null ? String.valueOf(val) : null);
-            }
+            // 2026.06.13 以纸制COC文件中的为准
+//            if (resultMap.containsKey("Make")) {
+//                Object val = resultMap.get("Make");
+//                material.setBrand(val != null ? String.valueOf(val) : null);
+//            }
             // ActualMass → weight
             if (resultMap.containsKey("ActualMass")) {
                 Object val = resultMap.get("ActualMass");
