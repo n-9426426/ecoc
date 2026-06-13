@@ -3222,6 +3222,16 @@ public class XmlFileServiceImpl implements IXmlFileService {
         List<XmlTemplate> templates = xmlTemplateMapper.selectTemplateAll();
         if (templates == null || templates.isEmpty()) return null;
 
+        // 查询国家字典，构建 dict_value -> dict_code 映射
+        List<SysDictData> countryDictList = remoteDictService.getDictDataByType("country").getData();
+        Map<String, String> countryValueToCode = new HashMap<>();
+        for (SysDictData d : countryDictList) {
+            if (d.getDictValue() != null && d.getDictCode() != null) {
+                // key: dict_value(POL), value: dict_code(5442)
+                countryValueToCode.put(d.getDictValue(), String.valueOf(d.getDictCode()));
+            }
+        }
+
         // 查询能源类型字典，构建 dict_code -> dict_value 映射
         List<SysDictData> energyDictList = remoteDictService.getDictDataByType("energy_type").getData();
         Map<Long, String> dictCodeToValue = new HashMap<>();
@@ -3231,8 +3241,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
         }
 
-        String vehicleCountry     = vehicle.getCountry();
-        String vehicleEnergyValue = resolveEnergyType(vehicle.getJsonMap()); // 返回 dict_value 字符串
+        // 车辆国家 dict_value → dict_code
+        String vehicleCountryCode = countryValueToCode.get(vehicle.getCountry());
+        String vehicleEnergyValue = resolveEnergyType(vehicle.getJsonMap());
 
         for (XmlTemplate template : templates) {
             // 1. 必须是最新版本
@@ -3245,18 +3256,17 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 continue;
             }
 
-            // 3. 匹配适配国家（逗号分隔，任一匹配即可）
-            if (StringUtils.isNotBlank(template.getCountry())
-                    && StringUtils.isNotBlank(vehicleCountry)) {
+            // 3. 匹配国家（模板 country 是逗号分隔的 dict_code，车辆转换后的 code 任一匹配即可）
+            if (StringUtils.isNotBlank(template.getCountry()) && StringUtils.isNotBlank(vehicleCountryCode)) {
                 boolean countryMatch = Arrays.stream(template.getCountry().split(","))
                         .map(String::trim)
-                        .anyMatch(c -> c.equalsIgnoreCase(vehicleCountry.trim()));
+                        .anyMatch(c -> c.equals(vehicleCountryCode));
                 if (!countryMatch) {
                     continue;
                 }
             }
 
-            // 4. 匹配能源类型（通过 dict_value 比较，避免硬编码 dict_code）
+            // 4. 匹配能源类型
             if (template.getEnergyType() != null) {
                 String templateEnergyValue = dictCodeToValue.get(template.getEnergyType());
                 if (!Objects.equals(templateEnergyValue, vehicleEnergyValue)) {
