@@ -3220,20 +3220,82 @@ public class XmlFileServiceImpl implements IXmlFileService {
      */
     private XmlTemplate matchTemplate(VehicleInfo vehicle) {
         List<XmlTemplate> templates = xmlTemplateMapper.selectTemplateAll();
-        if (templates.isEmpty()) return null;
+        if (templates == null || templates.isEmpty()) return null;
+
+        // 查询能源类型字典，构建 dict_code -> dict_value 映射
+        List<SysDictData> energyDictList = remoteDictService.getDictDataByType("energy_type").getData();
+        Map<Long, String> dictCodeToValue = new HashMap<>();
+        for (SysDictData d : energyDictList) {
+            if (d.getDictCode() != null) {
+                dictCodeToValue.put(d.getDictCode(), d.getDictValue());
+            }
+        }
+
+        String vehicleCountry     = vehicle.getCountry();
+        String vehicleEnergyValue = resolveEnergyType(vehicle.getJsonMap()); // 返回 dict_value 字符串
 
         for (XmlTemplate template : templates) {
+            // 1. 必须是最新版本
+            if (!Objects.equals(template.getIsLast(), 1)) {
+                continue;
+            }
+
+            // 2. 匹配车型
             if (!Objects.equals(template.getModelDictCode(), vehicle.getVehicleModel())) {
                 continue;
             }
-            if (template.getIsLast().equals(0)) {
-                continue;
+
+            // 3. 匹配适配国家（逗号分隔，任一匹配即可）
+            if (StringUtils.isNotBlank(template.getCountry())
+                    && StringUtils.isNotBlank(vehicleCountry)) {
+                boolean countryMatch = Arrays.stream(template.getCountry().split(","))
+                        .map(String::trim)
+                        .anyMatch(c -> c.equalsIgnoreCase(vehicleCountry.trim()));
+                if (!countryMatch) {
+                    continue;
+                }
             }
+
+            // 4. 匹配能源类型（通过 dict_value 比较，避免硬编码 dict_code）
+            if (template.getEnergyType() != null) {
+                String templateEnergyValue = dictCodeToValue.get(template.getEnergyType());
+                if (!Objects.equals(templateEnergyValue, vehicleEnergyValue)) {
+                    continue;
+                }
+            }
+
             return template;
         }
         return null;
     }
 
+    /**
+     * 从车辆 jsonMap 推断能源类型，返回 dict_value
+     *   fuel_oil       = 燃油
+     *   pure_electric  = 纯电
+     *   hybrid         = NOVC-HEV 混动
+     *   HEV            = OVC-HEV
+     */
+    private String resolveEnergyType(Map<String, Object> jsonMap) {
+        String pureElectric = getString(jsonMap, "PureElectricVehicleIndicator");
+        String classHybrid  = getString(jsonMap, "ClassHybridVehicle");
+
+        if ("Y".equalsIgnoreCase(pureElectric)) {
+            return "pure_electric";
+        }
+        if ("OVC-HEV".equalsIgnoreCase(classHybrid)) {
+            return "HEV";
+        }
+        if ("NOVC-HEV".equalsIgnoreCase(classHybrid)) {
+            return "hybrid";
+        }
+        return "fuel_oil";
+    }
+
+    private String getString(Map<String, Object> jsonMap, String key) {
+        Object val = jsonMap.get(key);
+        return val == null ? "" : val.toString().trim();
+    }
     // =====================================================
     // XML工具方法
     // =====================================================
