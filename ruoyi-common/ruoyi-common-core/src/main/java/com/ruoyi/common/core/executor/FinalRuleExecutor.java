@@ -6,10 +6,8 @@ import com.ruoyi.common.core.model.*;
 import com.ruoyi.common.core.parser.FinalRuleParser;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -1250,11 +1248,34 @@ public class FinalRuleExecutor {
 
         List<?> list = (List<?>) listObj;
         ConditionExpression condExpr = ConditionExpression.parse(af.getCondition());
+        Matcher inMatcher = Pattern
+                .compile("(\\w+)\\s+IN\\s+\\[([^\\]]+)\\]", Pattern.CASE_INSENSITIVE)
+                .matcher(af.getCondition() == null ? "" : af.getCondition().trim());
+
+        final String inField;
+        final java.util.Set<String> inValues;
+        if (inMatcher.matches()) {
+            inField = inMatcher.group(1).trim();
+            inValues = Arrays.stream(inMatcher.group(2).split(","))
+                    .map(s -> s.trim().replaceAll("^['\"]|['\"]$", ""))
+                    .collect(java.util.stream.Collectors.toSet());
+        } else {
+            inField = null;
+            inValues = null;
+        }
+
         long count = list.stream()
                 .filter(item -> {
                     if (!(item instanceof Map)) return false;
                     @SuppressWarnings("unchecked")
                     Map<String, Object> itemMap = (Map<String, Object>) item;
+                    // 优先用 IN 条件过滤
+                    if (inField != null) {
+                        Object val = itemMap.get(inField);
+                        if (val == null) return false;
+                        return inValues.contains(val.toString().trim());
+                    }
+                    // 回退到 ConditionExpression
                     if (condExpr == null) return true;
                     return condExpr.evaluate(itemMap);
                 })
