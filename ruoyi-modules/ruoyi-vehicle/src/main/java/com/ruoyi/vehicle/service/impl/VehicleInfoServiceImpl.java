@@ -1546,39 +1546,13 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                     String rawValue = entry.getValue() == null
                             ? null : String.valueOf(entry.getValue());
 
-                    boolean isMultiLine = rawValue != null && rawValue.contains("\n");
-
-                    if (isMultiLine && chains.size() > 1) {
-                        String[] lines = rawValue.split("\n", -1);
-                        for (int lineIdx = 0; lineIdx < chains.size(); lineIdx++) {
-                            List<SysDictData> singleChain = chains.get(lineIdx);
-                            String lineValue = lineIdx < lines.length ? lines[lineIdx].trim() : "";
-                            String converted = applyMesChain(lineValue, singleChain, fieldName);
-                            String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                            if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
-                                result.put(targetLabel, null);
-                            } else if (com.ruoyi.common.core.utils.StringUtils.isNotBlank(converted)) {
-                                result.put(targetLabel, converted);
-                            }
-                        }
-                    } else if (isMultiLine && chains.size() == 1) {
-                        List<SysDictData> singleChain = chains.get(0);
+                    for (List<SysDictData> singleChain : chains) {
                         String converted = applyMesChain(rawValue, singleChain, fieldName);
                         String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                        if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
+                        if (ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
                             result.put(targetLabel, null);
-                        } else if (com.ruoyi.common.core.utils.StringUtils.isNotBlank(converted)) {
+                        } else if (StringUtils.isNotBlank(converted)) {
                             result.put(targetLabel, converted);
-                        }
-                    } else {
-                        for (List<SysDictData> singleChain : chains) {
-                            String converted = applyMesChain(rawValue, singleChain, fieldName);
-                            String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                            if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
-                                result.put(targetLabel, null);
-                            } else if (com.ruoyi.common.core.utils.StringUtils.isNotBlank(converted)) {
-                                result.put(targetLabel, converted);
-                            }
                         }
                     }
                 }

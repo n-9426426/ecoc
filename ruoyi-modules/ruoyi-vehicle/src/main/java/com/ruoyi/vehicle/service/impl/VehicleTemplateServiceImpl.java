@@ -1048,44 +1048,13 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                     String rawValue = entry.getValue() == null
                             ? null : String.valueOf(entry.getValue());
 
-                    // 含 \n 的值按行拆分，每行分别匹配链中对应 dictLabel
-                    boolean isMultiLine = rawValue != null && rawValue.contains("\n");
-
-                    if (isMultiLine && chains.size() > 1) {
-                        // 多行多链：按行顺序依次对应每条链
-                        String[] lines = rawValue.split("\n", -1);
-                        for (int lineIdx = 0; lineIdx < chains.size(); lineIdx++) {
-                            List<SysDictData> singleChain = chains.get(lineIdx);
-                            String lineValue = lineIdx < lines.length
-                                    ? lines[lineIdx].trim() : "";
-                            String converted = applyChain(lineValue, singleChain, fieldName);
-                            String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                            if (ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
-                                result.put(targetLabel, null);
-                            } else if (StringUtils.isNotBlank(converted)) {
-                                result.put(targetLabel, converted);
-                            }
-                        }
-                    } else if (isMultiLine && chains.size() == 1) {
-                        // 单链但多行：整体传入链处理，\n 替换成 | 以匹配 eCoC 多值格式
-                        List<SysDictData> singleChain = chains.get(0);
+                    for (List<SysDictData> singleChain : chains) {
                         String converted = applyChain(rawValue, singleChain, fieldName);
                         String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
                         if (ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
                             result.put(targetLabel, null);
                         } else if (StringUtils.isNotBlank(converted)) {
                             result.put(targetLabel, converted);
-                        }
-                    } else {
-                        // 单行单链
-                        for (List<SysDictData> singleChain : chains) {
-                            String converted = applyChain(rawValue, singleChain, fieldName);
-                            String targetLabel = singleChain.get(singleChain.size() - 1).getDictLabel();
-                            if (ValueMappingParser.EMPTY_SENTINEL.equals(converted)) {
-                                result.put(targetLabel, null);
-                            } else if (StringUtils.isNotBlank(converted)) {
-                                result.put(targetLabel, converted);
-                            }
                         }
                     }
                 }

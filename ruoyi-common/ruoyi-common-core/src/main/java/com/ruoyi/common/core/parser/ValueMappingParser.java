@@ -65,9 +65,14 @@ import java.util.regex.Pattern;
  *                                    * 作为兜底默认值键（未命中时返回）。
  *                                    示例：RANGE_MAP:6.6<=VALUE<=7.7=B;7.7<VALUE<=8.8=C;*=D
  *                                          原值 "6.8N/kN" → 提取 6.8 → 命中 6.6<=VALUE<=7.7 → 返回 "B"
- *  RIM_SPEC:BOTH                     提取轮毂规格235/50R19 103V 19x7J ET47 6.28N/kN C1
- *                                              215/55R18 99H 18x7 1/2J ET33 5.96N/kN C1
- *                                    输出示例：19,7  /  18,7.5
+ *  RIM_SPEC:BOTH                     提取轮毂规格，原样保留 直径x宽度J 片段，支持以下宽度格式：
+ *                                      · 整数：       18x7J
+ *                                      · 欧式小数：   18x7,5J（逗号作小数点）
+ *                                      · 分数：       18x7 1/2J（空格+分子/分母）
+ *                                    输入示例：215/55R18 99H 18x7J ET33 5.96N/kN C1
+ *                                             215/55R18 99H 18x7,5J ET33 5.96N/kN C1
+ *                                             235/50R19 103V 19x7 1/2J ET47 6.28N/kN C1
+ *                                    输出示例：18x7J  /  18x7,5J  /  19x7 1/2J
  *  AXIS_DRIVE                        格式：AXIS_DRIVE:{sep}:{trueVal}:{falseVal}:{keyword1}:{keyword2}
  *                                    默认：sep=; trueVal=Y falseVal=N keyword1=front keyword2=rear
  *  管道链式执行：PIPE:{rule1}|{rule2}|  将多个 value_map 规则串联，前一步输出作为下一步输入
@@ -172,13 +177,7 @@ public class ValueMappingParser {
 
         try {
             // 按首段关键字分发
-            String safeDescriptor = descriptor
-                    .replace("\\x3A", "\u0001")
-                    .replace("(?:", "\u0002")
-                    .replace("(?=", "\u0003")
-                    .replace("(?!", "\u0004")
-                    .replace("(?<=", "\u0005")
-                    .replace("(?<!", "\u0006");
+            String safeDescriptor = encodeDescriptor(descriptor);
             String[] parts = safeDescriptor.split(":", 7);
             String type = parts[0].toUpperCase();
 
@@ -231,14 +230,7 @@ public class ValueMappingParser {
                         log.warn("[ValueMappingParser] EXTRACT_PATTERN 缺少参数: {}", descriptor);
                         return null;
                     }
-                    String regex = parts[1]
-                            .replace("\\\\", "\\")
-                            .replace("\u0001", ":")
-                            .replace("\u0002", "(?:")
-                            .replace("\u0003", "(?=")
-                            .replace("\u0004", "(?!")
-                            .replace("\u0005", "(?<=")
-                            .replace("\u0006", "(?<!");
+                    String regex = restoreEscapes(parts[1].replace("\\\\", "\\"));
                     int group   = parseIndex(parts[2], 1);
                     Matcher m = Pattern.compile(regex, Pattern.UNICODE_CHARACTER_CLASS).matcher(raw);
                     return m.find() ? m.group(group) : null;
@@ -324,10 +316,26 @@ public class ValueMappingParser {
                 case "SUBSTRING": {
                     // value_map = SUBSTRING:{start}:{end}  (end=-1 → 末尾)
                     if (parts.length < 3) return raw;
-                    int start = Integer.parseInt(parts[1].trim());
-                    int end   = Integer.parseInt(parts[2].trim());
-                    if (start >= raw.length()) return null;
+                    int start, end;
+                    try {
+                        start = Integer.parseInt(parts[1].trim());
+                        end   = Integer.parseInt(parts[2].trim());
+                    } catch (NumberFormatException e) {
+                        log.error("[ValueMappingParser] SUBSTRING 参数必须为整数，实际配置: start='{}' end='{}', valueMap={}",
+                                parts[1].trim(), parts[2].trim(), descriptor);
+                        return null;
+                    }
+                    if (start < 0 || start >= raw.length()) {
+                        log.warn("[ValueMappingParser] SUBSTRING start={} 超出字符串长度 {}: raw='{}'",
+                                start, raw.length(), raw);
+                        return null;
+                    }
                     if (end == -1 || end > raw.length()) end = raw.length();
+                    if (end < start) {
+                        log.warn("[ValueMappingParser] SUBSTRING end={} 小于 start={}: raw='{}'",
+                                end, start, raw);
+                        return null;
+                    }
                     return raw.substring(start, end);
                 }
 
@@ -338,14 +346,7 @@ public class ValueMappingParser {
                         log.warn("[ValueMappingParser] EXTRACT_PATTERN_JOIN 参数不足: {}", descriptor);
                         return null;
                     }
-                    String regex = parts[1]
-                            .replace("\\\\", "\\")
-                            .replace("\u0001", ":")
-                            .replace("\u0002", "(?:")
-                            .replace("\u0003", "(?=")
-                            .replace("\u0004", "(?!")
-                            .replace("\u0005", "(?<=")
-                            .replace("\u0006", "(?<!");
+                    String regex = restoreEscapes(parts[1].replace("\\\\", "\\"));
                     int    g1  = parseIndex(parts[2], 1);
                     int    g2  = parseIndex(parts[3], 2);
                     String sep = (parts.length >= 5) ? unescapeSep(parts[4]) : "";
@@ -366,9 +367,10 @@ public class ValueMappingParser {
                 // 示例：RANGE_MAP:6.6<=VALUE<=7.7=B;7.7<VALUE<=8.8=C;*=D
                 case "RANGE_MAP": {
                     if (parts.length < 2) return null;
-                    // 还原被转义的冒号，再取冒号后面的全部内容作为规则段
-                    String rangeSpec = descriptor.substring("RANGE_MAP:".length())
-                            .replace("\u0001", ":");
+                    // 从已编码的 safeDescriptor 截取规则段，再统一还原转义，
+                    // 与 EXTRACT_PATTERN 等分支保持一致，避免操作原始 descriptor 造成双重替换。
+                    String rangeSpec = restoreEscapes(
+                            safeDescriptor.substring("RANGE_MAP:".length()));
                     // 先从原值提取第1个数字
                     String numStr = extractNthNumber(raw, 1);
                     if (numStr == null) {
@@ -401,37 +403,26 @@ public class ValueMappingParser {
                     String part = parts[1].toUpperCase();
 
                     if ("BOTH".equals(part)) {
-                        // 1. 提取直径：R 后面的整数
-                        Matcher diamMatcher = Pattern.compile("R(\\d+)").matcher(raw);
-                        if (!diamMatcher.find()) {
-                            log.warn("[ValueMappingParser] RIM_SPEC:BOTH 未找到直径(R\\d+): {}", raw);
+                        // 直接提取 "直径x宽度J" 整体片段，原样输出，不做任何数值转换。
+                        //
+                        // 宽度支持三种格式（按优先级从长到短匹配，防止短模式截断长匹配）：
+                        //   · 分数：     7 1/2  → 19x7 1/2J
+                        //   · 欧式小数： 7,5    → 18x7,5J （逗号作小数点）
+                        //   · 整数：     7      → 18x7J
+                        //
+                        // 正则：\d+x(?:\d+\s+\d+/\d+|\d+,\d+|\d+)J
+                        //   \d+      — 轮毂直径
+                        //   x        — 固定分隔符
+                        //   (?: ...) — 宽度（三选一，优先最长）
+                        //   J        — 固定后缀
+                        Pattern rimPattern = Pattern.compile(
+                                "\\d+x(?:\\d+\\s+\\d+/\\d+|\\d+,\\d+|\\d+)J");
+                        Matcher rimMatcher = rimPattern.matcher(raw);
+                        if (!rimMatcher.find()) {
+                            log.warn("[ValueMappingParser] RIM_SPEC:BOTH 未找到轮毂规格片段(\\d+x...J): {}", raw);
                             return null;
                         }
-                        String diameter = diamMatcher.group(1);
-
-                        // 2. 提取宽度：x 后面、J 前面，支持 "7J" 和 "7 1/2J" 两种格式
-                        Matcher widthMatcher = Pattern.compile("x(\\d+(?:\\s+\\d+/\\d+)?)J").matcher(raw);
-                        if (!widthMatcher.find()) {
-                            log.warn("[ValueMappingParser] RIM_SPEC:BOTH 未找到宽度(x...J): {}", raw);
-                            return null;
-                        }
-                        String widthRaw = widthMatcher.group(1).trim(); // "7" 或 "7 1/2"
-
-                        // 3. 分数转小数："7 1/2" → 7.5，"7" → 7
-                        String width;
-                        Matcher fracMatcher = Pattern.compile("(\\d+)\\s+(\\d+)/(\\d+)").matcher(widthRaw);
-                        if (fracMatcher.matches()) {
-                            double val = Double.parseDouble(fracMatcher.group(1))
-                                    + Double.parseDouble(fracMatcher.group(2))
-                                    / Double.parseDouble(fracMatcher.group(3));
-                            width = (val == Math.floor(val))
-                                    ? String.valueOf((long) val)
-                                    : String.valueOf(val);
-                        } else {
-                            width = widthRaw;
-                        }
-
-                        return diameter + "," + width;
+                        return rimMatcher.group(0);
                     }
 
                     log.warn("[ValueMappingParser] RIM_SPEC 不支持的 part: {}", parts[1]);
@@ -445,14 +436,14 @@ public class ValueMappingParser {
                 // 直接调用 convert() 时 mergedDictMap 为 null，DICT_MAP 步骤将返回 null 并打印 error。
                 case "PIPE": {
                     if (parts.length < 2) return raw;
-                    String pipeLine = descriptor.substring("PIPE:".length());
+                    // 从已编码的 safeDescriptor 截取管道串，避免原始 descriptor 中的特殊结构干扰 | 切分
+                    String pipeLine = safeDescriptor.substring("PIPE:".length());
                     String[] steps = pipeLine.split("\\|", -1);
                     String current = raw;
                     for (String step : steps) {
                         if (current == null) return null;
-                        step = step.trim()
-                                .replace("\\x7C", "|")
-                                .replace("\u0001", ":");
+                        // 还原子步骤中的所有占位符（含转义冒号和正则前瞻/后顾结构）
+                        step = restoreEscapes(step.trim().replace("\\x7C", "|"));
                         // 委托给 convertStep，mergedDictMap=null（DICT_MAP 步骤将报错）
                         current = convertStep(current, step, null);
                         if (EMPTY_SENTINEL.equals(current)) return EMPTY_SENTINEL;
@@ -586,14 +577,12 @@ public class ValueMappingParser {
 
         // ── PIPE 步骤：拆分子步骤，逐步执行，透传 mergedDictMap ──
         if (upperStep.startsWith("PIPE:")) {
-            String pipeLine = step.trim().substring("PIPE:".length());
+            String pipeLine = encodeDescriptor(step.trim()).substring("PIPE:".length());
             String[] steps = pipeLine.split("\\|", -1);
             String current = rawValue;
             for (String s : steps) {
                 if (current == null) return null;
-                s = s.trim()
-                        .replace("\\x7C", "|")
-                        .replace("\\x3A", ":");
+                s = restoreEscapes(s.trim().replace("\\x7C", "|"));
                 current = convertStep(current, s, mergedDictMap);
                 if (EMPTY_SENTINEL.equals(current)) return EMPTY_SENTINEL;
             }
@@ -630,6 +619,14 @@ public class ValueMappingParser {
         if (StringUtils.isBlank(valueConnectionJson)) {
             return merged;
         }
+        // 反转义 HTML 实体，兼容前端或数据库写入时误编码的情况
+        // 例如 "RRC&lt;=6.5" → "RRC<=6.5"，否则范围 key 匹配会失败
+        valueConnectionJson = valueConnectionJson
+                .replace("&lt;",   "<")
+                .replace("&gt;",   ">")
+                .replace("&amp;",  "&")
+                .replace("&quot;", "\"")
+                .replace("&#39;",  "'");
         try {
             ObjectMapper om = new ObjectMapper();
             Map<String, Object> outer = om.readValue(
@@ -917,6 +914,44 @@ public class ValueMappingParser {
     private static int parseIndex(String s, int defaultVal) {
         try { return Integer.parseInt(s.trim()); }
         catch (NumberFormatException e) { return defaultVal; }
+    }
+
+    /**
+     * 将 value_map 描述符中需要保护的字符序列替换为私有占位符，
+     * 以便后续安全地按冒号 {@code :} 切分。
+     *
+     * <p>占位符映射：
+     * <ul>
+     *   <li>{@code \x3A}  → {@code \u0001}（转义冒号）</li>
+     *   <li>{@code (?:}   → {@code \u0002}</li>
+     *   <li>{@code (?=}   → {@code \u0003}</li>
+     *   <li>{@code (?!}   → {@code \u0004}</li>
+     *   <li>{@code (?<=}  → {@code \u0005}</li>
+     *   <li>{@code (?<!}  → {@code \u0006}</li>
+     * </ul>
+     */
+    private static String encodeDescriptor(String descriptor) {
+        return descriptor
+                .replace("\\x3A",  "\u0001")
+                .replace("(?<=",   "\u0005")   // 必须在 (?< 之前，避免漏匹配
+                .replace("(?<!",   "\u0006")
+                .replace("(?:",    "\u0002")
+                .replace("(?=",    "\u0003")
+                .replace("(?!",    "\u0004");
+    }
+
+    /**
+     * 将 {@link #encodeDescriptor} 写入的私有占位符还原为原始字符序列。
+     * 所有需要在分割后恢复真实内容的字段（regex、rangeSpec 等）均应调用此方法。
+     */
+    private static String restoreEscapes(String s) {
+        return s
+                .replace("\u0001", ":")
+                .replace("\u0002", "(?:")
+                .replace("\u0003", "(?=")
+                .replace("\u0004", "(?!")
+                .replace("\u0005", "(?<=")
+                .replace("\u0006", "(?<!");
     }
 
     // =====================================================
