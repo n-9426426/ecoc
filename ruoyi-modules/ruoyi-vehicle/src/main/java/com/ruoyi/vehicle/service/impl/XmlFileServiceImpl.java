@@ -954,8 +954,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
 
             // 4. 识别循环容器路径集合（与生成逻辑保持一致）
+            Map<String, Object> enrichedJsonMap = new HashMap<>(
+                    vehicle.getJsonMap() != null ? vehicle.getJsonMap() : new HashMap<>());
+            enrichHardcodedLoopFields(enrichedJsonMap, vehicle);
             Set<String> loopContainerPaths = resolveLoopContainerPaths(
-                    attrList, dictCodeMap, vehicle.getJsonMap() != null ? vehicle.getJsonMap() : new HashMap<>());
+                    attrList, dictCodeMap, enrichedJsonMap);
 
             // 5. 构建"标签层级路径（tagPath）→ 是否循环"查找表
             //    tagPath = 从根标签到当前标签的层级，如 "Root/ManufacturerTable/ManufacturerGroup"
@@ -3831,6 +3834,34 @@ public class XmlFileServiceImpl implements IXmlFileService {
         boolean confirmed = vehicleInfoMapper.existsConfirmedTemplate(vehicleInfo.getVehicleTemplateId());
         if (!confirmed) {
             throw new ServiceException("该模版首台车尚未确认上传，当前车辆暂不可上传");
+        }
+    }
+
+    /**
+     * 将生成阶段硬编码注入的循环字段分号值补充进 jsonMap，
+     * 使校验阶段的 resolveLoopContainerPaths 能识别 LocationMarkingsGroup 为循环节点。
+     */
+    private void enrichHardcodedLoopFields(Map<String, Object> jsonMap, VehicleInfo vehicle) {
+        // 优先取 jsonMap 中已有值，没有时再取模板 defaultValue（与生成逻辑保持一致）
+        String methodAttach = Optional.ofNullable(jsonMap.get("MethodAttachmentStatutoryPlate"))
+                .map(Object::toString).filter(StringUtils::isNotBlank).orElse(null);
+
+        // 若 jsonMap 中没有，尝试从模板 defaultValue 取
+        if (StringUtils.isBlank(methodAttach)) return;
+
+        switch (methodAttach) {
+            case "A1":
+                jsonMap.putIfAbsent("LocationMarkingsSubject",           "STAT;VIN");
+                jsonMap.putIfAbsent("LocationMarkingsVehiclePart",       "BPILR;PASCT");
+                jsonMap.putIfAbsent("LocationMarkingsVehiclePartSide",   "RIGHTSIDE;RIGHTSIDE");
+                jsonMap.putIfAbsent("LocationMarkingsVehiclePartsidesection", ";FRONT");
+                break;
+            case "B2":
+                jsonMap.putIfAbsent("LocationMarkingsSubject",           "STAT;VIN");
+                jsonMap.putIfAbsent("LocationMarkingsVehiclePart",       "BPILR;ENGCT");
+                jsonMap.putIfAbsent("LocationMarkingsVehiclePartSide",   "RIGHTSIDE;RIGHTSIDE");
+                break;
+            default: break;
         }
     }
 }

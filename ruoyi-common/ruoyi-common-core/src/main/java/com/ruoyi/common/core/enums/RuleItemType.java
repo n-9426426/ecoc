@@ -48,6 +48,7 @@ public enum RuleItemType {
     COUNT_AGGREGATE_FIELD,
     COUNT_AGGREGATE,
     SUM_AGGREGATE,
+    SUM_EQUALS_FIELDS,
     COUNT_AS_VALUE,
     LIST_COUNT,
 
@@ -88,6 +89,7 @@ public enum RuleItemType {
     VALUE_IS_NUMBERED,
     VALUE_IN_LIST_FIELD,
     LIST_UNIQUE,
+    LIST_LAST_FORBIDDEN,
 
     // ===== 范围校验（来自 rangeRule）=====
     NUMERIC_RANGE,
@@ -130,12 +132,14 @@ public enum RuleItemType {
             case COUNT_AGGREGATE_FIELD:         return "动态阈值比较";
             case COUNT_AGGREGATE:               return "COUNT聚合校验";
             case SUM_AGGREGATE:                 return "SUM聚合校验";
+            case SUM_EQUALS_FIELDS:             return "多字段求和等值校验";
             case COUNT_AS_VALUE:                return "COUNT赋值校验";
             case LIST_COUNT:                    return "列表COUNT校验";
             case CONDITIONAL_COUNT_AGGREGATE:   return "条件COUNT存在性校验";
             case VALUE_IS_NUMBERED:             return "列表连续编号校验";
             case VALUE_IN_LIST_FIELD:           return "列表成员校验";
             case LIST_UNIQUE:                   return "列表唯一性校验";
+            case LIST_LAST_FORBIDDEN:           return "列表末行该字段必须为空";
             case NUMERIC_RANGE:                 return "数值范围校验";
             case LENGTH_RANGE:                  return "字符串长度范围校验";
             case MAX_LENGTH:                    return "最大长度校验";

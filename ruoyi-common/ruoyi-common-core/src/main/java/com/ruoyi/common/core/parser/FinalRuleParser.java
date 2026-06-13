@@ -98,6 +98,12 @@ public class FinalRuleParser {
                     "SUM\\s*\\(@?([^,]+?),\\s*@?([^)]+?)\\)\\s*(>=|<=|>|<|=|!=)\\s*(VALUE|\\d+(?:\\.\\d+)?)",
                     Pattern.CASE_INSENSITIVE);
 
+    // ===== SUM_EQUALS_FIELDS =====
+    private static final Pattern SUM_EQUALS_FIELDS_PATTERN =
+            Pattern.compile(
+                    "VALUE\\s*=\\s*SUM\\s*\\(\\s*(@?[\\w.]+(?:\\s*,\\s*@?[\\w.]+)*)\\s*\\)",
+                    Pattern.CASE_INSENSITIVE);
+
     // ===== 枚举 =====
     private static final Pattern VALUE_IN_PATTERN =
             Pattern.compile("VALUE\\s+IN\\s+\\[([^\\]]+)\\]",
@@ -171,6 +177,13 @@ public class FinalRuleParser {
     private static final Pattern LIST_COUNT_PATTERN =
             Pattern.compile(
                     "^@([\\w.]+)\\s*=>\\s*COUNT\\s*\\(VALUE\\s+IN\\s+\\[([^\\]]+)\\]\\)\\s*(>=|<=|>|<|=|!=)\\s*(\\d+)$",
+                    Pattern.CASE_INSENSITIVE);
+
+    // ===== LIST_LAST_FORBIDDEN =====
+    // 格式: @TableName=>VALUE IS ABSENT IF LAST
+    private static final Pattern LIST_LAST_FORBIDDEN_PATTERN =
+            Pattern.compile(
+                    "^@([\\w.]+)\\s*=>\\s*VALUE\\s+IS\\s+ABSENT\\s+IF\\s+LAST$",
                     Pattern.CASE_INSENSITIVE);
 
     // ===== A. 条件数值比较（CONDITIONAL_VALUE_COMPARE）=====
@@ -544,6 +557,20 @@ public class FinalRuleParser {
                         .build();
             }
 
+            // VALUE = SUM(@f1, @f2, @f3, @f4)
+            m = SUM_EQUALS_FIELDS_PATTERN.matcher(body);
+            if (m.matches()) {
+                String[] parts = m.group(1).split(",");
+                List<String> fields = new ArrayList<>();
+                for (String p : parts) {
+                    fields.add(p.trim().replace("@", ""));
+                }
+                return RuleItem.builder()
+                        .type(RuleItemType.SUM_EQUALS_FIELDS)
+                        .enumValues(fields)   // 复用 enumValues 存字段列表
+                        .build();
+            }
+
             // 12. VALUE 比较运算（字面量比较，必须在所有字段引用/COUNT之后）
             m = VALUE_COMPARE_PATTERN.matcher(body);
             if (m.matches()) {
@@ -625,6 +652,14 @@ public class FinalRuleParser {
                 return RuleItem.builder()
                         .type(RuleItemType.COUNT_AS_VALUE)
                         .aggregateFunction(af)
+                        .build();
+            }
+
+            m = LIST_LAST_FORBIDDEN_PATTERN.matcher(body);
+            if (m.matches()) {
+                return RuleItem.builder()
+                        .type(RuleItemType.LIST_LAST_FORBIDDEN)
+                        .refFieldName(m.group(1).trim())  // 列表名，如 AxleGroup
                         .build();
             }
 
