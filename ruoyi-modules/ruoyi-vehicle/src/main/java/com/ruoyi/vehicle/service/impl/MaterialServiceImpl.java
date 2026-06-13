@@ -690,9 +690,7 @@ public class MaterialServiceImpl implements IMaterialService {
                                     com.ruoyi.common.core.parser.ValueMappingParser.convertWithDictMap(rawValue, rule.getValueMap(), mergedMap);
 
                             if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
-                                if (!result.containsKey(rule.getDictLabel())) {
-                                    result.put(rule.getDictLabel(), null);
-                                }
+                                result.put(rule.getDictLabel(), null);
                                 continue;
                             }
                             if (stepped != null) {

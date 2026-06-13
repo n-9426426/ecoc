@@ -572,7 +572,7 @@ public class ValueMappingParser {
             if (result != null) return result;
 
             log.warn("[ValueMappingParser] DICT_MAP 未命中: raw='{}', 可用键={}", raw, mergedDictMap.keySet());
-            return null;
+            return raw;
         }
 
         // ── PIPE 步骤：拆分子步骤，逐步执行，透传 mergedDictMap ──

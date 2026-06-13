@@ -1499,10 +1499,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
         try {
             Map<String, Object> jsonMap = vehicle.getJsonMap();
-            jsonMap.put("IntendedCountryRegistration", vehicle.getCountry());
             jsonMap.put("IviReferenceId", UUID.randomUUID().toString());
             // IviVersionDateTime 是 DateTime 类型，需要带时区的完整格式
             jsonMap.put("IviVersionDateTime", DateUtils.format(new Date(), "yyyy-MM-dd'T'HH:mm:ss'Z'"));
+            jsonMap.put("ManufacturerName", vehicle.getSaleCompanyName());
 
             // DateManufactureVehicle 和 SignatureDate 是 Date 类型，只需年月日
             if (vehicle.getManufactureDate() != null) {

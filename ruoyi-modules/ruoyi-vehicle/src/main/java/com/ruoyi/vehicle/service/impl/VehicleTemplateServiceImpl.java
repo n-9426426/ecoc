@@ -976,19 +976,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                     .getDictDataByType("vehicle_attribute").getData();
 
             if (dictDataList != null && !dictDataList.isEmpty()) {
-
-                // DEBUG: print a sample of records to see actual originalSystem values
-                log.info("[jsonConvert DEBUG] dictDataList size={}", dictDataList.size());
-                dictDataList.stream()
-                        .filter(d -> d.getKeyMap() != null && (
-                                d.getKeyMap().contains("0.2.a") ||
-                                        d.getKeyMap().contains("Type") ||
-                                        d.getKeyMap().contains("Commercial") ||
-                                        d.getKeyMap().contains("customerNo")))
-                        .forEach(d -> log.info("[jsonConvert DEBUG] record: dictCode={}, label={}, keyMap={}, originalSystem=[{}], uuid={}",
-                                d.getDictCode(), d.getDictLabel(), d.getKeyMap(),
-                                d.getOriginalSystem(), d.getUuid()));
-
                 // ── 第一步：按 uuid 分组，无 uuid 的每条独立 ──────────────────
                 Map<String, List<SysDictData>> uuidGroups = new LinkedHashMap<>();
                 for (SysDictData rule : dictDataList) {
@@ -1104,9 +1091,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                             }
                             if (stepped != null) {
                                 converted = stepped;
-                            } else {
-                                log.warn("[jsonConvertFromTemplateJson] 多key_map链转换返回 null，dict_code={}, keyMap={}",
-                                        rule.getDictCode(), rule.getKeyMap());
                             }
                         }
 
@@ -1211,8 +1195,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                         ))
                         .values());
             }
-        } catch (Exception e) {
-            log.warn("获取 vehicle_attribute 字典失败", e);
+        } catch (Exception ignore) {
         }
 
         if (dictDataList.isEmpty()) {
@@ -1241,8 +1224,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             current = ValueMappingParser.convertWithDictMap(current, rule.getValueMap(), mergedMap);
 
             if (current == null) {
-                log.warn("[applyChain] 转换返回 null, fieldName={}, dictCode={}, valueMap={}",
-                        fieldName, rule.getDictCode(), rule.getValueMap());
                 return null;
             }
             if (ValueMappingParser.EMPTY_SENTINEL.equals(current)) {
@@ -1267,7 +1248,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             // 1. 从远程字典服务获取 vehicle_attribute 的所有 dict_label，构成白名单 Set
             R<List<SysDictData>> dictResult = remoteDictService.getDictDataByType("vehicle_attribute");
             if (dictResult == null || dictResult.getData() == null) {
-                log.warn("filterJsonByVehicleAttribute: 获取 vehicle_attribute 字典失败，跳过过滤，返回原始 JSON");
                 return json;
             }
             Set<String> allowedKeys = dictResult.getData().stream()
@@ -1285,7 +1265,6 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             // 3. 序列化回 JSON 字符串
             return objectMapper.writeValueAsString(jsonMap);
         } catch (Exception e) {
-            log.error("filterJsonByVehicleAttribute: JSON 过滤异常，返回原始 JSON", e);
             return json;
         }
     }
