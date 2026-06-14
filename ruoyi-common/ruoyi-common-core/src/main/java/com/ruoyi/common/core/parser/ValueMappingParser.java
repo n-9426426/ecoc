@@ -76,6 +76,8 @@ import java.util.regex.Pattern;
  *  AXIS_DRIVE                        格式：AXIS_DRIVE:{sep}:{trueVal}:{falseVal}:{keyword1}:{keyword2}
  *                                    默认：sep=; trueVal=Y falseVal=N keyword1=front keyword2=rear
  *  管道链式执行：PIPE:{rule1}|{rule2}|  将多个 value_map 规则串联，前一步输出作为下一步输入
+ *  EXTRACT_ALL                       提取所有正则匹配项并拼接,找出所有匹配，取指定分组，用 outSep 拼接
+ *                                   格式：EXTRACT_ALL:{regex}:{group}:{outSep}
  * </pre>
  *
  * <h2>数据库存储约定（value_map 列 ≤ 100 字符）</h2>
@@ -357,7 +359,7 @@ public class ValueMappingParser {
                     }
                     String part1 = m.group(g1);
                     String part2 = m.group(g2).trim();
-                    return part1 + sep + part2;
+                    return (part1 + sep + part2).trim();
                 }
 
                 // ── 数值范围映射 ──────────────────────────────────
@@ -461,6 +463,34 @@ public class ValueMappingParser {
                     String val1 = rawLower.contains(keyword1.toLowerCase()) ? trueVal : falseVal;
                     String val2 = rawLower.contains(keyword2.toLowerCase()) ? trueVal : falseVal;
                     return val1 + sep + val2;
+                }
+
+                // ── 提取所有正则匹配项并拼接 ──────────────────────────
+                // value_map = EXTRACT_ALL:{regex}:{group}:{outSep}
+                // 找出所有匹配，取指定分组，用 outSep 拼接
+                case "EXTRACT_ALL": {
+                    if (parts.length < 3) return null;
+                    String regex  = restoreEscapes(parts[1].replace("\\\\", "\\"));
+                    int    group  = parseIndex(parts[2], 1);
+                    String outSep = (parts.length >= 4) ? unescapeSep(parts[3]) : ";";
+                    Matcher m = Pattern.compile(regex).matcher(raw);
+                    StringJoiner sj = new StringJoiner(outSep);
+                    while (m.find()) {
+                        String val = null;
+                        if (group == 0) {
+                            for (int i = 1; i <= m.groupCount(); i++) {
+                                if (m.group(i) != null && !m.group(i).isEmpty()) {
+                                    val = m.group(i);
+                                    break;
+                                }
+                            }
+                        } else if (group <= m.groupCount()) {
+                            val = m.group(group);
+                        }
+                        if (val != null && !val.isEmpty()) sj.add(val);
+                    }
+                    String result = sj.toString();
+                    return result.isEmpty() ? null : result;
                 }
 
                 default:
@@ -572,7 +602,7 @@ public class ValueMappingParser {
             if (result != null) return result;
 
             log.warn("[ValueMappingParser] DICT_MAP 未命中: raw='{}', 可用键={}", raw, mergedDictMap.keySet());
-            return null;
+            return raw;
         }
 
         // ── PIPE 步骤：拆分子步骤，逐步执行，透传 mergedDictMap ──
@@ -907,6 +937,7 @@ public class ValueMappingParser {
             case "SLASH":       return "/";
             case "TAB":         return "\t";
             case "COMMA_SPACE": return ", ";
+            case "SPACE":       return " ";
             default:            return sep;
         }
     }

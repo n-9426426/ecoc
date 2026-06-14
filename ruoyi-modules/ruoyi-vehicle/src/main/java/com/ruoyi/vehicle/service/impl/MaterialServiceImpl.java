@@ -548,10 +548,11 @@ public class MaterialServiceImpl implements IMaterialService {
                     new TypeReference<Map<String, Object>>() {});
 
             // Make → brand
-            if (resultMap.containsKey("Make")) {
-                Object val = resultMap.get("Make");
-                material.setBrand(val != null ? String.valueOf(val) : null);
-            }
+            // 2026.06.13 以纸制COC文件中的为准
+//            if (resultMap.containsKey("Make")) {
+//                Object val = resultMap.get("Make");
+//                material.setBrand(val != null ? String.valueOf(val) : null);
+//            }
             // ActualMass → weight
             if (resultMap.containsKey("ActualMass")) {
                 Object val = resultMap.get("ActualMass");
@@ -695,6 +696,16 @@ public class MaterialServiceImpl implements IMaterialService {
                     }
                 }
 
+                // ── 第三步结束后：补充 NULL 规则兜底（不依赖 key_map 是否存在于模板 JSON）──
+                for (List<SysDictData> chain : keyToChains.values().stream()
+                        .flatMap(List::stream).collect(Collectors.toList())) {
+                    SysDictData last = chain.get(chain.size() - 1);
+                    if ("NULL".equalsIgnoreCase(
+                            last.getValueMap() == null ? "" : last.getValueMap().trim())) {
+                        result.putIfAbsent(last.getDictLabel(), null);
+                    }
+                }
+
                 // ── 第四步：执行多 key_map 链 ─────────────────────────────────────
                 for (List<SysDictData> multiChain : multiKeyChainMap.values()) {
                     multiChain.sort(Comparator.comparingLong(SysDictData::getDictCode));
@@ -727,9 +738,7 @@ public class MaterialServiceImpl implements IMaterialService {
                                     com.ruoyi.common.core.parser.ValueMappingParser.convertWithDictMap(rawValue, rule.getValueMap(), mergedMap);
 
                             if (com.ruoyi.common.core.parser.ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
-                                if (!result.containsKey(rule.getDictLabel())) {
-                                    result.put(rule.getDictLabel(), null);
-                                }
+                                result.put(rule.getDictLabel(), null);
                                 continue;
                             }
                             if (stepped != null) {

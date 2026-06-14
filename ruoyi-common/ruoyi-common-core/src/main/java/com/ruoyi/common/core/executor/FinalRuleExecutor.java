@@ -230,6 +230,9 @@ public class FinalRuleExecutor {
                 case COUNT_AGGREGATE_FIELD:
                     return checkCountAggregateField(fieldName, actualValue, rule, context);
 
+                case SUM_EQUALS_FIELDS:
+                    return checkSumEqualsFields(fieldName, actualValue, rule, context);
+
                 case SUM_AGGREGATE:
                     return checkSumAggregate(fieldName, actualValue, rule, context);
 
@@ -255,6 +258,9 @@ public class FinalRuleExecutor {
 
                 case LIST_COUNT:
                     return checkListCount(fieldName, actualValue, rule, context);
+
+                case LIST_LAST_FORBIDDEN:
+                    return checkListLastForbidden(fieldName, actualValue, rule, context);
 
                 case CONDITIONAL_REGEX:
                     return checkConditionalRegex(fieldName, actualValue, rule, context);
@@ -1289,6 +1295,89 @@ public class FinalRuleExecutor {
                             + " (actual count=" + count + ")",
                     "列表中满足条件的元素数量（" + count + "）与字段 @"
                             + refFieldName + "（" + (long) threshold + "）比较不通过");
+        }
+        return null;
+    }
+
+    private static RuleViolation checkSumEqualsFields(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        List<String> fields = rule.getEnumValues();
+        if (fields == null || fields.isEmpty()) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "SUM_EQUALS_FIELDS: no field list provided",
+                    "SUM_EQUALS_FIELDS 规则缺少字段列表");
+        }
+
+        double sum = 0.0;
+        List<String> missing = new ArrayList<>();
+        for (String f : fields) {
+            Object val = context.get(f);
+            if (isAbsent(val)) { missing.add(f); continue; }
+            try {
+                sum += Double.parseDouble(val.toString().trim());
+            } catch (NumberFormatException e) {
+                return buildViolation(rule, fieldName, actualValue,
+                        "SUM_EQUALS_FIELDS: field '" + f + "' value '" + val + "' is not numeric",
+                        "SUM_EQUALS_FIELDS: 字段 " + f + " 的值 " + val + " 不是数值");
+            }
+        }
+        if (!missing.isEmpty()) return null; // 分量字段缺失则跳过校验
+
+        double actual;
+        try {
+            actual = Double.parseDouble(String.valueOf(actualValue).trim());
+        } catch (NumberFormatException e) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "SUM_EQUALS_FIELDS: current field value is not numeric",
+                    "SUM_EQUALS_FIELDS: 当前字段值不是数值");
+        }
+
+        if (Double.compare(actual, sum) != 0) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "Value " + actual + " != SUM(" + fields + ") = " + sum,
+                    "字段值 " + actual + " 不等于 " + String.join(" + ", fields) + " 之和（" + sum + "）");
+        }
+        return null;
+    }
+
+    /**
+     * @AxleGroup=>VALUE IS ABSENT IF LAST
+     * 若当前校验行是列表最后一行，则该字段必须为空。
+     * 判断"当前行"的方式：actualValue 即当前行该字段的值；
+     * 通过对比 context 中列表末行的同名字段值来定位。
+     */
+    private static RuleViolation checkListLastForbidden(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        String listField = rule.getRefFieldName();
+        if (listField == null || listField.isEmpty()) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "LIST_LAST_FORBIDDEN: listField is null",
+                    "LIST_LAST_FORBIDDEN 规则缺少列表字段名");
+        }
+
+        Object listObj = context.get(listField);
+        if (!(listObj instanceof List)) return null;
+
+        List<?> list = (List<?>) listObj;
+        if (list.isEmpty()) return null;
+
+        // 取末行
+        Object lastItem = list.get(list.size() - 1);
+        if (!(lastItem instanceof Map)) return null;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> lastRow = (Map<String, Object>) lastItem;
+
+        // 判断当前值是否属于末行：末行中该字段值与 actualValue 一致
+        Object lastVal = lastRow.get(fieldName);
+        boolean isLastRow = (actualValue == null && lastVal == null)
+                || (actualValue != null && actualValue.equals(lastVal));
+
+        if (isLastRow && !isAbsent(actualValue)) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "Field '" + fieldName + "' must be absent for the last list (last row of " + listField + ")",
+                    "字段 " + fieldName + " 在列表（" + listField + " 末行）必须为空");
         }
         return null;
     }

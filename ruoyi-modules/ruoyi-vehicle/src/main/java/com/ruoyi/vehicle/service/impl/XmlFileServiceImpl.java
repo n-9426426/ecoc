@@ -954,8 +954,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
 
             // 4. 识别循环容器路径集合（与生成逻辑保持一致）
+            Map<String, Object> enrichedJsonMap = new HashMap<>(
+                    vehicle.getJsonMap() != null ? vehicle.getJsonMap() : new HashMap<>());
+            enrichHardcodedLoopFields(enrichedJsonMap, vehicle);
             Set<String> loopContainerPaths = resolveLoopContainerPaths(
-                    attrList, dictCodeMap, vehicle.getJsonMap() != null ? vehicle.getJsonMap() : new HashMap<>());
+                    attrList, dictCodeMap, enrichedJsonMap);
 
             // 5. 构建"标签层级路径（tagPath）→ 是否循环"查找表
             //    tagPath = 从根标签到当前标签的层级，如 "Root/ManufacturerTable/ManufacturerGroup"
@@ -1499,10 +1502,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
         try {
             Map<String, Object> jsonMap = vehicle.getJsonMap();
-            jsonMap.put("IntendedCountryRegistration", vehicle.getCountry());
             jsonMap.put("IviReferenceId", UUID.randomUUID().toString());
             // IviVersionDateTime 是 DateTime 类型，需要带时区的完整格式
             jsonMap.put("IviVersionDateTime", DateUtils.format(new Date(), "yyyy-MM-dd'T'HH:mm:ss'Z'"));
+            jsonMap.put("ManufacturerName", vehicle.getSaleCompanyName());
 
             // DateManufactureVehicle 和 SignatureDate 是 Date 类型，只需年月日
             if (vehicle.getManufactureDate() != null) {
@@ -1516,6 +1519,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (StringUtils.isBlank((String) (jsonMap.get("SignatureDate")))) {
                 jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
             }
+
             // 2.匹配模板
             XmlTemplate xmlTemplate = matchTemplate(vehicle);
             if (xmlTemplate == null) {
@@ -1547,6 +1551,43 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 sysNotice.setSorts(Arrays.asList(14, 15));
                 remoteNoticeService.innerAdd(sysNotice);
                 throw new ServiceException("模板无属性定义，无法生成XML");
+            }
+
+            String methodAttachmentStatutoryPlate = null;
+            Object methodAttachmentStatutoryPlateObj = jsonMap.get("MethodAttachmentStatutoryPlate");
+            if (methodAttachmentStatutoryPlateObj != null
+                    && StringUtils.isNotBlank(methodAttachmentStatutoryPlateObj.toString())) {
+                methodAttachmentStatutoryPlate = methodAttachmentStatutoryPlateObj.toString();
+            }
+            if (StringUtils.isBlank(methodAttachmentStatutoryPlate)) {
+                for (XmlTemplateAttribute attr : attrList) {
+                    String[] parts = attr.getAttrPath().split("\\.");
+                    SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
+                    if (dict == null) continue;
+                    if ("MethodAttachmentStatutoryPlate".equals(sanitizeXmlTagName(dict.getDictLabel()))
+                            && StringUtils.isNotBlank(attr.getDefaultValue())) {
+                        methodAttachmentStatutoryPlate = attr.getDefaultValue();
+                        break;
+                    }
+                }
+            }
+            if (StringUtils.isNotBlank(methodAttachmentStatutoryPlate)) {
+                switch (methodAttachmentStatutoryPlate) {
+                    case "A1": {
+                        jsonMap.put("LocationMarkingsSubject", "STAT;VIN");
+                        jsonMap.put("LocationMarkingsVehiclePart", "BPILR;PASCT");
+                        jsonMap.put("LocationMarkingsVehiclePartSide", "RIGHTSIDE;RIGHTSIDE");
+                        jsonMap.put("LocationMarkingsVehiclePartsidesection", ";FRONT");
+                        break;
+                    }
+                    case "B2": {
+                        jsonMap.put("LocationMarkingsSubject", "STAT;VIN");
+                        jsonMap.put("LocationMarkingsVehiclePart", "BPILR;ENGCT");
+                        jsonMap.put("LocationMarkingsVehiclePartSide", "RIGHTSIDE;RIGHTSIDE");
+                        break;
+                    }
+                    default: {}
+                }
             }
 
             // 5. 单根节点校验
@@ -3793,6 +3834,34 @@ public class XmlFileServiceImpl implements IXmlFileService {
         boolean confirmed = vehicleInfoMapper.existsConfirmedTemplate(vehicleInfo.getVehicleTemplateId());
         if (!confirmed) {
             throw new ServiceException("该模版首台车尚未确认上传，当前车辆暂不可上传");
+        }
+    }
+
+    /**
+     * 将生成阶段硬编码注入的循环字段分号值补充进 jsonMap，
+     * 使校验阶段的 resolveLoopContainerPaths 能识别 LocationMarkingsGroup 为循环节点。
+     */
+    private void enrichHardcodedLoopFields(Map<String, Object> jsonMap, VehicleInfo vehicle) {
+        // 优先取 jsonMap 中已有值，没有时再取模板 defaultValue（与生成逻辑保持一致）
+        String methodAttach = Optional.ofNullable(jsonMap.get("MethodAttachmentStatutoryPlate"))
+                .map(Object::toString).filter(StringUtils::isNotBlank).orElse(null);
+
+        // 若 jsonMap 中没有，尝试从模板 defaultValue 取
+        if (StringUtils.isBlank(methodAttach)) return;
+
+        switch (methodAttach) {
+            case "A1":
+                jsonMap.putIfAbsent("LocationMarkingsSubject",           "STAT;VIN");
+                jsonMap.putIfAbsent("LocationMarkingsVehiclePart",       "BPILR;PASCT");
+                jsonMap.putIfAbsent("LocationMarkingsVehiclePartSide",   "RIGHTSIDE;RIGHTSIDE");
+                jsonMap.putIfAbsent("LocationMarkingsVehiclePartsidesection", ";FRONT");
+                break;
+            case "B2":
+                jsonMap.putIfAbsent("LocationMarkingsSubject",           "STAT;VIN");
+                jsonMap.putIfAbsent("LocationMarkingsVehiclePart",       "BPILR;ENGCT");
+                jsonMap.putIfAbsent("LocationMarkingsVehiclePartSide",   "RIGHTSIDE;RIGHTSIDE");
+                break;
+            default: break;
         }
     }
 }
