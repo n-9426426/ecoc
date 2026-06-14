@@ -125,4 +125,6 @@ public interface IVehicleInfoService {
      * 查询所有待确认首台车（物料号维度 + 模版维度合并，无分页）
      */
     List<VehicleInfo> listAllFirstVehicleUnconfirmed();
+
+    List<VehicleInfo> listFirstVehicleUnconfirmedAll(VehicleInfo vehicleInfo);
 }

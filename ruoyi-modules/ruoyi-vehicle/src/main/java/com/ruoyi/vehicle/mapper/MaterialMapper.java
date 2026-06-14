@@ -61,4 +61,9 @@ public interface MaterialMapper {
     void updateGenerateAffirmByMaterialNo(@Param("materialNo") String materialNo, @Param("generateAffirm") int generateAffirm);
 
     void updateUploadAffirmByMaterialNo(@Param("materialNo") String materialNo, @Param("uploadAffirm") int uploadAffirm);
+
+    void deleteByMaterialNo(@Param("materialNo") String materialNo);
+
+    void updateVehicleTemplateIdByUuid(@Param("uuid") String uuid,
+                                       @Param("templateId") Long templateId);
 }

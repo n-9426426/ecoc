@@ -48,6 +48,7 @@ import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -266,10 +267,19 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 throw new RuntimeException("动态参数替换失败");
             }
             vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
+            vehicleInfo.setTvv(template.getTvv().replace(",", ""));
             vehicleInfo.setWvtaNo(template.getWvtaCocNo());
             vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
             vehicleInfo.setJson(json);
             vehicleInfo.setVehicleModel(material.getVehicleModel());
+            vehicleInfo.setProjectName(material.getName());
+            vehicleInfo.setBrand(material.getBrand());
+            vehicleInfo.setTireResistanceGrade(material.getTireResistanceGrade());
+            vehicleInfo.setSaleName(material.getSaleName());
+            vehicleInfo.setWeight(material.getWeight());
+            vehicleInfo.setTire(material.getTire());
+
+
             // 按物料号首台车逻辑覆盖 generate_affirm
             applyFirstVehicleAffirm(vehicleInfo, vehicleInfo.getMaterialNo(), String.valueOf(vehicleTemplateId));
         }
@@ -277,11 +287,18 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         vehicleInfo.setValidationResult(0);
         vehicleInfo.setDeleted(0);
         vehicleInfo.setCreateTime(vehicleInfo.getCreateTime() == null ? DateUtils.getNowDate() : vehicleInfo.getCreateTime());
+        if (vehicleInfo.getIssueDate() == null) {
+            vehicleInfo.setIssueDate(vehicleInfo.getCreateTime());
+        }
         vehicleInfo.setCreateBy(SecurityUtils.getUsername() != null ? SecurityUtils.getUsername() : "MES To System");
         if (vehicleInfo.getVehicleId() != null) {
             deleteVehicleInfoByIds(new Long[]{vehicleInfo.getVehicleId()});
         }
+
+
         int insertRow = vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+        log.info("[黑名单检查] 准备检查 vin={}, materialNo={}",
+                vehicleInfo.getVin(), vehicleInfo.getMaterialNo());
         checkMaterialInBlacklist(vehicleInfo);
 
         // VehicleTemplate.json 已在模板导入阶段完成字段映射，直接使用
@@ -421,6 +438,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 throw new RuntimeException("模板不存在，templateId=" + vehicleTemplateId);
             }
             vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
+            vehicleInfo.setTvv(template.getTvv().replace(",", ""));
             vehicleInfo.setWvtaNo(template.getWvtaCocNo());
             vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
             // VehicleTemplate.json 已在导入阶段完成字段映射，直接使用，无需再次转换
@@ -639,6 +657,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         }
 
         try {
+            if (vehicleInfo.getIssueDate() == null) {
+                vehicleInfo.setIssueDate(now);
+            }
             self.insertVehicleInfo(vehicleInfo);
         } catch (Exception e) {
             Throwable cause = e;
@@ -832,6 +853,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                         excelMap.put("country", vehicleInfo.getCountry());
                         String convertedMesJson = jsonConvertFromMesExcel(excelMap);
 
+                        log.info("[导入前] vin={}, templateId={}", vehicleInfo.getVin(),
+                                materialList.get(0).getVehicleTemplateId());
                         // 每行独立事务插入
                         self.insertSingleVehicleInfoRow(vehicleInfo, template, materialList.get(0), convertedMesJson);
                         importedList.add(vehicleInfo);
@@ -841,6 +864,10 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                                 "{\"row\":%d,\"total\":%d,\"status\":\"success\"}", rowNum, total));
                     } else {
                         vehicleInfo.setCreateBy(createBy);
+
+                        if (vehicleInfo.getIssueDate() == null) {
+                            vehicleInfo.setIssueDate(new Date());
+                        }
                         vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
                         checkMaterialInBlacklist(vehicleInfo);
                         importedList.add(vehicleInfo);
@@ -872,6 +899,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         // 所有行处理完后，批量触发首台车打标
         if (!importedList.isEmpty()) {
             try {
+                log.info("[导入后] 触发 handleAfterInsert, importedList size={}", importedList.size());
+                importedList.forEach(v -> log.info("[导入后] vin={}, templateId={}, upload_affirm={}",
+                        v.getVin(), v.getVehicleTemplateId(), v.getUploadAffirm()));
                 firstVehicleCheckService.handleAfterInsert(importedList);
             } catch (Exception e) {
                 log.error("首台车打标失败, taskId={}", taskId, e);
@@ -949,6 +979,10 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         }
         vehicleInfo.setCreateTime(DateUtils.getNowDate());
 
+        // 发证日期为空则用创建时间代替
+        if (vehicleInfo.getIssueDate() == null) {
+            vehicleInfo.setIssueDate(vehicleInfo.getCreateTime());
+        }
         vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
         checkMaterialInBlacklist(vehicleInfo);
 
@@ -1324,6 +1358,21 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         return new ArrayList<>(mergedMap.values());
     }
 
+    @Override
+    public List<VehicleInfo> listFirstVehicleUnconfirmedAll(VehicleInfo vehicleInfo) {
+        // 物料号维度：first_material_flag=1 AND generate_affirm=0
+        List<VehicleInfo> materialList = vehicleInfoMapper.listFirstVehicleUnconfirmed(vehicleInfo, "material");
+        // 模版维度：first_template_flag=1 AND upload_affirm=0
+        List<VehicleInfo> templateList = vehicleInfoMapper.listFirstVehicleUnconfirmed(vehicleInfo, "template");
+
+        // 按 vehicle_id 合并去重，同一辆车只显示一次
+        Map<Long, VehicleInfo> mergedMap = new LinkedHashMap<>();
+        materialList.forEach(v -> mergedMap.put(v.getVehicleId(), v));
+        // 模版维度的车如果已在物料号维度里，不覆盖；如果不在，补充进来
+        templateList.forEach(v -> mergedMap.putIfAbsent(v.getVehicleId(), v));
+
+        return new ArrayList<>(mergedMap.values());
+    }
     // ========== SSE 工具方法（与 VehicleTemplateServiceImpl 保持一致）==========
 
     private void pushEvent(Sinks.Many<ServerSentEvent<String>> sink, String eventType, String data) {
@@ -1358,7 +1407,6 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         if (StringUtils.isNotBlank(materialNo) && materialSwitchOn) {
             Long earliestMaterialId = vehicleInfoMapper.findEarliestIdByMaterialNo(materialNo);
             if (earliestMaterialId == null) {
-                // 该物料号首次出现
                 materialNeedsConfirm = true;
                 causes.add("物料号");
             } else {
@@ -1383,24 +1431,35 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                     // 该模版已有记录但仍待确认 → 模版编辑
                     templateNeedsConfirm = true;
                     causes.add("模版编辑");
+                } else {
+                    // 检查该模版是否被修改过（同 uuid 下是否有更新版本）
+                    if (isTemplateModified(templateId)) {
+                        templateNeedsConfirm = true;
+                        causes.add("模版修改");
+                    }
                 }
             }
         }
 
         if (materialNeedsConfirm) {
             vehicleInfo.setFirstMaterialFlag(1);
+            vehicleInfo.setGenerateAffirm(0);
+        } else {
+            vehicleInfo.setGenerateAffirm(1);
         }
+
 
         if (templateNeedsConfirm) {
             vehicleInfo.setFirstTemplateFlag(1);
+            vehicleInfo.setUploadAffirm(0);
+        } else {
+            vehicleInfo.setUploadAffirm(1);
         }
 
-        // ── 任意一个维度需要待确认，两个字段都置 0，否则置 1 ─────────────────
         int affirm = (materialNeedsConfirm || templateNeedsConfirm) ? 0 : 1;
         vehicleInfo.setGenerateAffirm(affirm);
         vehicleInfo.setUploadAffirm(affirm);
 
-        // ── 写入首台车原因 ─────────────────────────────────────────────────────
         if (!causes.isEmpty()) {
             vehicleInfo.setAffirmCause(String.join("、", causes));
         }
@@ -1440,23 +1499,32 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 if (earliest != null && Integer.valueOf(0).equals(earliest.getUploadAffirm())) {
                     templateNeedsConfirm = true;
                     causes.add("模版编辑");
+                } else {
+                    // 检查该模版是否被修改过（同 uuid 下是否有更新版本）
+                    if (isTemplateModified(templateId)) {
+                        templateNeedsConfirm = true;
+                        causes.add("模版修改");
+                    }
                 }
             }
         }
 
         if (materialNeedsConfirm) {
             vehicleInfo.setFirstMaterialFlag(1);
+            vehicleInfo.setGenerateAffirm(0);
+        } else {
+            vehicleInfo.setGenerateAffirm(1);
         }
-
         if (templateNeedsConfirm) {
             vehicleInfo.setFirstTemplateFlag(1);
+            vehicleInfo.setUploadAffirm(0);
+        } else {
+            vehicleInfo.setUploadAffirm(1);
         }
 
-        // ── 写入首台车原因和确认状态 ──────────────────────────────────────────
         if (materialNeedsConfirm || templateNeedsConfirm) {
-            int affirm = 0;
-            vehicleInfo.setGenerateAffirm(affirm);
-            vehicleInfo.setUploadAffirm(affirm);
+            vehicleInfo.setGenerateAffirm(0);
+            vehicleInfo.setUploadAffirm(0);
             vehicleInfo.setAffirmCause(String.join("、", causes));
         }
     }
@@ -1829,53 +1897,55 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     }
 
     private void checkMaterialInBlacklist(VehicleInfo vehicleInfo) {
-        if (vehicleInfo == null || vehicleInfo.getJson() == null) {
+        if (vehicleInfo == null || vehicleInfo.getMaterialNo() == null) {
+            log.info("[黑名单] vehicleInfo 或 materialNo 为空，跳过");
             return;
         }
 
-        // 1. 先按 materialNo 查
+        // 1. 按 materialNo 查
         MaterialBlacklist materialBlacklist = materialBlacklistMapper
                 .selectMaterialBlacklistByMaterialNo(vehicleInfo.getMaterialNo());
+        log.info("[黑名单] 按materialNo={} 查询结果={}", vehicleInfo.getMaterialNo(), materialBlacklist);
 
-        // 2a. 查不到再按 customerNo 查
+        // 2a. 按 customerNo 查
         if (materialBlacklist == null) {
             materialBlacklist = materialBlacklistMapper
                     .selectMaterialBlacklistByCustomerNo(vehicleInfo.getCustomerNo());
+            log.info("[黑名单] 按customerNo={} 查询结果={}", vehicleInfo.getCustomerNo(), materialBlacklist);
         }
 
-        // 一次解析 JSON，同时取 CommercialName（customerNo来源）和 Make（brand来源）
-        if (materialBlacklist == null) {
+        // 3. 按 json 里的字段查
+        if (materialBlacklist == null && vehicleInfo.getJson() != null) {
             try {
                 JsonNode jsonObj = new ObjectMapper().readTree(vehicleInfo.getJson());
-
-                // 2b. 按 CommercialName（等同于 customerNo）查
                 JsonNode customerNoNode = jsonObj.get("CommercialName");
+                log.info("[黑名单] json CommercialName={}", customerNoNode);
                 if (customerNoNode != null && StringUtils.isNotBlank(customerNoNode.asText())) {
                     materialBlacklist = materialBlacklistMapper
                             .selectMaterialBlacklistByCustomerNo(customerNoNode.asText());
                 }
-
-                // 3. 还查不到再按 brand 查（Make 字段）
                 if (materialBlacklist == null) {
                     JsonNode makeNode = jsonObj.get("Make");
+                    log.info("[黑名单] json Make={}", makeNode);
                     if (makeNode != null && StringUtils.isNotBlank(makeNode.asText())) {
                         materialBlacklist = materialBlacklistMapper
                                 .selectMaterialBlacklistByBrand(makeNode.asText());
                     }
                 }
             } catch (Exception e) {
-                log.warn("checkMaterialInBlacklist: json 解析失败, vehicleId={}",
-                        vehicleInfo.getVehicleId(), e);
+                log.warn("[黑名单] json 解析失败", e);
             }
         }
 
-        // 4. 任意一步查到即命中，更新 deleted = 2
+        log.info("[黑名单] 最终匹配结果={}", materialBlacklist);
+
         if (materialBlacklist != null) {
             VehicleInfo update = new VehicleInfo();
             update.setVehicleId(vehicleInfo.getVehicleId());
             update.setDeleted(2);
             vehicleInfoMapper.updateVehicleInfo(update);
             vehicleInfo.setDeleted(2);
+            log.info("[黑名单] 命中，vin={} 标记为 deleted=2", vehicleInfo.getVin());
         }
     }
 
@@ -1893,6 +1963,28 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         boolean confirmed = vehicleInfoMapper.existsConfirmedTemplate(vehicleInfo.getVehicleTemplateId());
         if (!confirmed) {
             throw new ServiceException("该模版首台车尚未确认上传，当前车辆暂不可上传");
+        }
+    }
+
+    private boolean isTemplateModified(String templateId) {
+        try {
+            VehicleTemplate current = vehicleTemplateMapper.selectVehicleTemplateById(Long.parseLong(templateId));
+            if (current == null || current.getUuid() == null) {
+                return false;
+            }
+            VehicleTemplate query = new VehicleTemplate();
+            query.setUuid(current.getUuid());
+            List<VehicleTemplate> allVersions = vehicleTemplateMapper.selectVehicleTemplateList(query);
+            if (allVersions == null || allVersions.size() <= 1) {
+                return false;
+            }
+            BigDecimal currentVersion = new BigDecimal(current.getVersion());
+            return allVersions.stream()
+                    .filter(t -> t.getVersion() != null)
+                    .anyMatch(t -> new BigDecimal(t.getVersion()).compareTo(currentVersion) > 0);
+        } catch (Exception e) {
+            log.warn("[isTemplateModified] 检查模版是否修改失败，templateId={}", templateId, e);
+            return false;
         }
     }
 }

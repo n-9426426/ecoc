@@ -87,13 +87,10 @@ public class MaterialBlacklistServiceImpl implements IMaterialBlacklistService {
     @Override
     public Map<String, Object> removeToMaterial(Long[] ids) {
         int count = ids.length;
-        if (count == 0) {
-            throw new RuntimeException("选择的数据为空");
-        }
+        if (count == 0) throw new RuntimeException("选择的数据为空");
 
         int fail = 0;
         int success = 0;
-        // key: materialNo, value: 失败原因
         Map<String, String> failReasons = new LinkedHashMap<>();
         List<Long> successIds = new LinkedList<>();
 
@@ -110,34 +107,18 @@ public class MaterialBlacklistServiceImpl implements IMaterialBlacklistService {
                     failReasons.put(materialBlacklist.getMaterialNo(), "物料状态异常，不可移除");
                     continue;
                 }
-
-                Material material = new Material();
-                material.setMaterialNo(materialBlacklist.getMaterialNo());
-                material.setBrand(materialBlacklist.getBrand());
-
-                int row = materialService.insertMaterial(material);
-                if (row == 0) {
-                    fail++;
-                    failReasons.put(material.getMaterialNo(), "插入物料表失败");
-                } else {
-                    success++;
-                    successIds.add(id);
-                }
-            } catch (DuplicateKeyException e) {
-                fail++;
-                failReasons.put("id=" + id, "物料编号已存在，重复插入");
+                success++;
+                successIds.add(id);
             } catch (Exception e) {
                 fail++;
                 failReasons.put("id=" + id, "系统异常：" + e.getMessage());
             }
         }
 
-        // 只删除成功插入物料的黑名单记录
         if (!successIds.isEmpty()) {
             materialBlacklistMapper.deleteMaterialBlacklistByIds(successIds.toArray(new Long[0]));
         }
 
-        // 组装失败详情描述，例如："materialNo为M001的因为插入物料表失败移除失败"
         List<String> failDetails = failReasons.entrySet().stream()
                 .map(entry -> "materialNo为 [" + entry.getKey() + "] 的因为 [" + entry.getValue() + "] 移除失败")
                 .collect(Collectors.toList());

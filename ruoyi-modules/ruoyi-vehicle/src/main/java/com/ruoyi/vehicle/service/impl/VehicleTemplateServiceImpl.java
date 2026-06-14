@@ -216,6 +216,13 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     @Override
     @Transactional(rollbackFor = Exception.class, propagation = Propagation.REQUIRES_NEW)
     public int insertVehicleTemplate(VehicleTemplate template) {
+        // COC编号唯一校验
+        if (StringUtils.isNotBlank(template.getCocTemplateNo())) {
+            int count = templateMapper.selectCountByCocTemplateNo(template.getCocTemplateNo(), null);
+            if (count > 0) {
+                throw new ServiceException("COC模板号 [" + template.getCocTemplateNo() + "] 已存在，请勿重复添加");
+            }
+        }
         template.setUuid(UUID.randomUUID().toString());
         template.setVersion(StringUtils.isBlank(template.getVersion()) ? "1.0" : template.getVersion());
         template.setStatus(StringUtils.isBlank(template.getStatus()) ? "1" : template.getStatus());
@@ -241,10 +248,16 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public int updateVehicleTemplate(VehicleTemplate template) {
+        public int updateVehicleTemplate(VehicleTemplate template) {
         VehicleTemplate existTemplate = templateMapper.selectVehicleByUuid(template.getUuid());
         if (existTemplate == null) {
             throw new RuntimeException("该模版不存在，无法更新");
+        }
+        if (StringUtils.isNotBlank(template.getCocTemplateNo()) && !Objects.equals(existTemplate.getCocTemplateNo(), template.getCocTemplateNo())) {
+            int count = templateMapper.selectCountByCocTemplateNo(template.getCocTemplateNo(), null);
+            if (count > 0) {
+                throw new ServiceException("COC模板号 [" + template.getCocTemplateNo() + "] 已存在，请勿重复添加");
+            }
         }
         String templateVersion = existTemplate.getVersion();
         if (template.getVersion() == null) {
@@ -275,6 +288,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         templateMapper.updateAllTemplateNotIsLast(template.getUuid());
         int rows = templateMapper.insertVehicleTemplate(template);
         if (rows > 0) {
+            // 更新关联该 uuid 的物料号的 vehicle_template_id 为新模板 id
+            materialMapper.updateVehicleTemplateIdByUuid(template.getUuid(), template.getTemplateId());
+
             // 用 uuid 触发，而不是 templateId
             firstVehicleCheckService.handleAfterTemplateModified(template.getUuid());
         }
@@ -725,6 +741,13 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                     Map<String, String> jsonMap = JSONObject.parseObject(
                             mappedJson, new TypeReference<Map<String, String>>() {});
                     template.setTvv(jsonMap.get("Type") + "," + jsonMap.get("Variant") + "," + jsonMap.get("Version"));
+                    // COC编号唯一校验（导入时 uuid 刚生成，排除自身不需要传 uuid）
+                    if (StringUtils.isNotBlank(template.getCocTemplateNo())) {
+                        int count = templateMapper.selectCountByCocTemplateNo(template.getCocTemplateNo(), null);
+                        if (count > 0) {
+                            throw new ServiceException("COC模板号 [" + template.getCocTemplateNo() + "] 已存在，请勿重复添加");
+                        }
+                    }
 
                     templateMapper.insertVehicleTemplate(template);
                     successCount++;

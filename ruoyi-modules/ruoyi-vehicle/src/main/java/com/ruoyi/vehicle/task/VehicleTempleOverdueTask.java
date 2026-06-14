@@ -25,10 +25,10 @@ public class VehicleTempleOverdueTask {
     @Autowired
     private RemoteNoticeService remoteNoticeService;
 
-    @Scheduled(cron = "0 * * * * *")
+/*    @Scheduled(cron = "0 * * * * *")
     public void vehicleTemplateOverdueJobHandler(){
         vehicleTemplateMapper.updateStatusByOverdueDate();
-    }
+    }*/
 
     @Scheduled(cron = "0 * * * * ?")
     public void vehicleTemplateOverdueButNoNextVersionJobHandler() {

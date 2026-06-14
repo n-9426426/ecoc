@@ -45,6 +45,7 @@
         SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.tire, m.weight, m.brand, m.sale_name,
         m.create_time, m.create_by, m.update_time, m.update_by, vt.remark, m.vehicle_template_id,
         m.tire_resistance_grade, m.factory_code, m.vehicle_model, m.status,
+        m.generate_affirm, m.upload_affirm,
         ANY_VALUE(vt.version) AS version,
         ANY_VALUE(CASE WHEN vt.version = lv.last_version THEN 1 ELSE 0 END) AS is_last,
         ANY_VALUE(vt.effective_date) AS effective_date,
@@ -114,10 +115,10 @@
                 and m.status = #{status}
             </if>
             <if test="generateAffirm != null">
-                and vt.generate_affirm = #{generateAffirm}
+                and m.generate_affirm = #{generateAffirm}
             </if>
             <if test="uploadAffirm != null">
-                and vt.upload_affirm = #{uploadAffirm}
+                and m.upload_affirm = #{uploadAffirm}
             </if>
             <if test="isLast != null and isLast != ''">
                 AND vt.is_last = #{isLast}
@@ -260,4 +261,18 @@
             update_time   = SYSDATE()
         WHERE material_no = #{materialNo}
     </update>
+    <update id="updateVehicleTemplateIdByUuid">
+        UPDATE material
+        SET vehicle_template_id = #{templateId},
+            update_time = NOW()
+        WHERE vehicle_template_id IN (
+            SELECT template_id FROM vehicle_template
+            WHERE uuid = #{uuid}
+              AND del_flag = '0'
+        )
+    </update>
+
+    <delete id="deleteByMaterialNo">
+        DELETE FROM material WHERE material_no = #{materialNo}
+    </delete>
 </mapper>

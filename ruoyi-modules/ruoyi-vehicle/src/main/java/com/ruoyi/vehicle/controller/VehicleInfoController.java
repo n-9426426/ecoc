@@ -387,38 +387,19 @@ public class VehicleInfoController extends BaseController {
     @Operation(summary = "首台车待确认列表")
     @RequiresPermissions("vehicle:first:query")
     @GetMapping("/first/list")
-    public TableDataInfo firstVehicleList(
-            VehicleInfo vehicleInfo,
-            @RequestParam(value = "dimension", defaultValue = "material") String dimension) {
-
-        if (!"material".equals(dimension) && !"template".equals(dimension)) {
-            return getDataTable(Collections.emptyList());
-        }
-
-        // VIN 支持逗号/换行分隔批量查询
+    public TableDataInfo firstVehicleList(VehicleInfo vehicleInfo) {
+        // VIN 批量查询处理
         if (StringUtils.isNotBlank(vehicleInfo.getVin())) {
             List<String> vinList = Arrays.stream(vehicleInfo.getVin().split("[,，\n]"))
-                    .map(String::trim)
-                    .filter(StringUtils::isNotBlank)
-                    .collect(Collectors.toList());
+                    .map(String::trim).filter(StringUtils::isNotBlank).collect(Collectors.toList());
             vehicleInfo.setVinList(vinList);
             vehicleInfo.setVin(null);
         }
-        // 物料号支持逗号/换行分隔批量查询
-        if (StringUtils.isNotBlank(vehicleInfo.getMaterialNo())) {
-            List<String> materialNoList = Arrays.stream(vehicleInfo.getMaterialNo().split("[,，\n]"))
-                    .map(String::trim)
-                    .filter(StringUtils::isNotBlank)
-                    .collect(Collectors.toList());
-            vehicleInfo.setMaterialNoList(materialNoList);
-            vehicleInfo.setMaterialNo(null);
-        }
-
         startPage();
-        List<VehicleInfo> list = vehicleInfoService.listFirstVehicleUnconfirmed(vehicleInfo, dimension);
+        // 不传 dimension，后端合并两个维度
+        List<VehicleInfo> list = vehicleInfoService.listFirstVehicleUnconfirmedAll(vehicleInfo);
         return getDataTable(list);
     }
-
     // ===================================================================
     //  确认
     // ===================================================================

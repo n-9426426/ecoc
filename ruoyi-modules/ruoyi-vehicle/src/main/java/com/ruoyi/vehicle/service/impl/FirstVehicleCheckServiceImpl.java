@@ -189,23 +189,32 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
             return;
         }
 
-        // 查出该 uuid 下所有关联的 templateId
         List<String> templateIds = vehicleInfoMapper.findTemplateIdsByUuid(uuid);
         if (templateIds == null || templateIds.isEmpty()) {
             log.debug("[首台车] 模版 uuid={} 无关联车辆，跳过", uuid);
             return;
         }
 
-        // 重置该 uuid 下所有关联车辆的模版确认状态
-        // 模版内容改了，之前的"可上传"确认作废，需要重新人工确认
+        // 重置模版确认状态
         templateIds.forEach(templateId -> {
             vehicleInfoMapper.resetTemplateConfirm(templateId);
             log.info("[首台车] 模版修改 uuid={} templateId={} → 重置确认状态", uuid, templateId);
         });
         vehicleTemplateMapper.resetAffirmByUuid(uuid);
-        materialMapper.resetAffirmByTemplateUuid(uuid);
-        // 重置后，existsConfirmedTemplate 返回 false，recalculateTemplateFlag 可以正常打标
+        //materialMapper.resetAffirmByTemplateUuid(uuid);
+
+        // 重新打标模版维度
         templateIds.forEach(this::recalculateTemplateFlag);
+
+        // ★ 同步重算关联物料号维度的 flag
+        // 因为模版修改了，upload_affirm 被重置，关联的物料号下的车也需要重新出现在首台车列表
+        templateIds.forEach(templateId -> {
+            List<String> materialNos = vehicleInfoMapper.findMaterialNosByTemplateId(templateId);
+            materialNos.stream()
+                    .filter(m -> m != null && !m.trim().isEmpty())
+                    .collect(Collectors.toSet())
+                    .forEach(this::recalculateMaterialFlag);
+        });
     }
 
     @Override
@@ -216,6 +225,9 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
 
         int newGenerateAffirm = vehicleInfo.getGenerateAffirm();
         materialMapper.updateGenerateAffirmByMaterialNo(vehicleInfo.getMaterialNo(), newGenerateAffirm);
+
+        // 确认后同步该物料号下所有车辆的 generate_affirm
+        vehicleInfoMapper.updateGenerateAffirmByMaterialNo(vehicleInfo.getMaterialNo(), newGenerateAffirm);
         if (vehicleInfo.getVehicleTemplateId() != null) {
             vehicleTemplateMapper.updateGenerateAffirmByTemplateId(
                     Long.parseLong(vehicleInfo.getVehicleTemplateId()), newGenerateAffirm);
@@ -264,6 +276,9 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
 
         int newUploadAffirm = vehicleInfo.getUploadAffirm();
         materialMapper.updateUploadAffirmByMaterialNo(vehicleInfo.getMaterialNo(), newUploadAffirm);
+
+        // 确认后同步该模版下所有车辆的 upload_affirm
+        vehicleInfoMapper.updateUploadAffirmByTemplateId(vehicleInfo.getVehicleTemplateId(), newUploadAffirm);
         if (vehicleInfo.getVehicleTemplateId() != null) {
             vehicleTemplateMapper.updateUploadAffirmByTemplateId(
                     Long.parseLong(vehicleInfo.getVehicleTemplateId()), newUploadAffirm);
@@ -335,14 +350,14 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
      * flag 始终跟随制造日期最早的那辆存活车辆
      */
     private void recalculateTemplateFlag(String templateId) {
-        if (!isNotBlank(templateId)) {
-            return;
-        }
+        log.info("[首台车] recalculateTemplateFlag 开始 templateId={}", templateId);
         vehicleInfoMapper.clearTemplateFlagByTemplateId(templateId);
         Long earliestId = vehicleInfoMapper.findEarliestIdByTemplateId(templateId);
         if (earliestId == null) {
+            log.info("[首台车] recalculateTemplateFlag templateId={} 无车辆，跳过", templateId);
             return;
         }
+        log.info("[首台车] recalculateTemplateFlag templateId={} 打标 vehicleId={}", templateId, earliestId);
         vehicleInfoMapper.markTemplateFlag(earliestId, 1);
     }
 

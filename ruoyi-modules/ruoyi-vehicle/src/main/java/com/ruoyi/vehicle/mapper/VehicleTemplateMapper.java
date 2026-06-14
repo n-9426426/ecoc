@@ -71,4 +71,7 @@ public interface VehicleTemplateMapper {
 
     void updateUploadAffirmByTemplateId(@Param("templateId") Long templateId, @Param("uploadAffirm") int uploadAffirm);
 
+    int selectCountByCocTemplateNo(@Param("cocTemplateNo") String cocTemplateNo,
+                                   @Param("excludeUuid") String excludeUuid);
+
 }

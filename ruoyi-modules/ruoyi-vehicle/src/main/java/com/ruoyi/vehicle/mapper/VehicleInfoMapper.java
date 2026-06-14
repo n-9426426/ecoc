@@ -221,4 +221,12 @@ public interface VehicleInfoMapper {
     List<VehicleInfo> listFirstTemplateUnconfirmedEarliest();
 
     List<VehicleInfo> checkVehicleInfoTimeoutGenerate(@Param("noticeStatus") Integer noticeStatus);
+
+    List<String> findMaterialNosByTemplateId(@Param("templateId") String templateId);
+
+    void updateGenerateAffirmByMaterialNo(@Param("materialNo") String materialNo,
+                                           @Param("generateAffirm") int generateAffirm);
+
+    void updateUploadAffirmByTemplateId(@Param("templateId") String templateId,
+                                        @Param("uploadAffirm") int uploadAffirm);
 }

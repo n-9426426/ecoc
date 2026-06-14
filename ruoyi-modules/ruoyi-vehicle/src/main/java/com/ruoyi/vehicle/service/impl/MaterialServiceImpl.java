@@ -175,13 +175,30 @@ public class MaterialServiceImpl implements IMaterialService {
                 throw new RuntimeException("TyreSize存在多个值，请指定轮胎");
             }
 
+            // 校验通过后，将模板字段值同步给 material（仅在 material 自身为空时填充）
+            if (StringUtils.isBlank(material.getBrand()) && makeList.size() == 1) {
+                material.setBrand(makeList.get(0));
+            }
+            if (StringUtils.isBlank(material.getWeight()) && massList.size() == 1) {
+                material.setWeight(massList.get(0));
+            }
+            if (StringUtils.isBlank(material.getSaleName()) && commercialList.size() == 1) {
+                material.setSaleName(commercialList.get(0));
+            }
+            if (StringUtils.isBlank(material.getTire()) && tyreSizeList.size() == 1) {
+                material.setTire(tyreSizeList.get(0));
+            }
+
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
             log.warn("insertMaterial: template json 解析失败, templateId={}", template.getTemplateId(), e);
         }
+
         material.setVersion(template.getVersion());
         material.setVehicleTemplateId(template.getTemplateId());
+
+
         applyMaterialAffirm(material);
         return materialMapper.insertMaterial(material);
     }
@@ -368,14 +385,22 @@ public class MaterialServiceImpl implements IMaterialService {
                     material.setVehicleModel(vehicleModelValue);
 
                     Material existing = materialMapper.selectByMaterialNo(material.getMaterialNo());
-                    if (existing == null) {
+                    if (existing != null) {
+                        materialMapper.deleteByMaterialNo(existing.getMaterialNo());
+                    }
+// 统一走新增
+                    insertMaterial(material, createBy, false);
+                    successCount++;
+                    pushEvent(sink, "progress", String.format(
+                            "{\"row\":%d,\"total\":%d,\"status\":\"success\"}", rowNum, total));
+                /*    if (existing == null) {
                         // 新增
                         insertMaterial(material, createBy, false);
                         successCount++;
                         pushEvent(sink, "progress", String.format(
                                 "{\"row\":%d,\"total\":%d,\"status\":\"success\"}", rowNum, total));
 
-                    } else if (updateSupport) {
+                    } else {
                         // 覆盖更新
                         material.setId(existing.getId());
                         material.setUpdateBy(createBy);
@@ -386,7 +411,19 @@ public class MaterialServiceImpl implements IMaterialService {
                         pushEvent(sink, "progress", String.format(
                                 "{\"row\":%d,\"total\":%d,\"status\":\"update\"}", rowNum, total));
 
-                    } else {
+                    }*/
+                 /*   } else if (updateSupport) {
+                        // 覆盖更新
+                        material.setId(existing.getId());
+                        material.setUpdateBy(createBy);
+                        material.setUpdateTime(new Date());
+                        materialMapper.updateMaterial(material);
+                        updateCount++;
+                        successCount++;
+                        pushEvent(sink, "progress", String.format(
+                                "{\"row\":%d,\"total\":%d,\"status\":\"update\"}", rowNum, total));
+
+                    }*/ /*else {
                         // 不允许更新，跳过
                         skipCount++;
                         successCount++;
@@ -395,7 +432,7 @@ public class MaterialServiceImpl implements IMaterialService {
                         pushEvent(sink, "progress", String.format(
                                 "{\"row\":%d,\"total\":%d,\"status\":\"skip\",\"reason\":\"%s\"}",
                                 rowNum, total, escapeJson(reason)));
-                    }
+                    }*/
                 } catch (Exception e) {
                     failCount++;
                     String reason = e.getMessage();

@@ -21,9 +21,9 @@ public class VehicleTempleEffectiveTask {
     @Autowired
     private VehicleTemplateMapper vehicleTemplateMapper;
 
-    @Scheduled(cron = "0 * * * * *")
+/*    @Scheduled(cron = "0 * * * * *")
     public void vehicleTemplateEffectiveJobHandler(){
         // todo 当模版启用的时候，需要检查物料号管理的自动更新版本是否启用，如果启用，需要同步更改物料号管理的的newVersion
         vehicleTemplateMapper.updateStatusByEffectiveDate();
-    }
+    }*/
 }

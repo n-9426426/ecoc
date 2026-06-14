@@ -662,6 +662,7 @@
 			update_time             = SYSDATE()
 		WHERE vehicle_template_id = #{templateId}
 		  AND deleted = 0
+		  AND upload_affirm = 0  -- ← 只重置未确认的，已确认的不动
 	</update>
 
 	<!--
@@ -677,12 +678,13 @@
 			AND vi.deleted = 0
 			<if test="vehicleInfo.affirm != null">
 				<choose>
-					<when test="vehicleInfo.affirm == 1">
-						AND vi.generate_affirm = 1
-						AND vi.upload_affirm = 1
+					<when test="dimension == 'material'">
+						AND vi.first_material_flag = 1
+						AND vi.generate_affirm = 0
 					</when>
-					<when test="vehicleInfo.affirm == 0">
-						AND (vi.generate_affirm = 0 OR vi.upload_affirm = 0)
+					<when test="dimension == 'template'">
+						AND vi.first_template_flag = 1
+						AND vi.upload_affirm = 0
 					</when>
 				</choose>
 			</if>
@@ -899,6 +901,7 @@
                ) AS rn
 				 FROM vehicle_info
 				 WHERE first_material_flag = 1
+				   AND generate_affirm = 0
 				   AND deleted = 0
 			 ) vi
 				 LEFT JOIN (SELECT dict_code, dict_label FROM sys_dict_data WHERE dict_type = 'vehicle_model') sdd
@@ -931,6 +934,7 @@
                ) AS rn
 				 FROM vehicle_info
 				 WHERE first_template_flag = 1
+				   AND upload_affirm = 0
 				   AND deleted = 0
 			 ) vi
 				 LEFT JOIN (SELECT dict_code, dict_label FROM sys_dict_data WHERE dict_type = 'vehicle_model') sdd
@@ -955,4 +959,27 @@
 		  AND vi.upload_status = 0
 		  AND TIMESTAMPDIFF(MICROSECOND, vi.create_time, NOW()) / 1000 &gt;= CAST(sdd.dict_value AS SIGNED)
 	</select>
+	<select id="findMaterialNosByTemplateId" resultType="string">
+		SELECT DISTINCT material_no
+		FROM vehicle_info
+		WHERE vehicle_template_id = #{templateId}
+		  AND deleted = 0
+		  AND material_no IS NOT NULL
+	</select>
+
+	<update id="updateGenerateAffirmByMaterialNo">
+		UPDATE vehicle_info
+		SET generate_affirm = #{generateAffirm},
+			update_time = SYSDATE()
+		WHERE material_no = #{materialNo}
+		  AND deleted = 0
+	</update>
+
+	<update id="updateUploadAffirmByTemplateId">
+		UPDATE vehicle_info
+		SET upload_affirm = #{uploadAffirm},
+			update_time = SYSDATE()
+		WHERE vehicle_template_id = #{templateId}
+		  AND deleted = 0
+	</update>
 </mapper>
