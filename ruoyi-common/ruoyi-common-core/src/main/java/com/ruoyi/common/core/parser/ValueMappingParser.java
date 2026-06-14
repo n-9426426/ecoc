@@ -405,26 +405,30 @@ public class ValueMappingParser {
                     String part = parts[1].toUpperCase();
 
                     if ("BOTH".equals(part)) {
-                        // 直接提取 "直径x宽度J" 整体片段，原样输出，不做任何数值转换。
-                        //
-                        // 宽度支持三种格式（按优先级从长到短匹配，防止短模式截断长匹配）：
-                        //   · 分数：     7 1/2  → 19x7 1/2J
-                        //   · 欧式小数： 7,5    → 18x7,5J （逗号作小数点）
-                        //   · 整数：     7      → 18x7J
-                        //
-                        // 正则：\d+x(?:\d+\s+\d+/\d+|\d+,\d+|\d+)J
-                        //   \d+      — 轮毂直径
-                        //   x        — 固定分隔符
-                        //   (?: ...) — 宽度（三选一，优先最长）
-                        //   J        — 固定后缀
                         Pattern rimPattern = Pattern.compile(
                                 "\\d+x(?:\\d+\\s+\\d+/\\d+|\\d+,\\d+|\\d+)J");
                         Matcher rimMatcher = rimPattern.matcher(raw);
                         if (!rimMatcher.find()) {
-                            log.warn("[ValueMappingParser] RIM_SPEC:BOTH 未找到轮毂规格片段(\\d+x...J): {}", raw);
+                            log.warn("[ValueMappingParser] RIM_SPEC:BOTH 未找到轮毂规格片段: {}", raw);
                             return null;
                         }
-                        return rimMatcher.group(0);
+                        String matched = rimMatcher.group(0);
+
+                        // 分数宽度 → 欧式小数转换：20x8 1/2J → 20x8,5J
+                        Matcher fracMatcher = Pattern.compile(
+                                "(\\d+x)(\\d+)\\s+(\\d+)/(\\d+)(J)").matcher(matched);
+                        if (fracMatcher.find()) {
+                            int whole = Integer.parseInt(fracMatcher.group(2));
+                            double frac = (double) Integer.parseInt(fracMatcher.group(3))
+                                    / Integer.parseInt(fracMatcher.group(4));
+                            double width = whole + frac;
+                            String widthStr = (frac == 0)
+                                    ? String.valueOf(whole)
+                                    : String.valueOf(width).replace(".", ",");
+                            matched = fracMatcher.group(1) + widthStr + fracMatcher.group(5);
+                        }
+
+                        return matched;
                     }
 
                     log.warn("[ValueMappingParser] RIM_SPEC 不支持的 part: {}", parts[1]);
