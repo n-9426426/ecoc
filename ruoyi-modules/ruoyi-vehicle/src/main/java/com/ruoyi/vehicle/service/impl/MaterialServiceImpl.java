@@ -559,10 +559,10 @@ public class MaterialServiceImpl implements IMaterialService {
                 material.setWeight(val != null ? String.valueOf(val) : null);
             }
             // CommercialName → saleName
-            if (resultMap.containsKey("CommercialName")) {
-                Object val = resultMap.get("CommercialName");
-                material.setSaleName(val != null ? String.valueOf(val) : null);
-            }
+//            if (resultMap.containsKey("CommercialName")) {
+//                Object val = resultMap.get("CommercialName");
+//                material.setSaleName(val != null ? String.valueOf(val) : null);
+//            }
             // TyreSize → tire
             if (resultMap.containsKey("TyreSize")) {
                 Object val = resultMap.get("TyreSize");
