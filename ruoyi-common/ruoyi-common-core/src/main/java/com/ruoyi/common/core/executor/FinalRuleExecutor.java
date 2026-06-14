@@ -393,46 +393,64 @@ public class FinalRuleExecutor {
         return null;
     }
 
-    private static RuleViolation checkSumAggregate(String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+    /**
+     * SUM(@AxleGroup, @TechnicallyPermissibleMassAxle) >= VALUE
+     *
+     * 跨行聚合：遍历 listField（AxleGroup）所有行，
+     * 将每行 field（TechnicallyPermissibleMassAxle）的值累加为全局 sum，
+     * 再用 sum 与 actualValue（当前字段值）做比较。
+     *
+     * 注意：原实现误做"逐行各自 / 拆分求和后与 threshold 比较"，语义完全错误，此处修正。
+     */
+    private static RuleViolation checkSumAggregate(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
         AggregateFunction af = rule.getAggregateFunction();
+        if (af == null) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "SUM_AGGREGATE: aggregateFunction is null",
+                    "SUM_AGGREGATE 规则缺少聚合函数描述");
+        }
+
         Object listObj = context.get(af.getListField());
-        if (!(listObj instanceof List)) return null;
+        if (!(listObj instanceof List)) return null; // 列表不存在，跳过
 
         List<?> list = (List<?>) listObj;
 
-        double threshold = af.getThreshold() != null
-                ? af.getThreshold()
-                : toDouble(actualValue);
-
-        // ★ 每行独立校验：将该行 TechnicallyPermissibleMassAxle 的所有 "/" 分隔值求和，
-        //   每行的和分别与 threshold 比较，任一行不满足即报错。
-        int rowIndex = 0;
+        // ★ 修复：跨所有行累加，而非逐行独立校验
+        double totalSum = 0.0;
         for (Object item : list) {
-            rowIndex++;
             if (!(item instanceof Map)) continue;
             @SuppressWarnings("unchecked")
-            Map<String, Object> itemMap = (Map<String, Object>) item;
-            Object val = itemMap.get(af.getField());
+            Map<String, Object> row = (Map<String, Object>) item;
+            Object val = row.get(af.getField());
             if (val == null) continue;
-
-            String strVal = val.toString().trim();
-            double rowSum = 0.0;
-            for (String segment : strVal.split("/")) {
-                try {
-                    rowSum += Double.parseDouble(segment.trim());
-                } catch (NumberFormatException ignored) {
-                }
+            try {
+                totalSum += Double.parseDouble(val.toString().trim());
+            } catch (NumberFormatException ignored) {
+                // 非数值行跳过，不中断整体求和
             }
+        }
 
-            if (!af.getOperator().apply(rowSum, threshold)) {
-                return buildViolation(rule, fieldName, actualValue,
-                        "SUM(" + af.getListField() + "[" + rowIndex + "], " + af.getField() + "="
-                                + strVal + ") = " + rowSum + " " + af.getOperator().getSymbol()
-                                + " " + threshold + " failed",
-                        af.getListField() + " 第" + rowIndex + "行 " + af.getField()
-                                + "（" + strVal + "）各值之和为 " + rowSum
-                                + "，不满足要求 " + af.getOperator().getSymbol() + " " + threshold);
-            }
+        // ★ 修复：与 actualValue（当前字段值）比较，而非与 threshold 比较
+        //   规则语义：SUM(...) >= VALUE，即 sum 满足 op actualValue
+        double actual;
+        try {
+            actual = toDouble(actualValue);
+        } catch (Exception e) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "SUM_AGGREGATE: current field value is not numeric: " + actualValue,
+                    "SUM_AGGREGATE：当前字段值不是数值：" + actualValue);
+        }
+
+        if (!af.getOperator().apply(totalSum, actual)) {
+            return buildViolation(rule, fieldName, actualValue,
+                    String.format("SUM(%s, %s) = %.1f %s VALUE(%.1f) failed",
+                            af.getListField(), af.getField(),
+                            totalSum, af.getOperator().getSymbol(), actual),
+                    String.format("所有 %s 行的 %s 之和为 %.1f，不满足要求 %s 当前值 %.1f",
+                            af.getListField(), af.getField(),
+                            totalSum, af.getOperator().getSymbol(), actual));
         }
         return null;
     }

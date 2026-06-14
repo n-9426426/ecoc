@@ -2887,8 +2887,12 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     }
                 }
             } else if (StringUtils.isNotBlank(dict.getDictLabel())) {
+                int totalRows = (rowIndex >= 0)
+                        ? calcTotalRowsForGroup(attrList, dictCodeMap, jsonMap, rootAttrPath)
+                        : -1;
+
                 String value = getValueByRow(jsonMap, dict.getDictLabel(),
-                        attr.getDefaultValue(), rowIndex);
+                        attr.getDefaultValue(), rowIndex, totalRows, LAST_ROW_FORBIDDEN_LABELS);
                 boolean required = attr.getIsRequired() != null && attr.getIsRequired() == 1;
                 if (StringUtils.isNotBlank(value) || required) {
                     addElement(doc, parentElement,
@@ -3046,6 +3050,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
         }
     }
 
+    private String getValueByRow(Map<String, Object> jsonMap, String dictLabel,
+                                 String defaultValue, int rowIndex) {
+        return getValueByRow(jsonMap, dictLabel, defaultValue, rowIndex, -1, null);
+    }
+
 
     private void buildSubTree(Document doc, Element root, List<XmlTemplateAttribute> attrList,
                               Map<String, SysDictData> dictCodeMap, Map<String, Object> jsonMap,
@@ -3124,9 +3133,29 @@ public class XmlFileServiceImpl implements IXmlFileService {
      *  - rowIndex == -1：取完整值（非循环场景）
      *  - rowIndex >= 0：值若含分号则按行分割取第 rowIndex 个，否则所有行共用该值
      */
+    /**
+     * 按行取值：
+     *  - rowIndex == -1：取完整值（非循环场景）
+     *  - rowIndex >= 0：值若含分号则按行分割取第 rowIndex 个，否则所有行共用该值
+     *
+     * ★ 新增：lastRowForbiddenLabels 中的字段在最后一行（rowIndex == totalRows-1）强制返回空
+     */
     private String getValueByRow(Map<String, Object> jsonMap, String dictLabel,
-                                 String defaultValue, int rowIndex) {
+                                 String defaultValue, int rowIndex,
+                                 int totalRows, Set<String> lastRowForbiddenLabels) {
         Object raw = jsonMap.get(dictLabel);
+
+        // ★ R234c：末行禁填字段 → 最后一行强制返回空（不写入 XML）
+        if (rowIndex >= 0
+                && totalRows > 1
+                && rowIndex == totalRows - 1
+                && lastRowForbiddenLabels != null
+                && lastRowForbiddenLabels.contains(dictLabel)) {
+            log.debug("=== getValueByRow LAST_ROW_FORBIDDEN label={} rowIndex={} totalRows={}",
+                    dictLabel, rowIndex, totalRows);
+            return "";
+        }
+
         if (raw == null) {
             return StringUtils.isNotBlank(defaultValue) ? defaultValue : "";
         }
@@ -3140,7 +3169,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
         // 循环场景：优先按 | 分割，其次按 ; 分割
         String separator = val.contains("|") ? "\\|" : (val.contains(";") ? ";" : null);
         if (separator == null) {
-            return val;  // 单值，所有行共用
+            return val;
         }
         String[] items = val.split(separator, -1);
         if (rowIndex < items.length) {
@@ -3863,5 +3892,41 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 break;
             default: break;
         }
+    }
+
+    /**
+     * 末行禁填字段集合（R234c 等规则）
+     * key = dictLabel，与 jsonMap 的 key 一致
+     */
+    private static final Set<String> LAST_ROW_FORBIDDEN_LABELS = new HashSet<>(Arrays.asList(
+            "AxleSpacing"   // R234c: Forbidden for the last axle
+            // 如有新增末行禁填字段，在此追加
+    ));
+
+    /**
+     * 计算当前 Group（rootAttrPath 对应节点）的总展开行数。
+     * 用于末行判断，避免每次重复扫描时重新计算。
+     */
+    private int calcTotalRowsForGroup(List<XmlTemplateAttribute> attrList,
+                                      Map<String, SysDictData> dictCodeMap,
+                                      Map<String, Object> jsonMap,
+                                      String rootAttrPath) {
+        int max = 1;
+        int rootDepth = rootAttrPath.split("\\.").length;
+        for (XmlTemplateAttribute a : attrList) {
+            // 只看直接子叶子（rootDepth+1）
+            if (a.getAttrPath().split("\\.").length != rootDepth + 1) continue;
+            String[] parts = a.getAttrPath().split("\\.");
+            SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
+            if (d == null || isStructNode(d)) continue;
+            Object raw = jsonMap.get(d.getDictLabel());
+            if (raw == null) continue;
+            String val = raw.toString().trim();
+            String sep = val.contains("|") ? "\\|" : (val.contains(";") ? ";" : null);
+            if (sep != null) {
+                max = Math.max(max, countNonTrailingEmpty(val.split(sep, -1)));
+            }
+        }
+        return max;
     }
 }
