@@ -84,6 +84,7 @@
 	<select id="selectVehicleInfoList" parameterType="VehicleInfo" resultMap="VehicleInfoResult">
 		<include refid="selectVehicleInfoVo"/>
 		<where>
+            and 1 = 1
 			<if test="affirm != null">
 				<choose>
 					<when test="affirm == 1">

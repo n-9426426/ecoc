@@ -41,7 +41,7 @@
         SELECT template_id, wvta_coc_no, coc_template_no, model_no, version, vehicle_type, status, validate_result, validate_time,
                validate_msg, json, remark, create_by, create_time, update_by, update_time, filepath, is_last, overdue_date, template_version,
                tvv, effective_date, uuid, generate_affirm, upload_affirm
-        FROM vehicle_template
+        FROM vehicle_template vt
     </sql>
 
     <!-- ==================== 查询列表 ==================== -->
@@ -119,6 +119,7 @@
         <if test="uuid != null and uuid != ''" >
             and uuid = #{uuid}
         </if>
+        ${params.dataScope}
         ORDER BY create_time DESC
     </select>
 

@@ -83,18 +83,17 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
             template.setUuid(template.getTemplateCode());
         }
         if (StringUtils.isBlank(template.getTemplateCode())) {
-            template.setTemplateCode(UUID.randomUUID().toString().replace("-", "").substring(0, 18));
+            template.setTemplateCode(generateNextTemplateCode());
         }
-        template.setVersion(StringUtils.isBlank(template.getVersion()) ? "1.0" : template.getVersion());
+        template.setVersion("2.0");
         template.setDeleted(0);
         template.setCreateBy(SecurityUtils.getUsername());
         template.setCreateTime(new Date());
-        templateMapper.insert(template);
+        int row = templateMapper.insert(template);
         if (template.getAttributeTree() != null && !template.getAttributeTree().isEmpty()) {
             saveAttributeTree(template.getTemplateId(), template.getAttributeTree());
         }
-
-        return 1;
+        return row;
     }
 
     // ==================== 修改 ====================
@@ -432,5 +431,17 @@ public class XmlTemplateServiceImpl implements IXmlTemplateService {
     private boolean hasIntersection(Set<String> a, Set<String> b) {
         if (a.isEmpty() || b.isEmpty()) return false;
         return a.stream().anyMatch(b::contains);
+    }
+
+    private String generateNextTemplateCode() {
+        String maxCode = templateMapper.selectMaxTemplateCode();
+        int nextNum = 1;
+        if (StringUtils.isNotBlank(maxCode)) {
+            // 提取数字部分，例如 "xml002" → 2
+            String numStr = maxCode.replaceAll("[^0-9]", "");
+            nextNum = Integer.parseInt(numStr) + 1;
+        }
+        // 格式化为3位补零，不够则自动扩展：001, 002 ... 999, 1000
+        return String.format("xml%03d", nextNum);
     }
 }

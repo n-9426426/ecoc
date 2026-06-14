@@ -2,6 +2,7 @@ package com.ruoyi.vehicle.controller;
 
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
+import com.ruoyi.common.datascope.annotation.DataScope;
 import com.ruoyi.common.log.annotation.Log;
 import com.ruoyi.common.log.enums.BusinessType;
 import com.ruoyi.common.security.annotation.RequiresPermissions;
@@ -27,6 +28,7 @@ public class XmlTemplateController extends BaseController {
     @Operation(summary = "查询xml模板列表")
     @RequiresPermissions("xml:template:query")
     @GetMapping("/list")
+    @DataScope(tableAlias = "xt")
     public AjaxResult list(XmlTemplate query) {
         List<XmlTemplateVo> list = xmlTemplateService.selectTemplateList(query);
         return AjaxResult.success(list);

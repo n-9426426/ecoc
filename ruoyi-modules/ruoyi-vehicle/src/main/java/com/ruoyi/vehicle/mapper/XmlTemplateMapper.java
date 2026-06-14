@@ -26,4 +26,6 @@ public interface XmlTemplateMapper {
     int updateAllIsLast(String uuid);
 
     int toggleStatusByIds(@Param("xmlIds") Long[] xmlIds);
+
+    String selectMaxTemplateCode();
 }

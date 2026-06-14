@@ -277,6 +277,9 @@ public class FinalRuleExecutor {
                 case LIST_UNIQUE:
                     return checkListUnique(fieldName, actualValue, rule, context);
 
+                case GROUPED_LIST_COUNT:
+                    return checkGroupedListCount(fieldName, actualValue, rule, context);
+
                 // ★ 新增
                 case CONDITIONAL_COUNT_AGGREGATE:
                     return checkConditionalCountAggregate(fieldName, actualValue, rule, context);
@@ -1309,11 +1312,11 @@ public class FinalRuleExecutor {
                     "SUM_EQUALS_FIELDS 规则缺少字段列表");
         }
 
+        // 缺失字段按 0 计算，不再跳过校验
         double sum = 0.0;
-        List<String> missing = new ArrayList<>();
         for (String f : fields) {
             Object val = context.get(f);
-            if (isAbsent(val)) { missing.add(f); continue; }
+            if (isAbsent(val)) continue; // null/空 → 视为 0，直接跳过累加
             try {
                 sum += Double.parseDouble(val.toString().trim());
             } catch (NumberFormatException e) {
@@ -1322,7 +1325,12 @@ public class FinalRuleExecutor {
                         "SUM_EQUALS_FIELDS: 字段 " + f + " 的值 " + val + " 不是数值");
             }
         }
-        if (!missing.isEmpty()) return null; // 分量字段缺失则跳过校验
+
+        if (isAbsent(actualValue)) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "SUM_EQUALS_FIELDS: current field value is absent",
+                    "SUM_EQUALS_FIELDS: 当前字段值为空，无法与分量之和比较");
+        }
 
         double actual;
         try {
@@ -1335,8 +1343,10 @@ public class FinalRuleExecutor {
 
         if (Double.compare(actual, sum) != 0) {
             return buildViolation(rule, fieldName, actualValue,
-                    "Value " + actual + " != SUM(" + fields + ") = " + sum,
-                    "字段值 " + actual + " 不等于 " + String.join(" + ", fields) + " 之和（" + sum + "）");
+                    String.format("Value %.0f != SUM(%s) = %.0f (missing fields treated as 0)",
+                            actual, fields, sum),
+                    String.format("字段值 %.0f 不等于 %s 之和（%.0f）（缺失字段按0计算）",
+                            actual, String.join(" + ", fields), sum));
         }
         return null;
     }
@@ -1380,5 +1390,80 @@ public class FinalRuleExecutor {
                     "字段 " + fieldName + " 在列表（" + listField + " 末行）必须为空");
         }
         return null;
+    }
+
+    /**
+     * @AxleGroup.TyreAxleGroup=>COUNT(VALUE IN ['Y']) = 1
+     *
+     * 遍历父列表（AxleGroup）的每一行，
+     * 从该行取子列表（TyreAxleGroup），
+     * 统计子列表中当前字段值命中枚举值的行数，
+     * 逐组与阈值比较，任意一组不满足则报错。
+     *
+     * context 数据结构约定：
+     *   context.get("AxleGroup") = List<Map<String, Object>>
+     *   每个 Map 中 key="TyreAxleGroup" → List<Map<String, Object>>
+     *   子 Map 中 key="TyreFittedProductionIndicator" → "Y"/"N"
+     */
+    private static RuleViolation checkGroupedListCount(
+            String fieldName, Object actualValue, RuleItem rule, Map<String, Object> context) {
+
+        AggregateFunction af = rule.getAggregateFunction();
+        if (af == null) {
+            return buildViolation(rule, fieldName, actualValue,
+                    "GROUPED_LIST_COUNT: aggregateFunction is null",
+                    "GROUPED_LIST_COUNT 规则缺少聚合函数描述");
+        }
+
+        String parentListName = af.getListField();  // AxleGroup
+        String childListName  = af.getField();       // TyreAxleGroup
+        List<String> allowed  = af.getEnumValues();  // ['Y']
+
+        Object parentObj = context.get(parentListName);
+        if (!(parentObj instanceof List)) return null; // 父列表不存在，跳过
+
+        List<?> parentList = (List<?>) parentObj;
+
+        for (int i = 0; i < parentList.size(); i++) {
+            Object parentItem = parentList.get(i);
+            if (!(parentItem instanceof Map)) continue;
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> parentRow = (Map<String, Object>) parentItem;
+
+            // 取该 AxleGroup 下的 TyreAxleGroup 子列表
+            Object childObj = parentRow.get(childListName);
+            if (!(childObj instanceof List)) continue; // 某组无子列表，跳过
+
+            List<?> childList = (List<?>) childObj;
+
+            // 统计命中枚举值的行数
+            long count = childList.stream()
+                    .filter(item -> item instanceof Map)
+                    .filter(item -> {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> row = (Map<String, Object>) item;
+                        Object val = row.get(fieldName);
+                        if (val == null) return false;
+                        return allowed == null || allowed.contains(val.toString().trim());
+                    })
+                    .count();
+
+            if (!af.getOperator().apply((double) count, af.getThreshold())) {
+                return buildViolation(rule, fieldName, actualValue,
+                        String.format(
+                                "%s[%d].%s=>COUNT(%s IN %s) %s %d failed (actual=%d)",
+                                parentListName, i + 1, childListName,
+                                fieldName, allowed,
+                                af.getOperator().getSymbol(), af.getThreshold().intValue(), count),
+                        String.format(
+                                "第%d个%s下的%s中，%s值为%s的数量为%d，不满足要求%s%d",
+                                i + 1, parentListName, childListName,
+                                fieldName, allowed, count,
+                                af.getOperator().getSymbol(), af.getThreshold().intValue()));
+            }
+        }
+
+        return null; // 所有分组均通过
     }
 }

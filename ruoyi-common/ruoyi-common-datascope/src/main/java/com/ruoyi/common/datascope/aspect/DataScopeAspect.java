@@ -130,7 +130,7 @@ public class DataScopeAspect
                 modelField = alias + "model_code";
                 break;
             case "vt":
-                modelField = alias + "model_no";
+                modelField = alias + "vehicle_type";
                 break;
             case "xt":
                 modelField = alias + "model_dict_code";
@@ -144,11 +144,27 @@ public class DataScopeAspect
                 .append(" INNER JOIN sys_user_post sup ON spa.post_id = sup.post_id")
                 .append(" WHERE sup.user_id = ").append(userId);
         if (!tableAlias.equals("vt") && !tableAlias.equals("xt")) {
-            sqlString.append(" AND (spa.factory_code IS NULL OR spa.factory_code = '' OR FIND_IN_SET(").append(alias).append("factory_code, spa.factory_code))");
+            sqlString.append(" AND (spa.factory_code IS NULL OR spa.factory_code = ''")
+                    .append(" OR FIND_IN_SET(").append(alias).append("factory_code, spa.factory_code))");
         }
-        sqlString.append(" AND (spa.country IS NULL OR spa.country = '' OR FIND_IN_SET(").append(alias).append("country, spa.country))");
+        if (!tableAlias.equals("vt")) {
+            if (tableAlias.equals("xt")) {
+                // xt.country 是逗号分隔的 dict_code，需转换为 dict_value 后比对
+                sqlString.append(" AND (spa.country IS NULL OR spa.country = ''")
+                        .append(" OR EXISTS (")
+                        .append("SELECT 1 FROM sys_dict_data sd")
+                        .append(" WHERE sd.dict_type = 'country'")
+                        .append(" AND FIND_IN_SET(sd.dict_code, ").append(alias).append("country)")
+                        .append(" AND FIND_IN_SET(sd.dict_value, spa.country)")
+                        .append("))");
+            } else {
+                sqlString.append(" AND (spa.country IS NULL OR spa.country = ''")
+                        .append(" OR FIND_IN_SET(").append(alias).append("country, spa.country))");
+            }
+        }
         if (StringUtils.isNotBlank(modelField)) {
-            sqlString.append(" AND (spa.model_code IS NULL OR spa.model_code = '' OR FIND_IN_SET(").append(modelField).append(", spa.model_code))");
+            sqlString.append(" AND (spa.vehicle_model IS NULL OR spa.vehicle_model = ''")
+                    .append(" OR FIND_IN_SET(").append(modelField).append(", spa.vehicle_model))");
         }
         sqlString.append(")");
 

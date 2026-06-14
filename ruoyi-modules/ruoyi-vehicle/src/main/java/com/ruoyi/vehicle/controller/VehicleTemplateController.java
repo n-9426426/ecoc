@@ -5,6 +5,7 @@ import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.core.web.page.TableDataInfo;
+import com.ruoyi.common.datascope.annotation.DataScope;
 import com.ruoyi.common.log.annotation.Log;
 import com.ruoyi.common.log.enums.BusinessType;
 import com.ruoyi.common.security.annotation.RequiresPermissions;
@@ -53,6 +54,7 @@ public class VehicleTemplateController extends BaseController {
      */
     @RequiresPermissions("vehicle:template:query")
     @GetMapping("/list")
+    @DataScope(tableAlias = "vt")
     public TableDataInfo list(VehicleTemplate template) {
         startPage();
         List<VehicleTemplate> list = vehicleTemplateService.selectVehicleTemplateList(template);

@@ -235,6 +235,14 @@ public class FinalRuleParser {
                     "^@([\\w.]+)\\s*=>\\s*VALUE\\s+IS\\s+UNIQUE$",
                     Pattern.CASE_INSENSITIVE);
 
+    // ===== GROUPED_LIST_COUNT =====
+    // 格式: @ParentList.ChildList=>COUNT(VALUE IN [vals]) op N
+    // 用途: TyreFittedProductionIndicator → 每个AxleGroup下TyreAxleGroup中Y恰好1个
+    private static final Pattern GROUPED_LIST_COUNT_PATTERN =
+            Pattern.compile(
+                    "^@([\\w]+)\\.([\\w]+)\\s*=>\\s*COUNT\\s*\\(VALUE\\s+IN\\s+\\[([^\\]]+)\\]\\)\\s*(>=|<=|>|<|=|!=)\\s*(\\d+)$",
+                    Pattern.CASE_INSENSITIVE);
+
     // ===== ★ F. 带前置字段条件的 COUNT IN 存在性校验（CONDITIONAL_COUNT_AGGREGATE）=====
     //
     // 支持两种格式，用同一个 Pattern 统一匹配，运行时通过 group(2) 是否为空判断格式：
@@ -660,6 +668,23 @@ public class FinalRuleParser {
                 return RuleItem.builder()
                         .type(RuleItemType.LIST_LAST_FORBIDDEN)
                         .refFieldName(m.group(1).trim())  // 列表名，如 AxleGroup
+                        .build();
+            }
+
+            // 18-a. @ParentList.ChildList=>COUNT(VALUE IN [vals]) op N（分组列表计数，优先于 LIST_COUNT）
+            m = GROUPED_LIST_COUNT_PATTERN.matcher(body);
+            if (m.matches()) {
+                AggregateFunction af = AggregateFunction.builder()
+                        .functionType(AggregateFunction.Type.COUNT)
+                        .listField(m.group(1).trim())          // 父列表名：AxleGroup
+                        .field(m.group(2).trim())              // 子列表名：TyreAxleGroup
+                        .enumValues(parseList(m.group(3)))     // ['Y']
+                        .operator(CompareOperator.fromSymbol(m.group(4).trim()))
+                        .threshold(Double.parseDouble(m.group(5).trim()))
+                        .build();
+                return RuleItem.builder()
+                        .type(RuleItemType.GROUPED_LIST_COUNT)
+                        .aggregateFunction(af)
                         .build();
             }
 

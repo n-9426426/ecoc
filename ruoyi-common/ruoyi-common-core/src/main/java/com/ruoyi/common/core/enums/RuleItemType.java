@@ -90,6 +90,7 @@ public enum RuleItemType {
     VALUE_IN_LIST_FIELD,
     LIST_UNIQUE,
     LIST_LAST_FORBIDDEN,
+    GROUPED_LIST_COUNT,
 
     // ===== 范围校验（来自 rangeRule）=====
     NUMERIC_RANGE,

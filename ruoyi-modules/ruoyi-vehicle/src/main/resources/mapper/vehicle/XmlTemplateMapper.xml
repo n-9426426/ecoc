@@ -23,7 +23,7 @@
 
     <!-- 查询列表 -->
     <select id="selectTemplateList" resultMap="XmlTemplateResult">
-        SELECT * FROM xml_template
+        SELECT * FROM xml_template xt
         <where>
             deleted = 0
             <if test="templateCode != null and templateCode != ''">
@@ -51,6 +51,7 @@
                 AND FIND_IN_SET(#{country}, country) > 0
             </if>
         </where>
+        ${params.dataScope}
         ORDER BY create_time DESC
     </select>
 
@@ -121,4 +122,12 @@
             #{id}
         </foreach>
     </update>
+
+    <select id="selectMaxTemplateCode" resultType="java.lang.String">
+        SELECT template_code
+        FROM xml_template
+        WHERE template_code REGEXP '^xml[0-9]+$'
+        ORDER BY CAST(SUBSTRING(template_code, 4) AS UNSIGNED) DESC
+            LIMIT 1
+    </select>
 </mapper>
