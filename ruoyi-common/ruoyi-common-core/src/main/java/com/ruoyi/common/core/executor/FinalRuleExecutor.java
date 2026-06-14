@@ -353,6 +353,11 @@ public class FinalRuleExecutor {
         if (rule.getConditionChain() == null) {
             return null;
         }
+        System.out.println("[DEBUG] checkForbiddenIfAny fieldName=" + fieldName
+                + " EnergySource=" + context.get("EnergySource")
+                + " EnergySource类型=" + (context.get("EnergySource") == null ? "null" : context.get("EnergySource").getClass().getName())
+                + " conditionChain=" + rule.getConditionChain()
+                + " evaluate结果=" + rule.getConditionChain().evaluate(context));
         if (rule.getConditionChain().evaluate(context)) {
             if (!isAbsent(actualValue)) {
                 return buildViolation(rule, fieldName, actualValue,

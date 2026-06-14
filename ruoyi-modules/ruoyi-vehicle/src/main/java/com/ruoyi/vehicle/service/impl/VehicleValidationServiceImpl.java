@@ -2,11 +2,14 @@ package com.ruoyi.vehicle.service.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ruoyi.common.core.enums.RuleItemType;
 import com.ruoyi.common.core.executor.FinalRuleExecutor;
 import com.ruoyi.common.core.model.FieldValidationResult;
 import com.ruoyi.common.core.model.RuleItem;
+import com.ruoyi.common.core.model.RuleViolation;
 import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.parser.FinalRuleParser;
+import com.ruoyi.common.core.parser.ValueMappingParser;
 import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.domain.SysDictData;
 import com.ruoyi.vehicle.domain.VehicleInfo;
@@ -17,10 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -31,6 +31,8 @@ import java.util.stream.Collectors;
  * - 一次性查询字典数据，构建本地索引
  * - 上下文字段名使用 dict_label（非原始 key）
  * - 支持 vehicleCategory/stageOfCompletion 条件匹配（通配符）
+ * - 支持 DICT_MAP 值域校验：当 value_map 含 DICT_MAP 时，校验字段值是否在
+ *   value_connection 合并映射表的目标值集合中
  */
 @Slf4j
 @Service("vehicleValidationService")
@@ -123,14 +125,147 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
             return null;
         }
 
+        // ① 执行 rule / rangeRule 规则校验（原有逻辑）
         List<RuleItem> rules = FinalRuleParser.parseRules(dictData.getRule(), dictData.getRangeRule());
-        if (rules.isEmpty()) {
+        FieldValidationResult result = null;
+        if (!rules.isEmpty()) {
+            // ⚠️ 注意：此处传入的是原始 jsonKey，但 context 中字段名已是 dict_label
+            // FinalRuleExecutor 内部会从 context 查 dict_label 字段（正确）
+            result = FinalRuleExecutor.execute(jsonKey, value, rules, context);
+        }
+
+        // ② 若 value_map 含 DICT_MAP，额外校验字段值是否在目标值集合内
+        FieldValidationResult dictMapResult = validateDictMapValue(jsonKey, value, dictData);
+        if (dictMapResult != null) {
+            if (result == null) {
+                result = dictMapResult;
+            } else {
+                // 将 DICT_MAP 违规合并到已有结果中
+                result.getViolations().addAll(dictMapResult.getViolations());
+                if (!dictMapResult.isValid()) {
+                    result.setValid(false);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    // ==========================================
+    // 私有方法 - DICT_MAP 值域校验
+    // ==========================================
+
+    /**
+     * 当 value_map 含 DICT_MAP 时，校验字段值是否在 value_connection 合并映射表的
+     * <b>目标值集合</b>（即映射后的值，如 en、bg、cs 等）中。
+     *
+     * <p>判断逻辑：
+     * <ol>
+     *   <li>value_map 为空 或 不含 "DICT_MAP" 关键字 → 跳过，返回 null</li>
+     *   <li>value_connection 为空 → 跳过（无法校验），返回 null</li>
+     *   <li>字段值为空 → 跳过（由 VALUE IS PRESENT 规则负责必填校验），返回 null</li>
+     *   <li>字段值（去除首尾空格后）在目标值集合中 → 通过，返回 null</li>
+     *   <li>否则 → 返回包含违规信息的 FieldValidationResult</li>
+     * </ol>
+     *
+     * @param jsonKey  字段 jsonKey（仅用于日志与报告展示）
+     * @param value    字段实际值
+     * @param dictData 字典数据（含 valueMap、valueConnection）
+     * @return 校验不通过时返回带违规的结果，通过或跳过时返回 null
+     */
+    private FieldValidationResult validateDictMapValue(String jsonKey, Object value, SysDictData dictData) {
+        // 1. value_map 不含 DICT_MAP，跳过
+        if (!containsDictMap(dictData.getValueMap())) {
             return null;
         }
 
-        // ⚠️ 注意：此处传入的是原始 jsonKey，但 context 中字段名已是 dict_label
-        // FinalRuleExecutor 内部会从 context 查 dict_label 字段（正确）
-        return FinalRuleExecutor.execute(jsonKey, value, rules, context);
+        // 2. value_connection 为空，无法校验，跳过
+        String valueConnectionJson = dictData.getValueConnection();
+        if (valueConnectionJson == null || valueConnectionJson.trim().isEmpty()) {
+            log.debug("DICT_MAP 校验跳过（value_connection 为空）, jsonKey={}", jsonKey);
+            return null;
+        }
+
+        // 3. 字段值为空，跳过（由必填规则负责）
+        if (value == null || value.toString().trim().isEmpty()) {
+            return null;
+        }
+
+        // 4. 解析 value_connection，得到 {原始值 → 目标值} 的合并映射表
+        Map<String, String> mergedDictMap = ValueMappingParser.mergeValueConnection(valueConnectionJson);
+        if (mergedDictMap.isEmpty()) {
+            log.warn("DICT_MAP 校验跳过（value_connection 解析结果为空）, jsonKey={}", jsonKey);
+            return null;
+        }
+
+        // 5. 提取目标值集合（映射后的合法值，如 en、bg、AA、HYDRL 等）
+        Set<String> allowedValues = new HashSet<>(mergedDictMap.values());
+
+        // 6. 校验当前字段值（支持多值字段，以 | 或 ; 分隔）
+        String rawStr = value.toString().trim();
+        String[] parts = FinalRuleParser.splitMultiValue(rawStr);
+
+        List<RuleViolation> violations = new ArrayList<>();
+        for (String part : parts) {
+            String trimmed = part.trim();
+            if (!allowedValues.contains(trimmed)) {
+                String suffix = parts.length > 1
+                        ? " [子值='" + trimmed + "'，原始值='" + rawStr + "']"
+                        : "";
+                violations.add(RuleViolation.builder()
+                        .fieldName(jsonKey)
+                        .actualValue(value == null ? null : String.valueOf(value))
+                        .ruleType(RuleItemType.VALUE_IN)
+                        .ruleTypeLabel("DICT_MAP值域校验")
+                        .rawRule("DICT_MAP")
+                        .messageEn("Value '" + trimmed + "' is not in the allowed target value set of DICT_MAP"
+                                + suffix)
+                        .messageZh("字段值 '" + trimmed + "' 不在 DICT_MAP 目标值集合中，"
+                                + "允许的值为: " + formatAllowedValues(allowedValues) + suffix)
+                        .build());
+            }
+        }
+
+        if (violations.isEmpty()) {
+            return null;
+        }
+
+        return FieldValidationResult.builder()
+                .fieldName(jsonKey)
+                .value(value)
+                .valid(false)
+                .violations(violations)
+                .build();
+    }
+
+    /**
+     * 判断 value_map 是否含有 DICT_MAP 步骤。
+     * 支持以下几种形式：
+     * <ul>
+     *   <li>{@code DICT_MAP}                  — 直接等于</li>
+     *   <li>{@code PIPE:DIRECT|DICT_MAP}       — 管道末尾含 DICT_MAP</li>
+     *   <li>{@code PIPE:EXTRACT_PATTERN:...|DICT_MAP} — 管道中间含 DICT_MAP</li>
+     * </ul>
+     */
+    private boolean containsDictMap(String valueMap) {
+        if (valueMap == null || valueMap.trim().isEmpty()) {
+            return false;
+        }
+        // 大小写不敏感地检测管道步骤或整体是否等于 DICT_MAP
+        String upper = valueMap.trim().toUpperCase();
+        // 匹配整体等于 DICT_MAP，或作为 PIPE 中某一段出现（以 | 分隔）
+        return upper.equals("DICT_MAP")
+                || upper.contains("|DICT_MAP")
+                || upper.startsWith("DICT_MAP|");
+    }
+
+    /**
+     * 将允许值集合格式化为可读字符串（排序后展示，避免每次输出顺序不一致）。
+     */
+    private String formatAllowedValues(Set<String> allowedValues) {
+        List<String> sorted = new ArrayList<>(allowedValues);
+        Collections.sort(sorted);
+        return sorted.toString();
     }
 
     // ==========================================

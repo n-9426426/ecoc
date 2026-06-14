@@ -73,7 +73,7 @@ public class ConditionExpression {
         if (m.matches()) {
             String field = m.group(1);
             String opStr = m.group(2);
-            String val   = m.group(3);
+            String val   = m.group(3).replaceAll("^['\"]|['\"]$", "");
 
             CompareOperator op;
             try {
