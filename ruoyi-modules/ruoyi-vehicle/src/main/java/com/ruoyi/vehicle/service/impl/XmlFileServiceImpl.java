@@ -903,8 +903,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
      * 算法：将模板属性路径构成的"标签路径树"与XML DOM路径逐一比对。
      * 对循环节点：允许同一个标签在同一父节点下出现多次（≥1次即合法）。
      */
-    private void validateXmlStructure(Document doc, XmlFile xmlFile,
-                                      List<FieldValidationResult> results) {
+    private void validateXmlStructure(Document doc, XmlFile xmlFile, List<FieldValidationResult> results) {
         try {
             // 1. 匹配模板
             xmlFile = xmlFileMapper.selectXmlFileById(xmlFile.getId());
@@ -956,7 +955,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             // 4. 识别循环容器路径集合（与生成逻辑保持一致）
             Map<String, Object> enrichedJsonMap = new HashMap<>(
                     vehicle.getJsonMap() != null ? vehicle.getJsonMap() : new HashMap<>());
-            enrichHardcodedLoopFields(enrichedJsonMap, vehicle);
+            enrichHardcodedLoopFields(enrichedJsonMap, vehicle, attrList, dictCodeMap);
             Set<String> loopContainerPaths = resolveLoopContainerPaths(
                     attrList, dictCodeMap, enrichedJsonMap);
 
@@ -1572,22 +1571,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 }
             }
             if (StringUtils.isNotBlank(methodAttachmentStatutoryPlate)) {
-                switch (methodAttachmentStatutoryPlate) {
-                    case "A1": {
-                        jsonMap.put("LocationMarkingsSubject", "STAT;VIN");
-                        jsonMap.put("LocationMarkingsVehiclePart", "BPILR;PASCT");
-                        jsonMap.put("LocationMarkingsVehiclePartSide", "RIGHTSIDE;RIGHTSIDE");
-                        jsonMap.put("LocationMarkingsVehiclePartsidesection", ";FRONT");
-                        break;
-                    }
-                    case "B2": {
-                        jsonMap.put("LocationMarkingsSubject", "STAT;VIN");
-                        jsonMap.put("LocationMarkingsVehiclePart", "BPILR;ENGCT");
-                        jsonMap.put("LocationMarkingsVehiclePartSide", "RIGHTSIDE;RIGHTSIDE");
-                        break;
-                    }
-                    default: {}
-                }
+                applyLocationMarkings(jsonMap, methodAttachmentStatutoryPlate);
             }
 
             // 5. 单根节点校验
@@ -3869,35 +3853,63 @@ public class XmlFileServiceImpl implements IXmlFileService {
     /**
      * 将生成阶段硬编码注入的循环字段分号值补充进 jsonMap，
      * 使校验阶段的 resolveLoopContainerPaths 能识别 LocationMarkingsGroup 为循环节点。
+     * <p>
+     * MethodAttachmentStatutoryPlate 的值优先从 jsonMap 中读取；
+     * 若 jsonMap 中没有，则从模板属性的 defaultValue 中查找（生成阶段也走此兜底逻辑）。
      */
-    private void enrichHardcodedLoopFields(Map<String, Object> jsonMap, VehicleInfo vehicle) {
-        // 优先取 jsonMap 中已有值，没有时再取模板 defaultValue（与生成逻辑保持一致）
+    private void enrichHardcodedLoopFields(Map<String, Object> jsonMap, VehicleInfo vehicle,
+                                           List<XmlTemplateAttribute> attrList,
+                                           Map<String, SysDictData> dictCodeMap) {
         String methodAttach = Optional.ofNullable(jsonMap.get("MethodAttachmentStatutoryPlate"))
                 .map(Object::toString).filter(StringUtils::isNotBlank).orElse(null);
 
-        // 若 jsonMap 中没有，尝试从模板 defaultValue 取
+        // jsonMap 中没有时，从模板 defaultValue 兜底读取（与生成逻辑保持一致）
+        if (StringUtils.isBlank(methodAttach)) {
+            for (XmlTemplateAttribute attr : attrList) {
+                String[] parts = attr.getAttrPath().split("\\.");
+                SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
+                if (dict == null) continue;
+                if ("MethodAttachmentStatutoryPlate".equals(sanitizeXmlTagName(dict.getDictLabel()))
+                        && StringUtils.isNotBlank(attr.getDefaultValue())) {
+                    methodAttach = attr.getDefaultValue();
+                    break;
+                }
+            }
+        }
+
         if (StringUtils.isBlank(methodAttach)) return;
 
-        switch (methodAttach) {
-            case "A1":
-                jsonMap.putIfAbsent("LocationMarkingsSubject",           "STAT;VIN");
-                jsonMap.putIfAbsent("LocationMarkingsVehiclePart",       "BPILR;PASCT");
-                jsonMap.putIfAbsent("LocationMarkingsVehiclePartSide",   "RIGHTSIDE;RIGHTSIDE");
-                jsonMap.putIfAbsent("LocationMarkingsVehiclePartsidesection", ";FRONT");
-                break;
-            case "B2":
-                jsonMap.putIfAbsent("LocationMarkingsSubject",           "STAT;VIN");
-                jsonMap.putIfAbsent("LocationMarkingsVehiclePart",       "BPILR;ENGCT");
-                jsonMap.putIfAbsent("LocationMarkingsVehiclePartSide",   "RIGHTSIDE;RIGHTSIDE");
-                break;
-            default: break;
-        }
+        applyLocationMarkings(jsonMap, methodAttach);
     }
 
     /**
-     * 末行禁填字段集合（R234c 等规则）
-     * key = dictLabel，与 jsonMap 的 key 一致
+     * 根据 MethodAttachmentStatutoryPlate 的值向 jsonMap 写入对应的 LocationMarkings 循环字段。
+     * <p>
+     * 生成阶段（generateXmlFromDatabase）和校验阶段（enrichHardcodedLoopFields）共用此逻辑，
+     * 保证两处行为完全一致：使用 put 强制覆盖，确保含 ; 的值能被 resolveLoopContainerPaths
+     * 正确识别为循环节点，避免校验时报"非循环节点重复出现"的错误。
+     *
+     * @param jsonMap      目标 Map，字段将直接写入（覆盖已有值）
+     * @param methodAttach MethodAttachmentStatutoryPlate 的实际值，如 "A1"、"B2"
      */
+    private void applyLocationMarkings(Map<String, Object> jsonMap, String methodAttach) {
+        switch (methodAttach) {
+            case "A1":
+                jsonMap.put("LocationMarkingsSubject",               "STAT;VIN");
+                jsonMap.put("LocationMarkingsVehiclePart",           "BPILR;PASCT");
+                jsonMap.put("LocationMarkingsVehiclePartSide",       "RIGHTSIDE;RIGHTSIDE");
+                jsonMap.put("LocationMarkingsVehiclePartsidesection", ";FRONT");
+                break;
+            case "B2":
+                jsonMap.put("LocationMarkingsSubject",         "STAT;VIN");
+                jsonMap.put("LocationMarkingsVehiclePart",     "BPILR;ENGCT");
+                jsonMap.put("LocationMarkingsVehiclePartSide", "RIGHTSIDE;RIGHTSIDE");
+                break;
+            default:
+                break;
+        }
+    }
+
     private static final Set<String> LAST_ROW_FORBIDDEN_LABELS = new HashSet<>(Arrays.asList(
             "AxleSpacing"   // R234c: Forbidden for the last axle
             // 如有新增末行禁填字段，在此追加
