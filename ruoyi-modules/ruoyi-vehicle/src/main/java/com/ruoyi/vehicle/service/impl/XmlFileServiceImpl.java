@@ -3898,7 +3898,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 jsonMap.put("LocationMarkingsSubject",               "STAT;VIN");
                 jsonMap.put("LocationMarkingsVehiclePart",           "BPILR;PASCT");
                 jsonMap.put("LocationMarkingsVehiclePartSide",       "RIGHTSIDE;RIGHTSIDE");
-                jsonMap.put("LocationMarkingsVehiclePartsidesection", ";FRONT");
+                jsonMap.put("LocationMarkingsVehiclePartSideSection", ";FRONT");
                 break;
             case "B2":
                 jsonMap.put("LocationMarkingsSubject",         "STAT;VIN");
