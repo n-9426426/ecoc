@@ -847,7 +847,7 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                             excelMap.put("issueDate", com.alibaba.fastjson2.util.DateUtils.format(vehicleInfo.getIssueDate(), "dd/MM/yyyy"));
                         }
                         // CommercialName
-                        excelMap.put("customerNo", vehicleInfo.getCustomerNo());
+//                        excelMap.put("customerNo", vehicleInfo.getCustomerNo());
                         // Colour
                         excelMap.put("color", color);
                         excelMap.put("country", vehicleInfo.getCountry());
@@ -1865,9 +1865,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 //                        }
                         break;
                     case "CommercialName":
-                        if (material.getSaleName() != null) {
-                            objectNode.put(fieldName, material.getSaleName());
-                        }
+//                        if (material.getSaleName() != null) {
+//                            objectNode.put(fieldName, material.getSaleName());
+//                        }
                         break;
                     case "RollingResistanceClass":
                         if (material.getTireResistanceGrade() != null) {
