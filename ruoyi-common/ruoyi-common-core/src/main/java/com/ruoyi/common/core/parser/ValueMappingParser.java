@@ -429,27 +429,32 @@ public class ValueMappingParser {
                         Pattern rimPattern = Pattern.compile(
                                 "\\d+x(?:\\d+\\s+\\d+/\\d+|\\d+,\\d+|\\d+)J");
                         Matcher rimMatcher = rimPattern.matcher(raw);
-                        if (!rimMatcher.find()) {
+                        StringJoiner sj = new StringJoiner(";");
+                        while (rimMatcher.find()) {
+                            String matched = rimMatcher.group(0);
+
+                            // 分数宽度 → 欧式小数转换：20x8 1/2J → 20x8,5J
+                            Matcher fracMatcher = Pattern.compile(
+                                    "(\\d+x)(\\d+)\\s+(\\d+)/(\\d+)(J)").matcher(matched);
+                            if (fracMatcher.find()) {
+                                int whole = Integer.parseInt(fracMatcher.group(2));
+                                double frac = (double) Integer.parseInt(fracMatcher.group(3))
+                                        / Integer.parseInt(fracMatcher.group(4));
+                                double width = whole + frac;
+                                String widthStr = (frac == 0)
+                                        ? String.valueOf(whole)
+                                        : String.valueOf(width).replace(".", ",");
+                                matched = fracMatcher.group(1) + widthStr + fracMatcher.group(5);
+                            }
+
+                            sj.add(matched);
+                        }
+                        String result = sj.toString();
+                        if (result.isEmpty()) {
                             log.warn("[ValueMappingParser] RIM_SPEC:BOTH 未找到轮毂规格片段: {}", raw);
                             return null;
                         }
-                        String matched = rimMatcher.group(0);
-
-                        // 分数宽度 → 欧式小数转换：20x8 1/2J → 20x8,5J
-                        Matcher fracMatcher = Pattern.compile(
-                                "(\\d+x)(\\d+)\\s+(\\d+)/(\\d+)(J)").matcher(matched);
-                        if (fracMatcher.find()) {
-                            int whole = Integer.parseInt(fracMatcher.group(2));
-                            double frac = (double) Integer.parseInt(fracMatcher.group(3))
-                                    / Integer.parseInt(fracMatcher.group(4));
-                            double width = whole + frac;
-                            String widthStr = (frac == 0)
-                                    ? String.valueOf(whole)
-                                    : String.valueOf(width).replace(".", ",");
-                            matched = fracMatcher.group(1) + widthStr + fracMatcher.group(5);
-                        }
-
-                        return matched;
+                        return result;
                     }
 
                     log.warn("[ValueMappingParser] RIM_SPEC 不支持的 part: {}", parts[1]);
@@ -601,33 +606,20 @@ public class ValueMappingParser {
                 return null;
             }
 
-            // ① 精确匹配
-            String result = mergedDictMap.get(raw);
-            if (result != null) return result;
-
-            // ② 范围 key 匹配：从原值提取第1个数字，遍历 map key 尝试解析为范围表达式。
-            //    支持格式（变量名任意，大小写不限，支持 <= 和 <）：
-            //      双侧：6.6<=RRC<=7.7  /  6.6<RRC<=7.7  /  6.6<=RRC<7.7  /  6.6<RRC<7.7
-            //      单侧左开：RRC<=7.7  /  RRC<7.7
-            //      单侧右开：6.6<=RRC  /  6.6<RRC
-            String numStr = extractNthNumber(raw, 1);
-            if (numStr != null) {
-                try {
-                    double numVal = Double.parseDouble(numStr);
-                    for (Map.Entry<String, String> entry : mergedDictMap.entrySet()) {
-                        if (matchesRangeKey(entry.getKey(), numVal)) {
-                            return entry.getValue();
-                        }
-                    }
-                } catch (NumberFormatException ignored) { }
+            // 多值场景：raw 含 ; 分隔的多组值（如 PIPE 上游 EXTRACT_ALL_PATTERN 输出
+            // "6.17N/kN;6.87N/kN"），逐项分别映射后用 ; 重新拼接，单值时自然退化为原逻辑。
+            if (raw.contains(";")) {
+                String[] items = raw.split(";", -1);
+                StringJoiner sj = new StringJoiner(";");
+                for (String item : items) {
+                    String mapped = dictMapSingle(item.trim(), mergedDictMap);
+                    sj.add(mapped == null ? item.trim() : mapped);
+                }
+                return sj.toString();
             }
 
-            // ③ 兜底 * 键
-            result = mergedDictMap.get("*");
-            if (result != null) return result;
-
-            log.warn("[ValueMappingParser] DICT_MAP 未命中: raw='{}', 可用键={}", raw, mergedDictMap.keySet());
-            return raw;
+            String result = dictMapSingle(raw, mergedDictMap);
+            return result == null ? raw : result;
         }
 
         // ── PIPE 步骤：拆分子步骤，逐步执行，透传 mergedDictMap ──
@@ -646,6 +638,44 @@ public class ValueMappingParser {
 
         // ── 其他规则：走常规 convert ──────────────────────────────
         return convert(rawValue, step);
+    }
+
+    /**
+     * 对单个值执行 DICT_MAP 映射逻辑：精确匹配 → 范围 key 匹配 → 兜底 {@code *} 键。
+     * 从 {@link #convertStep} 的 DICT_MAP 分支中抽出，供单值与多值（按 ; 拆分后逐项）场景共用。
+     *
+     * @param raw           已 trim 的单个待映射值（非空，非 ;-分隔的复合值）
+     * @param mergedDictMap 合并后的映射表
+     * @return 命中的目标值；未命中且无兜底 * 键时返回 null
+     */
+    private static String dictMapSingle(String raw, Map<String, String> mergedDictMap) {
+        // ① 精确匹配
+        String result = mergedDictMap.get(raw);
+        if (result != null) return result;
+
+        // ② 范围 key 匹配：从原值提取第1个数字，遍历 map key 尝试解析为范围表达式。
+        //    支持格式（变量名任意，大小写不限，支持 <= 和 <）：
+        //      双侧：6.6<=RRC<=7.7  /  6.6<RRC<=7.7  /  6.6<=RRC<7.7  /  6.6<RRC<7.7
+        //      单侧左开：RRC<=7.7  /  RRC<7.7
+        //      单侧右开：6.6<=RRC  /  6.6<RRC
+        String numStr = extractNthNumber(raw, 1);
+        if (numStr != null) {
+            try {
+                double numVal = Double.parseDouble(numStr);
+                for (Map.Entry<String, String> entry : mergedDictMap.entrySet()) {
+                    if (matchesRangeKey(entry.getKey(), numVal)) {
+                        return entry.getValue();
+                    }
+                }
+            } catch (NumberFormatException ignored) { }
+        }
+
+        // ③ 兜底 * 键
+        result = mergedDictMap.get("*");
+        if (result != null) return result;
+
+        log.warn("[ValueMappingParser] DICT_MAP 未命中: raw='{}', 可用键={}", raw, mergedDictMap.keySet());
+        return null;
     }
 
     /**
