@@ -1512,8 +1512,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
             if (vehicle.getIssueDate() != null) {
                 jsonMap.put("SignatureDate", DateUtils.format(vehicle.getIssueDate(), "yyyy-MM-dd"));
-                // 同时写入 TypeApprovalIssueDate
-                jsonMap.put("TypeApprovalIssueDate", DateUtils.format(vehicle.getIssueDate(), "yyyy-MM-dd"));
             }
             if (StringUtils.isBlank((String) (jsonMap.get("SignatureDate")))) {
                 jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
@@ -1681,6 +1679,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             // 13. 移除空结构节点
             removeEmptyStructNodes(root, attrList, dictCodeMap);
+
+            // 13b. 当 EnergySource 为多段时，在 CocDataGroup 下追加汇总标签：
+            //   ConsolidatedMaximum30MinutesPower  = Maximum30MinutesPower  各段之和
+            //   ConsolidatedMaximumNetPowerElectric = MaximumNetPowerElectric 各段之和
+            appendConsolidatedPowerFields(doc, root, jsonMap);
 
             // 14. 生成XML字符串（不输出 <?xml ...?> 声明头）
             TransformerFactory transformerFactory = TransformerFactory.newInstance();
@@ -2892,11 +2895,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
         }
     }
 
-    // 兼容无 rowIndex 的旧调用
-
-
-
-
     /**
      * 检测子树中是否有 ; 分隔的字段（不含 | 的），返回最大行数。
      * 用于处理嵌套循环（如 TestFamilyIdentifiersGroup），
@@ -3094,6 +3092,74 @@ public class XmlFileServiceImpl implements IXmlFileService {
     }
 
     /**
+     * 当 EnergySource 为多段（含 |）时，在 DOM 中找到 CocDataGroup 节点，
+     * 追加以下两个汇总子标签：
+     * <ul>
+     *   <li>ConsolidatedMaximum30MinutesPower  —— Maximum30MinutesPower  各段数值之和</li>
+     *   <li>ConsolidatedMaximumNetPowerElectric —— MaximumNetPowerElectric 各段数值之和</li>
+     * </ul>
+     * 求和时跳过空段和无法解析为数字的段（如拼接的前缀 "0"）。
+     * 若 EnergySource 为单段，或两个字段均无有效值，则不写入任何标签。
+     */
+    private void appendConsolidatedPowerFields(Document doc, Element root, Map<String, Object> jsonMap) {
+        Object energySourceObj = jsonMap.get("EnergySource");
+        if (energySourceObj == null) return;
+        String energySource = energySourceObj.toString().trim();
+        if (!energySource.contains("|")) return; // 单段，无需汇总
+
+        // 注意：此时 jsonMap 中的值已经过 prependZeroForElectricPowerFields 处理（开头有 "0|"）
+        // 求和时对所有段累加，"0" 段不影响结果
+        BigDecimal sum30Min   = sumPipeSegments(jsonMap.get("Maximum30MinutesPower"));
+        BigDecimal sumNetElec = sumPipeSegments(jsonMap.get("MaximumNetPowerElectric"));
+
+        if (sum30Min == null && sumNetElec == null) return;
+
+        // 找到 CocDataGroup 节点
+        NodeList cocList = doc.getElementsByTagName("CocDataGroup");
+        if (cocList.getLength() == 0) return;
+        Element cocDataGroup = (Element) cocList.item(0);
+
+        if (sum30Min != null) {
+            addElement(doc, cocDataGroup, "ConsolidatedMaximum30MinutesPower",
+                    sum30Min.stripTrailingZeros().toPlainString());
+        }
+        if (sumNetElec != null) {
+            addElement(doc, cocDataGroup, "ConsolidatedMaximumNetPowerElectric",
+                    sumNetElec.stripTrailingZeros().toPlainString());
+        }
+    }
+
+    /**
+     * 将 | 分隔的多段字符串中各段解析为 BigDecimal 并累加，跳过空段和非数字段。如果没有 | 分隔符，则用 ; 分隔符
+     * 返回 null 表示没有任何有效数值段。
+     */
+    private BigDecimal sumPipeSegments(Object raw) {
+        if (raw == null) return null;
+        String val = raw.toString().trim();
+        if (StringUtils.isBlank(val)) return null;
+
+        String[] segments;
+        if (val.contains("|")) {
+            segments = val.split("\\|", -1);
+        } else {
+            segments = val.split(";", -1);
+        }
+
+        BigDecimal sum = null;
+        for (String seg : segments) {
+            String s = seg.trim();
+            if (StringUtils.isBlank(s)) continue;
+            try {
+                BigDecimal num = new BigDecimal(s);
+                sum = (sum == null) ? num : sum.add(num);
+            } catch (NumberFormatException ignored) {
+                // 无法解析的段直接跳过
+            }
+        }
+        return sum;
+    }
+
+    /**
      * 当 EnergySource 字段值含 | 分隔符（即存在多个能量转换器组）时，
      * 在 Maximum30MinutesPower 和 MaximumNetPowerElectric 的值开头各拼接 "0|"。
      * <p>
@@ -3119,7 +3185,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
             // 避免重复拼接（如重复调用场景）
             if (!val.startsWith("0|")) {
                 jsonMap.put(fieldName, "0|" + val);
-                log.info("3124", fieldName, "0|" + val);
             }
         }
     }
