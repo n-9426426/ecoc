@@ -115,6 +115,8 @@ public class Material extends BaseEntity {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date effectiveDate;
 
+    private String vehicleTemplateUuid;
+
     /** 匹配的车辆模版列表 */
     private List<VehicleTemplate> vehicleTemplates;
 

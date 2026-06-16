@@ -30,29 +30,28 @@
         <result property="wvtaCocNo"        column="wvta_coc_no"/>
         <result property="generateAffirm"   column="generate_affirm"/>
         <result property="uploadAffirm"     column="upload_affirm"/>
+        <result property="vehicleTemplateUuid" column="vehicle_template_uuid"/>
     </resultMap>
 
     <sql id="selectMaterialVo">
         SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.tire, m.weight, m.brand, m.sale_name,
                m.create_time, m.create_by, m.update_time, m.update_by, m.remark, m.vehicle_template_id,
                m.tire_resistance_grade, m.factory_code, m.vehicle_model, m.status, m.generate_affirm,
-               m.upload_affirm, vt.version, vt.is_last
+               m.upload_affirm, m.vehicle_template_uuid, vt.version, vt.is_last
         FROM material m
-                 LEFT JOIN vehicle_template vt ON vt.template_id = m.vehicle_template_id
+        LEFT JOIN vehicle_template vt ON vt.uuid = m.vehicle_template_uuid
     </sql>
 
     <select id="selectMaterialList" parameterType="Material" resultMap="MaterialResult">
         SELECT m.id, m.name, m.material_no, m.tvv, m.country, m.tire, m.weight, m.brand, m.sale_name,
-        m.create_time, m.create_by, m.update_time, m.update_by, vt.remark, m.vehicle_template_id,
-        m.tire_resistance_grade, m.factory_code, m.vehicle_model, m.status,
-        m.generate_affirm, m.upload_affirm,
-        ANY_VALUE(vt.version) AS version,
-        ANY_VALUE(CASE WHEN vt.version = lv.last_version THEN 1 ELSE 0 END) AS is_last,
-        ANY_VALUE(vt.effective_date) AS effective_date,
-        ANY_VALUE(lv.last_version) AS last_version,
-        vt.coc_template_no, vt.wvta_coc_no
+            m.create_time, m.create_by, m.update_time, m.update_by, m.vehicle_template_id,
+            m.tire_resistance_grade, m.factory_code, m.vehicle_model, m.status,
+            m.generate_affirm, m.upload_affirm, m.vehicle_template_uuid,
+            ANY_VALUE(vt.version) AS version, ANY_VALUE(CASE WHEN vt.version = lv.last_version THEN 1 ELSE 0 END) AS is_last,
+            ANY_VALUE(vt.effective_date) AS effective_date, ANY_VALUE(lv.last_version) AS last_version,
+            ANY_VALUE(vt.remark) AS remark, ANY_VALUE(vt.coc_template_no) AS coc_template_no, ANY_VALUE(vt.wvta_coc_no) AS wvta_coc_no
         FROM material m
-        LEFT JOIN vehicle_template vt ON vt.template_id = m.vehicle_template_id
+        LEFT JOIN vehicle_template vt ON vt.uuid = m.vehicle_template_uuid
         LEFT JOIN (
             SELECT REPLACE(tvv, ',', '') AS tvv, version AS last_version
             FROM (
@@ -165,6 +164,7 @@
             <if test="status != null">status,</if>
             <if test="generateAffirm != null">generate_affirm,</if>
             <if test="uploadAffirm != null">upload_affirm,</if>
+            <if test="vehicleTemplateUuid != null and vehicleTemplateUuid != ''">vehicle_template_uuid,</if>
         </trim>
         <trim prefix="VALUES (" suffix=")" suffixOverrides=",">
             <if test="name != null and name != ''">#{name},</if>
@@ -185,6 +185,7 @@
             <if test="status != null">#{status},</if>
             <if test="generateAffirm != null">#{generateAffirm},</if>
             <if test="uploadAffirm != null">#{uploadAffirm},</if>
+            <if test="vehicleTemplateUuid != null and vehicleTemplateUuid != ''">#{vehicleTemplateUuid},</if>
         </trim>
     </insert>
 
@@ -209,6 +210,7 @@
             <if test="status != null">status = #{status},</if>
             <if test="generateAffirm != null">generate_affirm = #{generateAffirm},</if>
             <if test="uploadAffirm != null">upload_affirm = #{uploadAffirm},</if>
+            <if test="vehicleTemplateUuid != null and vehicleTemplateUuid != ''">vehicle_template_uuid = #{vehicleTemplateUuid},</if>
         </trim>
         WHERE id = #{id}
     </update>
@@ -238,12 +240,12 @@
     <!-- 模版改动后：重置关联该 uuid 下任意模版的所有物料两个确认状态为 0 -->
     <update id="resetAffirmByTemplateUuid">
         UPDATE material m
-            INNER JOIN vehicle_template vt ON vt.template_id = m.vehicle_template_id
+            INNER JOIN vehicle_template vt ON vt.uuid = m.vehicle_template_uuid
             SET m.generate_affirm = 0,
                 m.upload_affirm   = 0,
                 m.update_time     = SYSDATE()
         WHERE vt.uuid = #{uuid}
-          AND vt.del_flag = '0'
+          AND vt.del_flag = '0' and is_last = 1
     </update>
 
     <!-- 首台车确认后：按 material_no 更新 generate_affirm -->

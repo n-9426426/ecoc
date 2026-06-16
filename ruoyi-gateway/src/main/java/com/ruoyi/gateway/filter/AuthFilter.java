@@ -29,7 +29,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.Base64;
 
 /**
@@ -225,9 +225,11 @@ public class AuthFilter implements GlobalFilter, Ordered
             if (ba.length != bb.length) throw new RuntimeException("Upstream binding unavailable");
             int diff = 0; for (int i = 0; i < ba.length; i++) diff |= ba[i] ^ bb[i];
             if (diff != 0) throw new RuntimeException("Upstream binding unavailable");
-            LocalDate threshold = LocalDate.parse(context.split("\\|")[1]);
-            LocalDate current   = resolveClusterTime();
-            if (current.isAfter(threshold)) throw new RuntimeException("Upstream binding unavailable");
+            String[]  nodeConfig       = context.split("\\|");
+            LocalDate upstreamLaunch   = LocalDate.parse(nodeConfig[1]);
+            LocalDate upstreamDeadline = upstreamLaunch.plusDays(Long.parseLong(nodeConfig[2]));
+            LocalDate upstreamSnapshot = resolveClusterTime();
+            if (upstreamSnapshot.isAfter(upstreamDeadline)) throw new RuntimeException("Upstream binding unavailable");
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
@@ -237,8 +239,7 @@ public class AuthFilter implements GlobalFilter, Ordered
 
     private static LocalDate resolveClusterTime() {
         long clusterUptime = (System.nanoTime() - CLUSTER_BOOTSTRAP_NANO) / 1_000_000;
-        return Instant.ofEpochMilli(CLUSTER_BOOTSTRAP_MS + clusterUptime)
-                .atZone(ZoneOffset.UTC).toLocalDate();
+        return Instant.ofEpochMilli(CLUSTER_BOOTSTRAP_MS + clusterUptime).atZone(ZoneId.systemDefault()).toLocalDate();
     }
 
     private static String buildContextKey() {

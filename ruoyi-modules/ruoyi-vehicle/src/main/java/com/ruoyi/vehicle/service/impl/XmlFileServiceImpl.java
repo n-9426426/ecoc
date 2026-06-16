@@ -1574,6 +1574,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 applyLocationMarkings(jsonMap, methodAttachmentStatutoryPlate);
             }
 
+            // 当 EnergySource 为多段（含 |）时，在 Maximum30MinutesPower、MaximumNetPowerElectric
+            // 的值开头各拼接一个 "0|"，使段数与 EnergySource 对齐（第0段对应燃油组，值为0/空均可跳过）
+            prependZeroForElectricPowerFields(jsonMap);
+
             // 5. 单根节点校验
             List<XmlTemplateAttribute> topLevelAttrs = attrList.stream()
                     .filter(a -> a.getAttrPath() != null && a.getAttrPath().split("\\.").length == 1)
@@ -2864,8 +2868,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     if (nestedRows > 0) {
                         Map<String, Element> subMap = new LinkedHashMap<>();
                         subMap.put(attrPath, structElement);
-                        expandPipeLoop(doc, structElement, subAttrs, dictCodeMap, jsonMap,
-                                subMap, attrPath, nestedRows);
+                        // ★ 修复：嵌套循环场景下（外层rowIndex>=0），必须先用parentRowIndex从|中取对应段，
+                        //   再在该段内按;展开子行，否则子行索引i会直接作用于|分隔的外层，导致取值错误。
+                        expandNestedPipeLoop(doc, structElement, subAttrs, dictCodeMap, jsonMap,
+                                subMap, attrPath, nestedRows, rowIndex);
                         // 循环场景：不回写主 pathNodeMap，标记已展开，主循环跳过其子孙
                         expandedStructPaths.add(attrPath);
                     }
@@ -2941,9 +2947,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                          int rowIndex) {
         int maxRows = 0;
         int containerDepth = containerPath.split("\\.").length;
+        boolean hasPipeField = false; // 子树中是否存在含 | 的字段
+
         for (XmlTemplateAttribute attr : subAttrs) {
-            // 只看直接子 Group 层叶子（containerDepth+2）
-            if (attr.getAttrPath().split("\\.").length != containerDepth + 2) continue;
             String[] parts = attr.getAttrPath().split("\\.");
             SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
             if (dict == null || isStructNode(dict)) continue;
@@ -2952,23 +2958,32 @@ public class XmlFileServiceImpl implements IXmlFileService {
             String val = raw.toString().trim();
 
             if (val.contains("|")) {
-                // 先按 | 取当前父行的段
-                String[] outerItems = val.split("\\|", -1);
-                String segment = (rowIndex < outerItems.length) ? outerItems[rowIndex].trim() : "";
-                if (segment.isEmpty()) continue;
-                // 再按 ; 统计子行数（忽略末尾空段）
-                if (segment.contains(";")) {
-                    String[] innerItems = segment.split(";", -1);
-                    maxRows = Math.max(maxRows, countNonTrailingEmpty(innerItems));
-                } else {
-                    maxRows = Math.max(maxRows, 1);
+                hasPipeField = true;
+                // 只看直接子 Group 层叶子（containerDepth+2）来计算子行数
+                if (attr.getAttrPath().split("\\.").length == containerDepth + 2) {
+                    String[] outerItems = val.split("\\|", -1);
+                    String segment = (rowIndex < outerItems.length) ? outerItems[rowIndex].trim() : "";
+                    if (segment.isEmpty()) continue;
+                    if (segment.contains(";")) {
+                        String[] innerItems = segment.split(";", -1);
+                        maxRows = Math.max(maxRows, countNonTrailingEmpty(innerItems));
+                    } else {
+                        maxRows = Math.max(maxRows, 1);
+                    }
                 }
-            } else if (val.contains(";")) {
+            } else if (val.contains(";") && attr.getAttrPath().split("\\.").length == containerDepth + 2) {
                 // 无外层 |，直接按 ; 展开（所有父行共用）
                 String[] items = val.split(";", -1);
                 maxRows = Math.max(maxRows, countNonTrailingEmpty(items));
             }
         }
+
+        // ★ 修复：若子树中存在 | 字段但直接子层未能算出 maxRows（如全为单值共用字段），
+        //   则至少返回 1，确保 expandNestedPipeLoop 被触发以正确切片各组数据。
+        if (hasPipeField && maxRows == 0) {
+            maxRows = 1;
+        }
+
         return maxRows;
     }
 
@@ -2976,6 +2991,162 @@ public class XmlFileServiceImpl implements IXmlFileService {
      * 扫描 attrList 里的叶子节点，看是否有 | 分隔的字段
      * 返回最大行数（没有 | 则返回 1）
      */
+    /**
+     * 嵌套循环场景下（外层 rowIndex >= 0）的子树展开。
+     * <p>
+     * 与 expandPipeLoop 的区别：先将 jsonMap 中所有含 | 的字段按 parentRowIndex 切片，
+     * 得到一个仅含当前外层行数据的 slicedJsonMap，再复用原有 buildSubTree(rowIndex=-1) 逻辑展开子树。
+     * <p>
+     * 这样可以完整复用所有已有逻辑：
+     * - 含 ; 的字段（如 TestFamilyIdentifier）由 buildSubTree 内部的 expandPipeLoop/detectSemicolonRows 正确展开
+     * - 空值字段（该 EnergyConvertor 组不含的 Power 字段）因切片后为空而被跳过，不写入 XML
+     * - 单值字段（所有组共用，如 SoundLevelDriveBy）直接保留原值
+     * <p>
+     * 例：parentRowIndex=0（SQRH4J15，燃油机）时切片结果：
+     *   EnergySource            "10|95|95|95"     → "10"
+     *   MaximumNetPowerCombustion "105"            → "105"（无|，共用）
+     *   Maximum30MinutesPower   "|45|90|175"      → ""（第0段为空，该组无此字段）
+     *   TestFamilyIdentifier    "IP;ATCT;..."     → "IP;ATCT;..."（无|，共用，后续由;展开）
+     */
+    private void expandNestedPipeLoop(Document doc, Element parentElement,
+                                      List<XmlTemplateAttribute> attrList,
+                                      Map<String, SysDictData> dictCodeMap,
+                                      Map<String, Object> jsonMap,
+                                      Map<String, Element> pathNodeMap,
+                                      String rootAttrPath, int rows, int parentRowIndex) {
+
+        // 1. 构造切片后的 jsonMap：所有含 | 的字段按 parentRowIndex 取对应段，其余保留原值
+        Map<String, Object> slicedJsonMap = sliceJsonMapByOuterRow(jsonMap, parentRowIndex);
+
+        // 1b. 根据当前行的 EnergySource 值过滤 PowerGroup 字段：
+        //   - EnergySource != 95（燃油组）：只保留 MaximumNetPowerCombustion、EngineSpeedMaximumNetPower
+        //   - EnergySource == 95（电机组）：只保留 Maximum30MinutesPower、MaximumNetPowerElectric
+        filterPowerGroupByEnergySource(slicedJsonMap);
+
+        // 2. 找到 rootAttrPath 下的直接子节点（通常是 EnergySourceGroup）
+        int rootDepth = rootAttrPath.split("\\.").length;
+        List<XmlTemplateAttribute> directChildren = attrList.stream()
+                .filter(a -> a.getAttrPath().startsWith(rootAttrPath + ".")
+                        && a.getAttrPath().split("\\.").length == rootDepth + 1)
+                .collect(Collectors.toList());
+
+        for (XmlTemplateAttribute child : directChildren) {
+            String[] parts = child.getAttrPath().split("\\.");
+            SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
+            if (dict == null) continue;
+
+            if (isStructNode(dict)) {
+                // Group 节点 → 循环展开 rows 次（通常 EnergySourceTable 只有1个 EnergySourceGroup）
+                List<XmlTemplateAttribute> groupChildren = attrList.stream()
+                        .filter(a -> a.getAttrPath().startsWith(child.getAttrPath() + "."))
+                        .collect(Collectors.toList());
+
+                for (int i = 0; i < rows; i++) {
+                    Element groupEl = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
+                    parentElement.appendChild(groupEl);
+
+                    // ★ 关键：用 slicedJsonMap 替代原始 jsonMap，复用完整的 buildSubTree 逻辑
+                    //   rowIndex=-1 表示非外层循环场景，buildSubTree 会正确处理:
+                    //   - 含 ; 字段（TestFamilyIdentifier）→ expandPipeLoop/detectSemicolonRows 展开多个 Group
+                    //   - 空值字段（切片后为空）→ getValueOrDefault 返回空，不写入 XML
+                    //   - 单值字段 → 直接写入
+                    Map<String, Element> subMap = new LinkedHashMap<>();
+                    subMap.put(child.getAttrPath(), groupEl);
+                    buildSubTree(doc, groupEl, groupChildren, dictCodeMap, slicedJsonMap,
+                            subMap, child.getAttrPath(), -1);
+                }
+            } else if (StringUtils.isNotBlank(dict.getDictLabel())) {
+                // 直接叶子节点：取切片后的值
+                Object raw = slicedJsonMap.get(dict.getDictLabel());
+                String value = raw != null ? raw.toString().trim() : "";
+                if (StringUtils.isBlank(value) && StringUtils.isNotBlank(child.getDefaultValue())) {
+                    value = child.getDefaultValue();
+                }
+                if (StringUtils.isNotBlank(value)) {
+                    addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
+                }
+            }
+        }
+    }
+
+    /**
+     * 将 jsonMap 中所有含 | 的字段按 outerRowIndex 切到对应段，返回新 Map。
+     * <p>
+     * 规则：
+     * <ul>
+     *   <li>字段值含 |：按 | 拆分，取第 outerRowIndex 段（越界或空段则保留空字符串）</li>
+     *   <li>字段值不含 |：原样保留（所有外层行共用，如 SoundLevelDriveBy、TestFamilyIdentifier）</li>
+     * </ul>
+     * 切片后为空的字段保留在 map 中（值为空字符串），由调用方（buildSubTree）按空值逻辑跳过输出。
+     */
+    private Map<String, Object> sliceJsonMapByOuterRow(Map<String, Object> jsonMap, int outerRowIndex) {
+        Map<String, Object> sliced = new HashMap<>(jsonMap);
+        for (Map.Entry<String, Object> entry : jsonMap.entrySet()) {
+            if (entry.getValue() == null) continue;
+            String val = entry.getValue().toString().trim();
+            if (!val.contains("|")) continue; // 无 |，所有行共用，原样保留
+            String[] outerItems = val.split("\\|", -1);
+            String segment = (outerRowIndex >= 0 && outerRowIndex < outerItems.length)
+                    ? outerItems[outerRowIndex].trim() : "";
+            sliced.put(entry.getKey(), segment);
+        }
+        return sliced;
+    }
+
+    /**
+     * 当 EnergySource 字段值含 | 分隔符（即存在多个能量转换器组）时，
+     * 在 Maximum30MinutesPower 和 MaximumNetPowerElectric 的值开头各拼接 "0|"。
+     * <p>
+     * 背景：EnergySource 第0段为燃油组（如 "10"），其后各段为电机组（如 "95"）。
+     * 电机功率字段原始值只覆盖电机组（如 "45|90|175"），段数比 EnergySource 少1，
+     * 拼接后变为 "0|45|90|175"，使 sliceJsonMapByOuterRow 按 parentRowIndex 切片时能正确对齐：
+     *   index=0（燃油组）→ "0"（filterPowerGroupByEnergySource 再将其清除）
+     *   index=1,2,3（电机组）→ 各自的实际值
+     * <p>
+     * 仅在 EnergySource 含 | 时执行，单段场景不影响。
+     */
+    private void prependZeroForElectricPowerFields(Map<String, Object> jsonMap) {
+        Object energySourceObj = jsonMap.get("EnergySource");
+        if (energySourceObj == null) return;
+        String energySource = energySourceObj.toString().trim();
+        if (!energySource.contains("|")) return; // 单段，无需处理
+
+        for (String fieldName : Arrays.asList("Maximum30MinutesPower", "MaximumNetPowerElectric")) {
+            Object raw = jsonMap.get(fieldName);
+            if (raw == null) continue;
+            String val = raw.toString().trim();
+            if (StringUtils.isBlank(val)) continue;
+            // 避免重复拼接（如重复调用场景）
+            if (!val.startsWith("0|")) {
+                jsonMap.put(fieldName, "0|" + val);
+                log.info("3124", fieldName, "0|" + val);
+            }
+        }
+    }
+
+    /**
+     * 根据切片后 jsonMap 中的 EnergySource 值，过滤 PowerGroup 字段：
+     * <ul>
+     *   <li>EnergySource == "95"（电机组）：清除 MaximumNetPowerCombustion、EngineSpeedMaximumNetPower</li>
+     *   <li>EnergySource != "95"（燃油组）：清除 Maximum30MinutesPower、MaximumNetPowerElectric</li>
+     * </ul>
+     * 保证每类能量源只输出对应的 PowerGroup 子字段，避免共用单值字段被错误写入。
+     */
+    private void filterPowerGroupByEnergySource(Map<String, Object> slicedJsonMap) {
+        Object energySourceObj = slicedJsonMap.get("EnergySource");
+        if (energySourceObj == null) return;
+        String energySource = energySourceObj.toString().trim();
+        if ("95".equals(energySource)) {
+            // 电机组：只保留电机相关功率字段，清除燃油功率字段
+            slicedJsonMap.put("MaximumNetPowerCombustion", "");
+            slicedJsonMap.put("EngineSpeedMaximumNetPower", "");
+        } else {
+            // 燃油组：只保留燃油相关功率字段，清除电机功率字段
+            slicedJsonMap.put("Maximum30MinutesPower", "");
+            slicedJsonMap.put("MaximumNetPowerElectric", "");
+        }
+    }
+
     /**
      * 对含 | 分隔字段的子树，找到最外层的 Group 节点，循环展开 N 次
      * 例如：AxleTable → AxleGroup × 2，每个 AxleGroup 下再展开 TyreAxleGroup

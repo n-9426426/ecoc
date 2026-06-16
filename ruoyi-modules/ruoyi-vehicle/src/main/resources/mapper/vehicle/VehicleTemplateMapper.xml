@@ -307,7 +307,7 @@
             GROUP BY tvv
         ) max_ed ON max_ed.tvv = vt.tvv
         LEFT JOIN material m ON m.vehicle_template_id = vt.template_id
-        WHERE vt.del_flag = '0' AND vt.status = '0'
+        WHERE vt.del_flag = '0' AND vt.status = '0' and vt.is_last = 1
         <if test="materialNo != null and materialNo != ''">
             AND m.material_no = #{materialNo}
         </if>

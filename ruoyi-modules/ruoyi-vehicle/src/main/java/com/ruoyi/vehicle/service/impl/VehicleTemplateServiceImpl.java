@@ -248,7 +248,7 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-        public int updateVehicleTemplate(VehicleTemplate template) {
+    public int updateVehicleTemplate(VehicleTemplate template) {
         VehicleTemplate existTemplate = templateMapper.selectVehicleByUuid(template.getUuid());
         if (existTemplate == null) {
             throw new RuntimeException("该模版不存在，无法更新");
@@ -1143,6 +1143,35 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 }
 
                 finalMap = result;
+            }
+        }
+
+        // ── JSON 映射后处理：EnergyConvertorCodeMarkedOnEnergyConvertor / EnergySource 段数对齐 ──
+        // 规则：若 EnergyConvertorCodeMarkedOnEnergyConvertor 的值包含分号（即多段拼接），
+        //       则 EnergySource 须与其段数保持一致；不足的段用 "95" 补齐，多余的段截断。
+        if (finalMap != null) {
+            Object energyConvertorObj = finalMap.get("EnergyConvertorCodeMarkedOnEnergyConvertor");
+            String energyConvertorStr = energyConvertorObj == null ? null : String.valueOf(energyConvertorObj);
+            if (StringUtils.isNotBlank(energyConvertorStr) && (energyConvertorStr.contains(";") || energyConvertorStr.contains("|"))) {
+                String[] converterSegments = energyConvertorStr.split("[;|]", -1);
+                int targetCount = converterSegments.length;
+
+                Object energySourceObj = finalMap.get("EnergySource");
+                String energySourceStr = energySourceObj == null ? "" : String.valueOf(energySourceObj);
+
+                String[] sourceSegments = StringUtils.isNotBlank(energySourceStr)
+                        ? energySourceStr.split("[;|]", -1)
+                        : new String[0];
+
+                String[] alignedSegments = new String[targetCount];
+                for (int i = 0; i < targetCount; i++) {
+                    if (i < sourceSegments.length && StringUtils.isNotBlank(sourceSegments[i])) {
+                        alignedSegments[i] = sourceSegments[i];
+                    } else {
+                        alignedSegments[i] = "95";
+                    }
+                }
+                finalMap.put("EnergySource", String.join("|", alignedSegments));
             }
         }
 

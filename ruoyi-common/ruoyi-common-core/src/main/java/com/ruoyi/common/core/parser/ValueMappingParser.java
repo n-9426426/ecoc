@@ -399,6 +399,27 @@ public class ValueMappingParser {
                     return null;
                 }
 
+                // ── 正则全局提取所有匹配项并拼接 ─────────────────────
+                case "EXTRACT_ALL_PATTERN": {
+                    // value_map = EXTRACT_ALL_PATTERN:{regex}:{sep}:{group}
+                    // group 可选，默认 0（整个匹配）
+                    if (parts.length < 3) {
+                        log.warn("[ValueMappingParser] EXTRACT_ALL_PATTERN 缺少参数: {}", descriptor);
+                        return null;
+                    }
+                    String regex  = restoreEscapes(parts[1].replace("\\\\", "\\"));
+                    String outSep = unescapeSep(parts[2]);
+                    int    group  = (parts.length >= 4) ? parseIndex(parts[3], 0) : 0;
+                    Matcher m = Pattern.compile(regex, Pattern.UNICODE_CHARACTER_CLASS).matcher(raw);
+                    StringJoiner sj = new StringJoiner(outSep);
+                    while (m.find()) {
+                        String val = m.group(group);
+                        if (val != null && !val.isEmpty()) sj.add(val);
+                    }
+                    String result = sj.toString();
+                    return result.isEmpty() ? null : result;
+                }
+
                 // ── 提取轮毂规格：RIM_SPEC:BOTH ──────────────────
                 case "RIM_SPEC": {
                     if (parts.length < 2) return null;

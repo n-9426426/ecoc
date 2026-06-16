@@ -197,7 +197,7 @@ public class MaterialServiceImpl implements IMaterialService {
 
         material.setVersion(template.getVersion());
         material.setVehicleTemplateId(template.getTemplateId());
-
+        material.setVehicleTemplateUuid(template.getUuid());
 
         applyMaterialAffirm(material);
         return materialMapper.insertMaterial(material);
@@ -236,6 +236,7 @@ public class MaterialServiceImpl implements IMaterialService {
         String newVersion = material.getNewVersion();
         material.setVersion(newVersion);
         material.setVehicleTemplateId(template.getTemplateId());
+        material.setVehicleTemplateUuid(template.getUuid());
         // 按 MES 字段映射规则，将物料关键字段转换后写入 material.json
         applyMesJsonToMaterial(material);
         applyMaterialAffirm(material);
@@ -388,7 +389,7 @@ public class MaterialServiceImpl implements IMaterialService {
                     if (existing != null) {
                         materialMapper.deleteByMaterialNo(existing.getMaterialNo());
                     }
-// 统一走新增
+                    // 统一走新增
                     insertMaterial(material, createBy, false);
                     successCount++;
                     pushEvent(sink, "progress", String.format(
