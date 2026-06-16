@@ -316,19 +316,19 @@
         </if>
         <if test="brand != null and brand != ''">
             AND vt.json->>'$.Make' IS NOT NULL
-            AND FIND_IN_SET(#{brand}, REPLACE(REPLACE(vt.json->>'$.Make', ';', ','), ' ', '')) > 0
+            AND FIND_IN_SET(#{brand}, REPLACE(vt.json->>'$.Make', ';', ',')) > 0
         </if>
         <if test="weight != null and weight != ''">
             AND vt.json->>'$.ActualMass' IS NOT NULL
-            AND FIND_IN_SET(#{weight}, REPLACE(REPLACE(vt.json->>'$.ActualMass', ';', ','), ' ', '')) > 0
+            AND FIND_IN_SET(#{weight}, REPLACE(vt.json->>'$.ActualMass', ';', ',')) > 0
         </if>
         <if test="saleName != null and saleName != ''">
             AND vt.json->>'$.CommercialName' IS NOT NULL
-            AND FIND_IN_SET(#{saleName}, REPLACE(REPLACE(vt.json->>'$.CommercialName', ';', ','), ' ', '')) > 0
+            AND FIND_IN_SET(#{saleName}, REPLACE(vt.json->>'$.CommercialName', ';', ',')) > 0
         </if>
         <if test="tire != null and tire != ''">
             AND vt.json->>'$.TyreSize' IS NOT NULL
-            AND FIND_IN_SET(#{tire}, REPLACE(REPLACE(vt.json->>'$.TyreSize', ';', ','), ' ', '')) > 0
+            AND FIND_IN_SET(#{tire}, REPLACE(vt.json->>'$.TyreSize', ';', ',')) > 0
         </if>
         ORDER BY CAST(vt.version AS DECIMAL(10, 2)) DESC
     </select>

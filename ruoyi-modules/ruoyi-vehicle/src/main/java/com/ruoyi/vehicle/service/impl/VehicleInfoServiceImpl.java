@@ -1859,15 +1859,14 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                         }
                         break;
                     case "Make":
-                        // 2026.06.13 以纸制COC文件中的为准
-//                        if (material.getBrand() != null) {
-//                            objectNode.put(fieldName, material.getBrand());
-//                        }
+                        if (material.getBrand() != null) {
+                            objectNode.put(fieldName, material.getBrand());
+                        }
                         break;
                     case "CommercialName":
-//                        if (material.getSaleName() != null) {
-//                            objectNode.put(fieldName, material.getSaleName());
-//                        }
+                        if (material.getSaleName() != null) {
+                            objectNode.put(fieldName, material.getSaleName());
+                        }
                         break;
                     case "RollingResistanceClass":
                         if (material.getTireResistanceGrade() != null) {
