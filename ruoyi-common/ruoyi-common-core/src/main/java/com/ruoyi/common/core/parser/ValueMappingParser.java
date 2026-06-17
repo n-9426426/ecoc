@@ -599,7 +599,7 @@ public class ValueMappingParser {
                     for (String step : steps) {
                         if (current == null) return null;
                         // 还原子步骤中的所有占位符（含转义冒号和正则前瞻/后顾结构）
-                        step = restoreEscapes(step.trim().replace("\\x7C", "|"));
+                        step = restoreEscapesForPipeStep(step.trim().replace("\\x7C", "|"));
                         // 委托给 convertStep，mergedDictMap=null（DICT_MAP 步骤将报错）
                         current = convertStep(current, step, null);
                         if (EMPTY_SENTINEL.equals(current)) return EMPTY_SENTINEL;
@@ -753,7 +753,7 @@ public class ValueMappingParser {
             String current = rawValue;
             for (String s : steps) {
                 if (current == null) return null;
-                s = restoreEscapes(s.trim().replace("\\x7C", "|"));
+                s = restoreEscapesForPipeStep(s.trim().replace("\\x7C", "|"));
                 current = convertStep(current, s, mergedDictMap);
                 if (EMPTY_SENTINEL.equals(current)) return EMPTY_SENTINEL;
             }
@@ -1148,6 +1148,46 @@ public class ValueMappingParser {
      */
     private static String restoreEscapes(String s) {
         return s.replace("\u0001", ":")
+                .replace("\u0002", "(?:")
+                .replace("\u0003", "(?=")
+                .replace("\u0004", "(?!")
+                .replace("\u0005", "(?<=")
+                .replace("\u0006", "(?<!")
+                .replace("\u0007", "\\s")
+                .replace("\u0008", "\\d")
+                .replace("\u000B", "\\w")
+                .replace("\u000C", "\\S")
+                .replace("\u000E", "\\D")
+                .replace("\u000F", "\\W");
+    }
+
+    /**
+     * 还原 PIPE 子步骤文本中的结构占位符，专供「该步骤还会被重新交给
+     * {@link #convert(String, String)} / {@link #convertStep(String, String, Map)}
+     * 二次处理」的场景使用（即 PIPE/convertStep 中按 {@code |} 切分出单个子步骤之后）。
+     *
+     * <p><b>与 {@link #restoreEscapes} 的关键区别：</b>占位符 {@code \u0001}
+     * （代表用户写的 {@code \x3A} 转义冒号）这里还原成原始转义文本
+     * {@code "\\x3A"}，而不是直接还原成真正的冒号字符 {@code ":"}。
+     * 原因：子步骤文本会再次进入 {@code convert()}，其内部会重新调用一次
+     * {@link #encodeDescriptor}，按 {@code :} 切分出 type/regex/group 等参数。
+     * 若此处提前把 {@code \u0001} 还原成真正的冒号，第二次 {@code encodeDescriptor}
+     * 已无法识别出它原本是被转义保护的冒号（它现在和正则里其它字面冒号长得一样），
+     * 于是会被当成参数分隔符，把正则从中间切断
+     * （典型现场：{@code EXTRACT_PATTERN_OR_DIRECT:(?:Engine\s*\x3A\s*)([^,\x3B]+):1}
+     * 作为 PIPE 第一步时，正则被截成 {@code (?:Engine\s*}，
+     * 编译报 "Unclosed group"）。还原成 {@code \x3A} 文本可以让它在下一轮
+     * {@code encodeDescriptor} 中被重新识别、重新保护，最终在该子步骤自己的
+     * 终态 {@link #restoreEscapes} 调用中再正确还原为冒号字符
+     * （Java 正则本身也原生支持 {@code \x3A} 十六进制转义，即使万一未被重新
+     * 保护，直接进入 {@code Pattern.compile} 也仍能正确匹配冒号，不会报错）。
+     *
+     * <p>其它占位符（{@code (?:}、{@code \s} 等）之所以不需要这种特殊处理：
+     * 它们还原后的文本本身就是 {@code encodeDescriptor} 能重新识别的原始写法，
+     * 天然支持二次编码的往返还原，不存在信息丢失问题。
+     */
+    private static String restoreEscapesForPipeStep(String s) {
+        return s.replace("\u0001", "\\x3A")
                 .replace("\u0002", "(?:")
                 .replace("\u0003", "(?=")
                 .replace("\u0004", "(?!")
