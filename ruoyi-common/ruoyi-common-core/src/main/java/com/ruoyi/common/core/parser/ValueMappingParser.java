@@ -57,7 +57,105 @@ import java.util.regex.Pattern;
  *                                     示例（范围 key）：rawValue = "6.8N/kN"
  *                                           → 提取 6.8 → 命中"6.6<=RRC<=7.7" → 返回"B"
  *  STRIP_UNIT_JOIN:{inSep}:{outSep} 按 inSep 拆分，每项提取第1个数字，再用 outSep 拼接
- *  GROUP_JOIN_SEP:{inSep}:{outSep}  不做值转换，仅修改当前 uuid 组的多值拼接符。
+ *  GROUP_JOIN_SEP:{inSep}:{outSep}[:{dedup}[:{segTerm}]]
+ *                                    不做值转换，仅修改当前 uuid 组的多值拼接符。
+ *                                    {inSep} 当前保留未使用（历史占位，向后兼容旧数据）。
+ *                                    可选段「非空即生效」，不使用 TRUE/FALSE 字面量：
+ *                                      · dedup   — 非空时开启去重：拼接新值前检查该值是否已存在
+ *                                                  于已拼接结果中，已存在则跳过（任意非空字符串均可，
+ *                                                  建议写 DEDUP 增加可读性）。
+ *                                                  示例：两行经规则都映射为 "BRK" 时，
+ *                                                  若 dedup 非空，最终只拼接一次 "BRK"。
+ *                                      · segTerm — 非空时，每个命中项后都追加一次该值（取代“项间插入”
+ *                                                  语义，变为“每项自带后缀”）。
+ *                                                  示例：segTerm=PIPE，命中 BRK、UNB → "BRK|UNB|"。
+ *                                                  若 segTerm 为空（默认），则为普通项间插入：
+ *                                                  命中 BRK、UNB → "BRK" + outSep + "UNB"。
+ *                                    （仅适用于「单层」拼接：所有命中项共用同一种连接方式。
+ *                                    若需要"段内一种分隔符、段间另一种分隔符 + 整体前缀"的复合结构，
+ *                                    见下方 {@code MULTI_GROUP_JOIN_SEP}。）
+ *  MULTI_GROUP_JOIN_SEP:{prefix}:{slotSep}:{segTerm}:{seg1}~{seg2}~...
+ *                                    多 key_map 链场景下的「分段 + 槛位」拼接，须放在同一 uuid 链中
+ *                                    单独一行声明（该行 value_map 仅作配置声明，不参与值转换，
+ *                                    其 key_map/dict_label 可留空或随意，处理时会被跳过）。
+ *                                    用于「段内多个来源用 slotSep 连接，段与段之间各自带 segTerm 后缀，
+ *                                    整体可加固定前缀」的复合格式，如 "800;1500|750|"、"DB;DC||"、"||4142"。
+ *                                      · prefix   — 整体结果固定前缀（可为空）
+ *                                      · slotSep  — 同一 segment 内多个来源命中值之间的连接符（可为空，
+ *                                                   为空时表示该 segment 至多 1 个槛位）
+ *                                      · segTerm  — 每个非空 segment 输出后追加的固定后缀（可为空，
+ *                                                   为空表示 segment 之间直接顺序拼接、无后缀）
+ *                                      · segN     — 用 {@code ~} 分隔的多个 segment，每个 segment 内
+ *                                                   用 {@code ,} 分隔一个或多个 {@code key_map} 字符串，
+ *                                                   引用同一链中其它行的 {@code key_map}（须完全匹配），
+ *                                                   取该行经其自身 value_map 转换后的结果作为槛位值；
+ *                                                   槛位值为空/N/A/NULL 视为未命中，整 segment 内所有槛位
+ *                                                   均未命中则该 segment（含其 segTerm）整体省略。
+ *                                                   key_map 内若含 {@code :}、{@code ,}、{@code ~} 等
+ *                                                   结构符，需要用 \x3A / \x2C / \x7E 转义。
+ *                                    <b>重要：segment 分隔符固定用 {@code ~}，禁止用 {@code ;}</b>——
+ *                                    前端编辑页面保存时（{@code SysDictDataServiceImpl#splitToRows}）会把
+ *                                    整条 value_map 字符串按 {@code ;} 切分、拆成同组多行写入数据库；
+ *                                    若描述符内部出现 {@code ;}，会被这层逻辑错误截断成多行残缺数据
+ *                                    （例如本应是一条完整的 MULTI_GROUP_JOIN_SEP 规则，被从中间切开后，
+ *                                    后半段 segment 信息丢失，导致拼接结果缺段）。
+ *
+ *                                    示例一（BodyworkTypeTrailer，目标 "DB;DC||"）：
+ *                                      链内两行：
+ *                                        key_map="18.1. Drawbar trailer:…kg"
+ *                                          value_map="ENUM:N/A=__NULL__,NULL=__NULL__,*=DB"
+ *                                        key_map="18.3. Centre-axle trailer:…kg"
+ *                                          value_map="ENUM:N/A=__NULL__,NULL=__NULL__,*=DC"
+ *                                        辅助行 value_map=
+ *                                          "MULTI_GROUP_JOIN_SEP::SEMICOLON:\x7C\x7C:
+ *                                           18.1. Drawbar trailer\x3A…kg,18.3. Centre-axle trailer\x3A…kg"
+ *                                      18.1、18.3 均非空 → segment 内两槛位按声明顺序输出，
+ *                                      用 slotSep(;) 连接 → "DB;DC"，segment 命中 → 追加 segTerm(||)
+ *                                      → 结果 "DB;DC||"；仅18.1非空 → 仅 DB 命中 → "DB||"
+ *                                      （注：此例只有 1 个 segment，未用到 ~ 分隔符；slotSep 本身配置
+ *                                      为字面量 SEMICOLON 没问题，因为它只是描述符里的别名字符串，
+ *                                      不是真实的 ; 字符，不会被 splitToRows 误切）
+ *
+ *                                    示例二（TechnicallyPermissibleMaximumTowableMass，目标 "800;1500|750|"）：
+ *                                      链内三行（value_map 均为 STRIP_UNIT，取去单位纯数字）：
+ *                                        key_map="18.1. Drawbar trailer:…kg"      value_map="STRIP_UNIT"
+ *                                        key_map="18.3. Centre-axle trailer:…kg"  value_map="STRIP_UNIT"
+ *                                        key_map="18.4. Un-braked trailer:…kg"    value_map="STRIP_UNIT"
+ *                                        辅助行 value_map=
+ *                                          "MULTI_GROUP_JOIN_SEP::SEMICOLON:PIPE:
+ *                                           18.1. Drawbar trailer\x3A…kg,18.3. Centre-axle trailer\x3A…kg~
+ *                                           18.4. Un-braked trailer\x3A…kg"
+ *                                      （两个 segment 之间用 ~ 分隔，不是 ;）
+ *                                      18.1=800kg 18.3=1500kg 18.4=750kg
+ *                                      → segment1 [18.1,18.3] → "800;1500" + "|"
+ *                                      → segment2 [18.4]      → "750" + "|"
+ *                                      → 结果 "800;1500|750|"
+ *
+ *                                    示例三（TechnicallyPermissibleMaximumCombinationMass，目标 "||4142"）：
+ *                                      链内一行：key_map="16.4. Technically permissible..." value_map="STRIP_UNIT"
+ *                                      辅助行 value_map=
+ *                                          "MULTI_GROUP_JOIN_SEP:\x7C\x7C::: 16.4. Technically permissible...\x3A…kg"
+ *                                      → 结果 "||4142"
+ *  FIXED_SLOT_BUDGET_JOIN:{sep}:{budget}
+ *                                    多 key_map 链场景下的「固定分隔符配额」拼接。须单独占一行放在
+ *                                    同一 uuid 链中（该行 key_map/dict_label 可留空），仅作配置声明，
+ *                                    不参与值转换，与 GROUP_JOIN_SEP / MULTI_GROUP_JOIN_SEP 互斥。
+ *                                    适用场景：分隔符总数固定不变（不随命中项数增减），命中 N 项时，
+ *                                    项之间插入 (N-1) 个 sep，结尾再补足 budget-(N-1) 个 sep，
+ *                                    使分隔符总数恒为 budget；全部未命中（N=0）则整体返回 null（不返回
+ *                                    任何分隔符）。链内其它行各自正常转换（如 ENUM），其去重后的非空
+ *                                    结果按原顺序参与本拼接（自动去重：同一值只计入一次）。
+ *                                      · sep    — 分隔符（别名或字面量，如 PIPE → |）
+ *                                      · budget — 固定配额（正整数）
+ *                                    示例（BrakedTypeTrail，budget=2，对应 BRK/UNB 两个槛位）：
+ *                                      18.1 → ENUM:N/A=__NULL__,NULL=__NULL__,*=BRK
+ *                                      18.3 → ENUM:N/A=__NULL__,NULL=__NULL__,*=BRK
+ *                                      18.4 → ENUM:N/A=__NULL__,NULL=__NULL__,*=UNB
+ *                                      辅助行 → FIXED_SLOT_BUDGET_JOIN:PIPE:2
+ *                                      只命中18.1或18.3（去重后1个BRK） → "BRK||"
+ *                                      只命中18.4（1个UNB） → "UNB||"
+ *                                      18.1/18.3 与 18.4 都命中（去重后2个值） → "BRK|UNB|"
+ *                                      全部未命中 → null
  *  RANGE_MAP:{条件1}={目标值1};{条件2}={目标值2};...
  *                                    按数值范围映射。先从原值提取第1个数字，再逐条匹配范围表达式。
  *                                    条件格式：{lo}{op1}VALUE{op2}{hi}，支持 <= 和 < 两种比较符。
@@ -78,6 +176,13 @@ import java.util.regex.Pattern;
  *  管道链式执行：PIPE:{rule1}|{rule2}|  将多个 value_map 规则串联，前一步输出作为下一步输入
  *  EXTRACT_ALL                       提取所有正则匹配项并拼接,找出所有匹配，取指定分组，用 outSep 拼接
  *                                   格式：EXTRACT_ALL:{regex}:{group}:{outSep}
+ *  EXTRACT_PATTERN_OR_DIRECT:{regex}:{group}
+ *                                    正则提取分组；匹配成功返回 group，匹配失败返回原值（透传）。
+ *                                    与 EXTRACT_PATTERN 的唯一区别：未匹配时不返回 null，
+ *                                    常用于 PIPE 首步做"有则提取、无则透传"。
+ *                                    示例：PIPE:EXTRACT_PATTERN_OR_DIRECT:(?:Engine\s*\x3A\s*)([^,\x3B]+):1|DICT_MAP
+ *                                          "Engine: Positive ignition,four stroke" → "Positive ignition"
+ *                                          "Positive ignition"                     → "Positive ignition"（透传）
  * </pre>
  *
  * <h2>数据库存储约定（value_map 列 ≤ 100 字符）</h2>
@@ -236,6 +341,25 @@ public class ValueMappingParser {
                     int group   = parseIndex(parts[2], 1);
                     Matcher m = Pattern.compile(regex, Pattern.UNICODE_CHARACTER_CLASS).matcher(raw);
                     return m.find() ? m.group(group) : null;
+                }
+
+                // ── 正则提取分组（失败时透传原值，不返回 null）────────
+                case "EXTRACT_PATTERN_OR_DIRECT": {
+                    // value_map = EXTRACT_PATTERN_OR_DIRECT:{regex}:{group}
+                    // 匹配成功 → 返回指定分组；匹配失败 → 返回原值（透传，不中断 PIPE）
+                    if (parts.length < 3) {
+                        log.warn("[ValueMappingParser] EXTRACT_PATTERN_OR_DIRECT 缺少参数: {}", descriptor);
+                        return raw.isEmpty() ? null : raw;
+                    }
+                    String regex = restoreEscapes(parts[1].replace("\\\\", "\\"));
+                    int group    = parseIndex(parts[2], 1);
+                    Matcher m = Pattern.compile(regex, Pattern.UNICODE_CHARACTER_CLASS).matcher(raw);
+                    if (m.find()) {
+                        String extracted = m.group(group);
+                        return (extracted != null) ? extracted.trim() : raw;
+                    }
+                    // 未命中：原值透传，保证 PIPE 链不中断
+                    return raw.isEmpty() ? null : raw;
                 }
 
                 // ── 日期格式转换 → xs:date ────────────────────────
@@ -1002,28 +1126,20 @@ public class ValueMappingParser {
         catch (NumberFormatException e) { return defaultVal; }
     }
 
-    /**
-     * 将 value_map 描述符中需要保护的字符序列替换为私有占位符，
-     * 以便后续安全地按冒号 {@code :} 切分。
-     *
-     * <p>占位符映射：
-     * <ul>
-     *   <li>{@code \x3A}  → {@code \u0001}（转义冒号）</li>
-     *   <li>{@code (?:}   → {@code \u0002}</li>
-     *   <li>{@code (?=}   → {@code \u0003}</li>
-     *   <li>{@code (?!}   → {@code \u0004}</li>
-     *   <li>{@code (?<=}  → {@code \u0005}</li>
-     *   <li>{@code (?<!}  → {@code \u0006}</li>
-     * </ul>
-     */
     private static String encodeDescriptor(String descriptor) {
         return descriptor
                 .replace("\\x3A",  "\u0001")
-                .replace("(?<=",   "\u0005")   // 必须在 (?< 之前，避免漏匹配
+                .replace("(?<=",   "\u0005")
                 .replace("(?<!",   "\u0006")
                 .replace("(?:",    "\u0002")
                 .replace("(?=",    "\u0003")
-                .replace("(?!",    "\u0004");
+                .replace("(?!",    "\u0004")
+                .replace("\\s",    "\u0007")
+                .replace("\\d",    "\u0008")
+                .replace("\\w",    "\u000B")
+                .replace("\\S",    "\u000C")
+                .replace("\\D",    "\u000E")
+                .replace("\\W",    "\u000F");
     }
 
     /**
@@ -1031,13 +1147,18 @@ public class ValueMappingParser {
      * 所有需要在分割后恢复真实内容的字段（regex、rangeSpec 等）均应调用此方法。
      */
     private static String restoreEscapes(String s) {
-        return s
-                .replace("\u0001", ":")
+        return s.replace("\u0001", ":")
                 .replace("\u0002", "(?:")
                 .replace("\u0003", "(?=")
                 .replace("\u0004", "(?!")
                 .replace("\u0005", "(?<=")
-                .replace("\u0006", "(?<!");
+                .replace("\u0006", "(?<!")
+                .replace("\u0007", "\\s")
+                .replace("\u0008", "\\d")
+                .replace("\u000B", "\\w")
+                .replace("\u000C", "\\S")
+                .replace("\u000E", "\\D")
+                .replace("\u000F", "\\W");
     }
 
     // =====================================================
@@ -1101,26 +1222,224 @@ public class ValueMappingParser {
     }
 
     /**
-     * 从 value_map 描述符中提取 GROUP_JOIN_SEP 声明的输入/输出分隔符。
+     * 从 value_map 描述符中提取 GROUP_JOIN_SEP 声明的输出分隔符、去重与每项后缀开关。
      *
-     * <p>格式：{@code GROUP_JOIN_SEP:{inSep}:{outSep}}
+     * <p>格式：{@code GROUP_JOIN_SEP:{inSep}:{outSep}[:{dedup}[:{segTerm}]]}
      * <ul>
-     *   <li>{inSep}  — 原始多值之间的分隔符（如 COMMA、SEMICOLON 等别名或字面量）</li>
-     *   <li>{outSep} — 输出拼接时使用的分隔符</li>
+     *   <li>{inSep}   — 历史占位字段，当前未使用，仅为兼容旧数据格式保留</li>
+     *   <li>{outSep}  — 项间插入时使用的分隔符（segTerm 非空时不使用该语义，见下）</li>
+     *   <li>{dedup}   — 可选，非空即开启去重（任意非空字符串均可，不要求 TRUE/FALSE 字面量）；
+     *                   开启时，拼接前检查该值是否已存在于已拼接结果中，已存在则跳过</li>
+     *   <li>{segTerm} — 可选，非空时每个命中项（含最后一项）后都追加一次该值，
+     *                   取代「项间插入」语义；为空（默认）则使用 outSep 做项间插入</li>
      * </ul>
      *
      * @param valueMap value_map 字段值
-     * @return 长度为2的数组 [inSep, outSep]；非 GROUP_JOIN_SEP 规则返回 null
+     * @return 长度为4的数组 [outSep, dedup, segTerm, reserved]：
+     *         下标0=outSep；下标1="true"/"false"（dedup 是否开启）；
+     *         下标2=segTerm（可能为空字符串，空表示未开启）；下标3 预留恒为 ""。
+     *         非 GROUP_JOIN_SEP 规则返回 null
      */
     public static String[] extractGroupJoinSep(String valueMap) {
         if (StringUtils.isBlank(valueMap)) return null;
         String trimmed = valueMap.trim();
         if (!trimmed.toUpperCase().startsWith("GROUP_JOIN_SEP:")) return null;
-        String[] parts = trimmed.split(":", 3);
+        String[] parts = trimmed.split(":", 5);
         if (parts.length < 3) return null;
+        String outSep  = unescapeSep(parts[2]);
+        boolean dedup  = parts.length >= 4 && StringUtils.isNotBlank(parts[3]);
+        String segTerm = (parts.length >= 5) ? unescapeSep(parts[4].trim()) : "";
         return new String[]{
-                unescapeSep(parts[1]),   // inSep
-                unescapeSep(parts[2])    // outSep
+                outSep,                  // outSep
+                String.valueOf(dedup),   // dedup
+                segTerm,                 // segTerm（空字符串表示未开启）
+                ""                       // 预留位
         };
+    }
+
+    // =====================================================
+    //  MULTI_GROUP_JOIN_SEP：多 key_map 链「分段 + 槛位」拼接
+    // =====================================================
+
+    /** 一个 segment 的解析结果：内部按声明顺序引用的多个 key_map（精确匹配链内其它行）。 */
+    public static final class MultiGroupSegment {
+        public final List<String> keyMaps;
+        public MultiGroupSegment(List<String> keyMaps) { this.keyMaps = keyMaps; }
+    }
+
+    /** {@code MULTI_GROUP_JOIN_SEP} 描述符的解析结果。 */
+    public static final class MultiGroupJoinSpec {
+        public final String prefix;
+        public final String slotSep;
+        public final String segTerm;
+        public final List<MultiGroupSegment> segments;
+        public MultiGroupJoinSpec(String prefix, String slotSep, String segTerm, List<MultiGroupSegment> segments) {
+            this.prefix = prefix;
+            this.slotSep = slotSep;
+            this.segTerm = segTerm;
+            this.segments = segments;
+        }
+    }
+
+    /**
+     * 解析 {@code MULTI_GROUP_JOIN_SEP} 描述符。
+     *
+     * <p>格式：{@code MULTI_GROUP_JOIN_SEP:{prefix}:{slotSep}:{segTerm}:{seg1}~{seg2}~...}，
+     * 每个 segment 内用 {@code ,} 分隔一个或多个 key_map 字符串（须与链中其它行的 key_map 完全匹配，
+     * key_map 内若含 {@code :}、{@code ,}、{@code ~} 等结构符需用 \x3A / \x2C / \x7E 转义）。
+     *
+     * <p><b>重要：</b>segment 分隔符固定使用 {@code ~}，不使用 {@code ;}，因为前端编辑页面保存时
+     * （{@code SysDictDataServiceImpl#splitToRows}）会把整条 value_map 字符串按 {@code ;} 切分、
+     * 拆成同组多行写入数据库，若描述符内部使用 {@code ;} 会被这层逻辑错误截断。
+     *
+     * @param valueMap value_map 字段值
+     * @return 解析结果；非 MULTI_GROUP_JOIN_SEP 规则或格式不足返回 null
+     */
+    public static MultiGroupJoinSpec extractMultiGroupJoinSep(String valueMap) {
+        if (StringUtils.isBlank(valueMap)) return null;
+        String trimmed = valueMap.trim();
+        if (!trimmed.toUpperCase().startsWith("MULTI_GROUP_JOIN_SEP:")) return null;
+
+        // 转义保护冒号等结构符，再按 : 切分前4段，剩余整体作为 segment 规格
+        String safe = encodeDescriptor(trimmed);
+        String body = safe.substring("MULTI_GROUP_JOIN_SEP:".length());
+        String[] head = body.split(":", 4);
+        if (head.length < 4) {
+            log.warn("[ValueMappingParser] MULTI_GROUP_JOIN_SEP 参数不足: {}", valueMap);
+            return null;
+        }
+        String prefix  = restoreEscapes(unescapeSep(head[0]).replace("\\x7C", "|"));
+        String slotSep = restoreEscapes(unescapeSep(head[1]).replace("\\x7C", "|"));
+        String segTerm = restoreEscapes(unescapeSep(head[2]).replace("\\x7C", "|"));
+        String segSpec = restoreEscapes(head[3]);
+
+        List<MultiGroupSegment> segments = new ArrayList<>();
+        for (String segText : segSpec.split("~")) {
+            if (StringUtils.isBlank(segText)) continue;
+            List<String> keyMaps = new ArrayList<>();
+            for (String km : segText.split(",")) {
+                String trimmedKm = km.trim()
+                        .replace("\\x3A", ":")
+                        .replace("\\x2C", ",")
+                        .replace("\\x7E", "~");
+                if (!trimmedKm.isEmpty()) keyMaps.add(trimmedKm);
+            }
+            if (!keyMaps.isEmpty()) segments.add(new MultiGroupSegment(keyMaps));
+        }
+
+        if (segments.isEmpty()) {
+            log.warn("[ValueMappingParser] MULTI_GROUP_JOIN_SEP 未解析出任何 segment: {}", valueMap);
+            return null;
+        }
+        return new MultiGroupJoinSpec(prefix, slotSep, segTerm, segments);
+    }
+
+    /**
+     * 根据 {@link MultiGroupJoinSpec} 及「key_map → 已转换值」映射，执行分段拼接。
+     *
+     * <p>按 segment 声明顺序遍历，每个 segment 内按 keyMaps 声明顺序取值
+     * （值为空/null 视为未命中，跳过），命中的值用 {@code slotSep} 连接；
+     * 该 segment 若至少一个槛位命中，则在结果末尾追加 {@code segTerm}；
+     * 若该 segment 内所有槛位均未命中，则整个 segment（含 segTerm）省略。
+     * 最终若至少有一个 segment 命中，再在结果前加上 {@code prefix}。
+     *
+     * @param spec               已解析的描述符
+     * @param convertedByKeyMap  key_map → 该行经自身 value_map 转换后的值（已转换、未参与拼接）
+     * @return 拼接结果；若所有 segment 均未命中（无任何实际数据），返回 null
+     *         （即使 prefix 非空，也不会只返回一个光秃秃的 prefix）
+     */
+    public static String applyMultiGroupJoinSep(MultiGroupJoinSpec spec, Map<String, String> convertedByKeyMap) {
+        if (spec == null) return null;
+        StringBuilder body = new StringBuilder();
+        boolean anySegmentHit = false;
+
+        for (MultiGroupSegment segment : spec.segments) {
+            StringJoiner sj = new StringJoiner(spec.slotSep == null ? "" : spec.slotSep);
+            for (String keyMap : segment.keyMaps) {
+                String val = (convertedByKeyMap != null) ? convertedByKeyMap.get(keyMap) : null;
+                if (StringUtils.isNotBlank(val)) sj.add(val);
+            }
+            String segResult = sj.toString();
+            if (!segResult.isEmpty()) {
+                anySegmentHit = true;
+                body.append(segResult);
+                if (spec.segTerm != null) body.append(spec.segTerm);
+            }
+        }
+
+        if (!anySegmentHit) return null;
+        String prefix = (spec.prefix != null) ? spec.prefix : "";
+        return prefix + body;
+    }
+
+    // =====================================================
+    //  FIXED_SLOT_BUDGET_JOIN：固定分隔符配额拼接
+    // =====================================================
+
+    /** {@code FIXED_SLOT_BUDGET_JOIN} 描述符的解析结果。 */
+    public static final class FixedSlotBudgetSpec {
+        public final String sep;
+        public final int budget;
+        public FixedSlotBudgetSpec(String sep, int budget) {
+            this.sep = sep;
+            this.budget = budget;
+        }
+    }
+
+    /**
+     * 解析 {@code FIXED_SLOT_BUDGET_JOIN} 描述符。
+     *
+     * <p>格式：{@code FIXED_SLOT_BUDGET_JOIN:{sep}:{budget}}。
+     *
+     * @param valueMap value_map 字段值
+     * @return 解析结果；非该规则或格式非法返回 null
+     */
+    public static FixedSlotBudgetSpec extractFixedSlotBudgetJoin(String valueMap) {
+        if (StringUtils.isBlank(valueMap)) return null;
+        String trimmed = valueMap.trim();
+        if (!trimmed.toUpperCase().startsWith("FIXED_SLOT_BUDGET_JOIN:")) return null;
+        String[] parts = trimmed.split(":", 3);
+        if (parts.length < 3) {
+            log.warn("[ValueMappingParser] FIXED_SLOT_BUDGET_JOIN 参数不足: {}", valueMap);
+            return null;
+        }
+        String sep = unescapeSep(parts[1]);
+        int budget;
+        try {
+            budget = Integer.parseInt(parts[2].trim());
+        } catch (NumberFormatException e) {
+            log.warn("[ValueMappingParser] FIXED_SLOT_BUDGET_JOIN budget 非法: {}", valueMap);
+            return null;
+        }
+        return new FixedSlotBudgetSpec(sep, budget);
+    }
+
+    /**
+     * 根据 {@link FixedSlotBudgetSpec} 与一组命中值（已去重、按命中顺序排列）执行「固定分隔符配额」拼接。
+     *
+     * <p>命中 N 项（N&gt;0）时，项之间插入 (N-1) 个 sep，结尾再补足 (budget-(N-1)) 个 sep
+     * （若计算结果为负则补 0 个），使分隔符总数恒为 budget；N=0（未传入任何命中值）时返回 null。
+     *
+     * @param spec       已解析的描述符
+     * @param hitValues  已去重、按命中顺序排列的命中值列表
+     * @return 拼接结果；hitValues 为空时返回 null
+     */
+    public static String applyFixedSlotBudgetJoin(FixedSlotBudgetSpec spec, List<String> hitValues) {
+        if (spec == null || hitValues == null || hitValues.isEmpty()) return null;
+        String sep = (spec.sep != null) ? spec.sep : "";
+        int n = hitValues.size();
+        int between = n - 1;
+        int trailing = spec.budget - between;
+        if (trailing < 0) trailing = 0;
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < n; i++) {
+            sb.append(hitValues.get(i));
+            if (i < n - 1) sb.append(sep);
+        }
+        for (int i = 0; i < trailing; i++) {
+            sb.append(sep);
+        }
+        return sb.toString();
     }
 }

@@ -1572,6 +1572,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 applyLocationMarkings(jsonMap, methodAttachmentStatutoryPlate);
             }
 
+            // 当 EnergySource 为单段，且燃油/电机四个功率字段均有值（单段混动场景）时，
+            // 在 EnergySource 后拼接 "|95" 使其变为两段，复用下面的多段逻辑生成两个 PowerGroup
+            appendEnergySourceSegmentIfHybrid(jsonMap);
+
             // 当 EnergySource 为多段（含 |）时，在 Maximum30MinutesPower、MaximumNetPowerElectric
             // 的值开头各拼接一个 "0|"，使段数与 EnergySource 对齐（第0段对应燃油组，值为0/空均可跳过）
             prependZeroForElectricPowerFields(jsonMap);
@@ -2217,9 +2221,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                Map<String, Object> jsonMap,
                                String rootAttrPath) {
         int maxRows = 1;
-        // ★ 修复：只扫描 rootAttrPath 直接子 Group 层（depth+2，即 Table→Group→Field）的叶子字段，
+        // ★ 优先扫描 rootAttrPath 直接子 Group 层（depth+2，即 Table→Group→Field）的叶子字段，
         //   避免更深层（如 TyreAxleGroup 下）的 | 字段段数污染外层 AxleGroup 的展开次数。
         int rootDepth = rootAttrPath.split("\\.").length;
+        boolean foundPipeAtDirectLevel = false;
         for (XmlTemplateAttribute attr : attrList) {
             if (attr.getAttrPath().equals(rootAttrPath)) continue;
             // 仅处理深度恰好为 rootDepth+2 的叶子（Group 直属字段），跳过更深层节点
@@ -2231,10 +2236,40 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (raw == null) continue;
             String val = raw.toString();
             if (val.contains("|")) {
-                int rows = countNonTrailingEmpty(val.split("\\|", -1));
+                // ★ 修复：不能用 countNonTrailingEmpty 截断尾部空段，否则当某字段恰好只在
+                //   最后一组才有值（如 TechnicallyPermissibleMaximumCombinationMass="||4142"），
+                //   或恰好最后几组该字段都为空（如 BrakedTypeTrail="BRK||"）时，
+                //   会把行数错误地砍成比实际组数少，导致后面的组整体丢失。
+                //   外层行数应取「所有候选字段的最大段数」，按 split 长度直接计数，不做尾部截断。
+                int rows = val.split("\\|", -1).length;
                 maxRows = Math.max(maxRows, rows);
+                foundPipeAtDirectLevel = true;
             }
         }
+
+        // ★ 修复：若直接子 Group 层（rootDepth+2）没有找到含 | 的叶子字段
+        //   （如 EnergyConvertorGroup 下直接子是 EnergySourceTable 结构节点，而非直属叶子），
+        //   则向下递归扫描所有更深层的叶子字段，取含 | 字段的最大段数，
+        //   正确处理 Table→Group→Table→Group→Field 这种多层嵌套下的外层循环行数计算。
+        //   注意：此递归扫描仅确定外层 Group（rootDepth+1）的循环次数，
+        //   内层嵌套循环展开由 expandNestedPipeLoop 负责，不受此处影响。
+        if (!foundPipeAtDirectLevel) {
+            for (XmlTemplateAttribute attr : attrList) {
+                if (attr.getAttrPath().equals(rootAttrPath)) continue;
+                if (attr.getAttrPath().split("\\.").length <= rootDepth + 2) continue;
+                String[] parts = attr.getAttrPath().split("\\.");
+                SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
+                if (dict == null || isStructNode(dict)) continue;
+                Object raw = jsonMap.get(dict.getDictLabel());
+                if (raw == null) continue;
+                String val = raw.toString();
+                if (val.contains("|")) {
+                    int rows = val.split("\\|", -1).length;
+                    maxRows = Math.max(maxRows, rows);
+                }
+            }
+        }
+
         return maxRows;
     }
 
@@ -2249,9 +2284,18 @@ public class XmlFileServiceImpl implements IXmlFileService {
     private void buildNormalTree(Document doc, Element root, List<XmlTemplateAttribute> attrList,
                                  Map<String, SysDictData> dictCodeMap, Map<String, Object> jsonMap,
                                  Map<String, Element> pathNodeMap, String rootAttrPath) {
+        // ★ 新增：记录已通过 expandPipeLoop（按 | 展开）处理过的结构节点路径，
+        //   主循环遇到其子孙时跳过，避免被当作普通节点再创建一遍导致重复
+        Set<String> expandedStructPaths = new java.util.HashSet<>();
+
         for (XmlTemplateAttribute attr : attrList) {
             String attrPath = attr.getAttrPath();
             if (attrPath.equals(rootAttrPath)) continue;
+
+            // ★ 新增：跳过已被 | 展开逻辑处理过的结构节点的子孙
+            boolean underExpanded = expandedStructPaths.stream()
+                    .anyMatch(ep -> attrPath.startsWith(ep + "."));
+            if (underExpanded) continue;
 
             String[] parts = attrPath.split("\\.");
             String lastPart = parts[parts.length - 1];
@@ -2267,10 +2311,29 @@ public class XmlFileServiceImpl implements IXmlFileService {
                         sanitizeXmlTagName(dict.getDictLabel()), attr.getDefaultValue());
                 parentElement.appendChild(structElement);
                 pathNodeMap.put(attrPath, structElement);
+
+                // ★ 新增：检查该结构节点子树是否含 | 字段需要展开。
+                //   背景：detectLoopPattern 只看 ; 字段来决定整篇文档的 LoopMode；
+                //   若某辆车全文档没有任何 ; 多值字段（LoopMode=NONE），只有 EnergySource
+                //   这种单纯用 | 分段的字段，此前 buildNormalTree 完全没有处理 | 的逻辑，
+                //   会导致 EnergySource="10|95" 之类的值被当成普通单值原样写入，
+                //   PowerGroup 也不会按段拆分。这里补上与 buildUnprocessedNodes 的
+                //   hasPipe 分支一致的逻辑，确保两条路径行为一致。
+                List<XmlTemplateAttribute> subAttrs = attrList.stream()
+                        .filter(a -> a.getAttrPath().startsWith(attrPath + "."))
+                        .collect(Collectors.toList());
+
+                boolean subHasPipe = subAttrs.stream().anyMatch(a -> {
+                    String[] p = a.getAttrPath().split("\\.");
+                    SysDictData d = dictCodeMap.get(p[p.length - 1]);
+                    if (d == null || isStructNode(d)) return false;
+                    Object raw = jsonMap.get(d.getDictLabel());
+                    return raw != null && raw.toString().contains("|");
+                });
+
                 // ★ 检查该结构节点子树是否含 ; 字段需要展开
                 // ★ 修复：仅在 buildNormalTree（无循环场景）下触发，含 ; 不含 | 的孙级叶子才展开
-                int nodeDepth = attrPath.split("\\.").length;
-                boolean subHasSemi = attrList.stream().anyMatch(a -> {
+                boolean subHasSemi = !subHasPipe && attrList.stream().anyMatch(a -> {
                     if (!a.getAttrPath().startsWith(attrPath + ".")) return false;
                     // ★ 修复：不限制深度，扫描所有子孙叶子字段
                     //   原 nodeDepth+2 会漏掉 Group→Field 只有一层的结构（如 ColourGroup→Colour）
@@ -2281,11 +2344,16 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     return raw != null && raw.toString().contains(";") && !raw.toString().contains("|");
                 });
 
-                log.info("=== buildNormalTree struct subHasSemi={} label={}", subHasSemi, dict.getDictLabel());
-                if (subHasSemi) {
-                    List<XmlTemplateAttribute> subAttrs = attrList.stream()
-                            .filter(a -> a.getAttrPath().startsWith(attrPath + "."))
-                            .collect(Collectors.toList());
+                log.info("=== buildNormalTree struct subHasPipe={} subHasSemi={} label={}",
+                        subHasPipe, subHasSemi, dict.getDictLabel());
+                if (subHasPipe) {
+                    int pipeRows = detectPipeRows(subAttrs, dictCodeMap, jsonMap, attrPath);
+                    Map<String, Element> subMap = buildSubPathNodeMap(pathNodeMap, attrPath, structElement);
+                    expandPipeLoop(doc, structElement, subAttrs, dictCodeMap, jsonMap,
+                            subMap, attrPath, pipeRows);
+                    // ★ 新增：标记该子树已完整展开，主循环跳过其子孙，避免重复创建
+                    expandedStructPaths.add(attrPath);
+                } else if (subHasSemi) {
                     int semiRows = detectSemicolonRows(subAttrs, dictCodeMap, jsonMap, attrPath);
                     Map<String, Element> subMap = buildSubPathNodeMap(pathNodeMap, attrPath, structElement);
                     expandPipeLoop(doc, structElement, subAttrs, dictCodeMap, jsonMap,
@@ -2867,16 +2935,41 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     parentElement.appendChild(structElement);
                     pathNodeMap.put(attrPath, structElement);
                     // 循环场景（rowIndex>=0）：每个父行独立创建自己的嵌套结构，使用纯局部 subMap，不回写主 map
-                    int nestedRows = detectNestedRowsForIndex(subAttrs, dictCodeMap, jsonMap, attrPath, rowIndex);
-                    if (nestedRows > 0) {
-                        Map<String, Element> subMap = new LinkedHashMap<>();
-                        subMap.put(attrPath, structElement);
-                        // ★ 修复：嵌套循环场景下（外层rowIndex>=0），必须先用parentRowIndex从|中取对应段，
-                        //   再在该段内按;展开子行，否则子行索引i会直接作用于|分隔的外层，导致取值错误。
-                        expandNestedPipeLoop(doc, structElement, subAttrs, dictCodeMap, jsonMap,
-                                subMap, attrPath, nestedRows, rowIndex);
-                        // 循环场景：不回写主 pathNodeMap，标记已展开，主循环跳过其子孙
+
+                    // ★ 修复：检测子结构的直接子 Group 层（attrPath深度+2）是否有 | 字段。
+                    //   若有，说明该 | 是本层 Table 自身 Group 的行数
+                    //   （如 EnergySourceTable 内 EnergySource="10|95" 代表 2 个 EnergySourceGroup）。
+                    //   此时应直接用 expandPipeLoop 展开，不应走 expandNestedPipeLoop 的外层切片逻辑：
+                    //   切片会将 EnergySource="10|95" 按父行 rowIndex 取成单值 "10"，导致只生成 1 个 Group。
+                    int attrDepth = attrPath.split("\\.").length;
+                    boolean hasDirectGroupPipe = subAttrs.stream().anyMatch(a -> {
+                        if (a.getAttrPath().split("\\.").length != attrDepth + 2) return false;
+                        String[] p = a.getAttrPath().split("\\.");
+                        SysDictData d = dictCodeMap.get(p[p.length - 1]);
+                        if (d == null || isStructNode(d)) return false;
+                        Object raw = jsonMap.get(d.getDictLabel());
+                        return raw != null && raw.toString().contains("|");
+                    });
+
+                    if (hasDirectGroupPipe) {
+                        // 直接子 Group 层有 | 字段：本 Table 自身即为管道循环容器，
+                        // 用 expandPipeLoop 直接展开（不做外层 rowIndex 切片）
+                        int pipeRows = detectPipeRows(subAttrs, dictCodeMap, jsonMap, attrPath);
+                        Map<String, Element> subMap = buildSubPathNodeMap(pathNodeMap, attrPath, structElement);
+                        expandPipeLoop(doc, structElement, subAttrs, dictCodeMap, jsonMap,
+                                subMap, attrPath, pipeRows);
                         expandedStructPaths.add(attrPath);
+                    } else {
+                        int nestedRows = detectNestedRowsForIndex(subAttrs, dictCodeMap, jsonMap, attrPath, rowIndex);
+                        if (nestedRows > 0) {
+                            Map<String, Element> subMap = new LinkedHashMap<>();
+                            subMap.put(attrPath, structElement);
+                            // 外层 rowIndex 切片后按 ; 展开子行（如 TyreAxleTable 内 TyreSize="A;B|C;D"）
+                            expandNestedPipeLoop(doc, structElement, subAttrs, dictCodeMap, jsonMap,
+                                    subMap, attrPath, nestedRows, rowIndex);
+                            // 循环场景：不回写主 pathNodeMap，标记已展开，主循环跳过其子孙
+                            expandedStructPaths.add(attrPath);
+                        }
                     }
                 }
             } else if (StringUtils.isNotBlank(dict.getDictLabel())) {
@@ -2946,6 +3039,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
         int maxRows = 0;
         int containerDepth = containerPath.split("\\.").length;
         boolean hasPipeField = false; // 子树中是否存在含 | 的字段
+        boolean foundDirectGroupLeaf = false; // containerDepth+2 层是否找到含 | 的叶子
 
         for (XmlTemplateAttribute attr : subAttrs) {
             String[] parts = attr.getAttrPath().split("\\.");
@@ -2957,17 +3051,15 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             if (val.contains("|")) {
                 hasPipeField = true;
-                // 只看直接子 Group 层叶子（containerDepth+2）来计算子行数
-                if (attr.getAttrPath().split("\\.").length == containerDepth + 2) {
-                    String[] outerItems = val.split("\\|", -1);
-                    String segment = (rowIndex < outerItems.length) ? outerItems[rowIndex].trim() : "";
-                    if (segment.isEmpty()) continue;
-                    if (segment.contains(";")) {
-                        String[] innerItems = segment.split(";", -1);
-                        maxRows = Math.max(maxRows, countNonTrailingEmpty(innerItems));
-                    } else {
-                        maxRows = Math.max(maxRows, 1);
-                    }
+                int attrDepth = attr.getAttrPath().split("\\.").length;
+                if (attrDepth == containerDepth + 2) {
+                    // ★ 关键修复：直接子 Group 层叶子含 | 时，以 | 总段数作为子行数（即本 Table 内的 Group 数），
+                    //   不再按 rowIndex 切片取单段。
+                    //   原逻辑对 EnergySource="10|95"（containerDepth+2）按 rowIndex=0 取段 "10"（单值）→ maxRows=1，
+                    //   导致 EnergySourceGroup 只创建 1 个。
+                    //   正确语义：EnergySourceTable 内有几个 | 段就应创建几个 EnergySourceGroup。
+                    foundDirectGroupLeaf = true;
+                    maxRows = Math.max(maxRows, val.split("\\|", -1).length);
                 }
             } else if (val.contains(";") && attr.getAttrPath().split("\\.").length == containerDepth + 2) {
                 // 无外层 |，直接按 ; 展开（所有父行共用）
@@ -2976,9 +3068,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
         }
 
-        // ★ 修复：若子树中存在 | 字段但直接子层未能算出 maxRows（如全为单值共用字段），
+        // ★ 若直接子 Group 层没有含 | 的叶子，但更深层有 | 字段，
         //   则至少返回 1，确保 expandNestedPipeLoop 被触发以正确切片各组数据。
-        if (hasPipeField && maxRows == 0) {
+        if (hasPipeField && !foundDirectGroupLeaf && maxRows == 0) {
             maxRows = 1;
         }
 
@@ -3034,24 +3126,42 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (dict == null) continue;
 
             if (isStructNode(dict)) {
-                // Group 节点 → 循环展开 rows 次（通常 EnergySourceTable 只有1个 EnergySourceGroup）
+                // Group 节点 → 循环展开 rows 次
+                // 注：rows 既可能是「该 Group 本身按 ; 重复的次数」（如 BodyworkTypeGroup），
+                //   也可能是「该 Group 本身只有1份，但其更深层还有一套独立的 ;循环」的场景
+                //   （如 EnergySourceGroup 包了一层 TestFamilyIdentifiersTable）。
+                //   这两种场景需要分别传给 buildSubTree 不同的 rowIndex，否则：
+                //   - 若该 Group 直接含 ; 字段却传 rowIndex=-1，getValueByRow 在非循环场景下
+                //     对含 ; 的字段直接返回空，导致整组字段丢失；
+                //   - 若该 Group 本身不含 ; 字段（深层才循环）却传 rowIndex>=0，
+                //     会误触发末行禁填等循环语义，偏离原有行为。
                 List<XmlTemplateAttribute> groupChildren = attrList.stream()
                         .filter(a -> a.getAttrPath().startsWith(child.getAttrPath() + "."))
                         .collect(Collectors.toList());
+
+                int groupDepth = child.getAttrPath().split("\\.").length;
+                boolean selfHasSemiLeaf = groupChildren.stream().anyMatch(a -> {
+                    if (a.getAttrPath().split("\\.").length != groupDepth + 1) return false;
+                    String[] p = a.getAttrPath().split("\\.");
+                    SysDictData d = dictCodeMap.get(p[p.length - 1]);
+                    if (d == null || isStructNode(d)) return false;
+                    Object raw = slicedJsonMap.get(d.getDictLabel());
+                    return raw != null && raw.toString().contains(";");
+                });
 
                 for (int i = 0; i < rows; i++) {
                     Element groupEl = doc.createElement(sanitizeXmlTagName(dict.getDictLabel()));
                     parentElement.appendChild(groupEl);
 
-                    // ★ 关键：用 slicedJsonMap 替代原始 jsonMap，复用完整的 buildSubTree 逻辑
-                    //   rowIndex=-1 表示非外层循环场景，buildSubTree 会正确处理:
-                    //   - 含 ; 字段（TestFamilyIdentifier）→ expandPipeLoop/detectSemicolonRows 展开多个 Group
-                    //   - 空值字段（切片后为空）→ getValueOrDefault 返回空，不写入 XML
-                    //   - 单值字段 → 直接写入
+                    // ★ 关键：用 slicedJsonMap 替代原始 jsonMap，复用完整的 buildSubTree 逻辑。
+                    //   selfHasSemiLeaf=true（如 BodyworkTypeGroup 自身含 ; 叶子）→ 传 i，
+                    //     使 getValueByRow 按 ; 取第 i 段，每次循环拿到对应的那一份值；
+                    //   selfHasSemiLeaf=false（如 EnergySourceGroup，深层才循环）→ 传 -1，
+                    //     保持原有行为，由 buildSubTree 内部检测深层 ; 并递归展开。
                     Map<String, Element> subMap = new LinkedHashMap<>();
                     subMap.put(child.getAttrPath(), groupEl);
                     buildSubTree(doc, groupEl, groupChildren, dictCodeMap, slicedJsonMap,
-                            subMap, child.getAttrPath(), -1);
+                            subMap, child.getAttrPath(), selfHasSemiLeaf ? i : -1);
                 }
             } else if (StringUtils.isNotBlank(dict.getDictLabel())) {
                 // 直接叶子节点：取切片后的值
@@ -3093,7 +3203,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     /**
      * 当 EnergySource 为多段（含 |）时，在 DOM 中找到 CocDataGroup 节点，
-     * 追加以下两个汇总子标签：
+     * 在 VehicleCertified156Indicator 标签之后插入以下两个汇总子标签：
      * <ul>
      *   <li>ConsolidatedMaximum30MinutesPower  —— Maximum30MinutesPower  各段数值之和</li>
      *   <li>ConsolidatedMaximumNetPowerElectric —— MaximumNetPowerElectric 各段数值之和</li>
@@ -3119,13 +3229,23 @@ public class XmlFileServiceImpl implements IXmlFileService {
         if (cocList.getLength() == 0) return;
         Element cocDataGroup = (Element) cocList.item(0);
 
+        // 定位 VehicleCertified156Indicator 节点，插入到其后；若找不到则回退为追加到末尾
+        Node refNode = null;
+        NodeList certList = cocDataGroup.getElementsByTagName("VehicleCertified156Indicator");
+        if (certList.getLength() > 0) {
+            refNode = certList.item(0).getNextSibling();
+        }
+
         if (sum30Min != null) {
-            addElement(doc, cocDataGroup, "ConsolidatedMaximum30MinutesPower",
-                    sum30Min.stripTrailingZeros().toPlainString());
+            Element el30Min = doc.createElement("ConsolidatedMaximum30MinutesPower");
+            el30Min.setTextContent(sum30Min.stripTrailingZeros().toPlainString());
+            cocDataGroup.insertBefore(el30Min, refNode);
+            refNode = el30Min.getNextSibling();
         }
         if (sumNetElec != null) {
-            addElement(doc, cocDataGroup, "ConsolidatedMaximumNetPowerElectric",
-                    sumNetElec.stripTrailingZeros().toPlainString());
+            Element elNetElec = doc.createElement("ConsolidatedMaximumNetPowerElectric");
+            elNetElec.setTextContent(sumNetElec.stripTrailingZeros().toPlainString());
+            cocDataGroup.insertBefore(elNetElec, refNode);
         }
     }
 
@@ -3157,6 +3277,47 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
         }
         return sum;
+    }
+
+    /**
+     * 当 EnergySource 为单段（不含 |）、且 MaximumNetPowerCombustion、EngineSpeedMaximumNetPower、
+     * Maximum30MinutesPower、MaximumNetPowerElectric 四个字段均有值时（单段混动场景，
+     * 同一行数据里同时存在燃油和电机功率），在 EnergySource 后面拼接 "|95"，使其变为两段。
+     * <p>
+     * 拼接后 EnergySource 即被视为多段，后续 prependZeroForElectricPowerFields →
+     * sliceJsonMapByOuterRow → filterPowerGroupByEnergySource → appendConsolidatedPowerFields
+     * 等现有多段逻辑会按原有规则自动生成两个 PowerGroup（第0段燃油，第1段电机=95）。
+     * <p>
+     * 必须在 prependZeroForElectricPowerFields 之前调用：本方法依据的是四个字段“拼接前”的
+     * 原始单值，一旦 EnergySource 先变成多段，prependZeroForElectricPowerFields 会提前给
+     * 电机字段拼接 "0|" 前缀，干扰这里对原始值是否有值的判断。
+     * <p>
+     * 若 EnergySource 已是多段，或四个字段中有任意一个为空，则不做任何处理，保持原样。
+     */
+    private void appendEnergySourceSegmentIfHybrid(Map<String, Object> jsonMap) {
+        Object energySourceObj = jsonMap.get("EnergySource");
+        if (energySourceObj == null) {
+            log.info("=== appendEnergySourceSegmentIfHybrid skip: EnergySource为null");
+            return;
+        }
+        String energySource = energySourceObj.toString().trim();
+        if (StringUtils.isBlank(energySource) || energySource.contains("|")) {
+            log.info("=== appendEnergySourceSegmentIfHybrid skip: EnergySource={}（空值或已是多段）", energySource);
+            return; // 空值或已是多段，不处理
+        }
+
+        for (String fieldName : Arrays.asList("MaximumNetPowerCombustion", "EngineSpeedMaximumNetPower",
+                "Maximum30MinutesPower", "MaximumNetPowerElectric")) {
+            Object raw = jsonMap.get(fieldName);
+            if (raw == null || StringUtils.isBlank(raw.toString())) {
+                log.info("=== appendEnergySourceSegmentIfHybrid skip: EnergySource={}，字段{}无值（raw={}）",
+                        energySource, fieldName, raw);
+                return; // 四个字段任一为空，不是单段混动场景，保持原样
+            }
+        }
+
+        jsonMap.put("EnergySource", energySource + "|95");
+        log.info("=== appendEnergySourceSegmentIfHybrid 拼接成功，EnergySource变为: {}", jsonMap.get("EnergySource"));
     }
 
     /**
@@ -3321,7 +3482,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (raw == null) continue;
             String val = raw.toString().trim();
             if (val.contains("|")) {
-                actual = Math.max(actual, countNonTrailingEmpty(val.split("\\|", -1)));
+                // ★ 修复：| 是外层行分隔符，不能用 countNonTrailingEmpty 截断尾部空段，
+                //   否则当某字段恰好只在最后一组才有值（如 "||4142"），
+                //   或恰好最后几组该字段为空（如 "BRK||"）时，会把行数错误地砍少，
+                //   导致后面的组整体丢失。直接取 split 长度，不做尾部截断。
+                actual = Math.max(actual, val.split("\\|", -1).length);
             } else if (val.contains(";")) {
                 actual = Math.max(actual, countNonTrailingEmpty(val.split(";", -1)));
             }
@@ -3338,7 +3503,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 if (raw == null) continue;
                 String val = raw.toString().trim();
                 if (val.contains("|")) {
-                    actual = Math.max(actual, countNonTrailingEmpty(val.split("\\|", -1)));
+                    // 同上：| 分隔符不截断尾部空段
+                    actual = Math.max(actual, val.split("\\|", -1).length);
                 } else if (val.contains(";")) {
                     actual = Math.max(actual, countNonTrailingEmpty(val.split(";", -1)));
                 }
@@ -3706,13 +3872,15 @@ public class XmlFileServiceImpl implements IXmlFileService {
     /**
      * 递归判断元素是否包含任何非空文本内容的后代节点。
      * 返回 true 表示存在至少一个有实质内容的叶子文本；false 表示全空。
+     * 文本内容为字符串 "null"（不区分大小写）时也视为空。
      */
     private boolean hasNonEmptyDescendantText(Element element) {
         NodeList children = element.getChildNodes();
         for (int i = 0; i < children.getLength(); i++) {
             Node child = children.item(i);
             if (child.getNodeType() == Node.TEXT_NODE) {
-                if (child.getTextContent() != null && !child.getTextContent().trim().isEmpty()) {
+                String text = child.getTextContent() != null ? child.getTextContent().trim() : "";
+                if (!text.isEmpty() && !"null".equalsIgnoreCase(text)) {
                     return true;
                 }
             } else if (child instanceof Element) {

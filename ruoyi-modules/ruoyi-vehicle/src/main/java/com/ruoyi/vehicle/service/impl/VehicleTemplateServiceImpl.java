@@ -61,6 +61,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -1027,7 +1028,19 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                             .distinct()
                             .count();
 
-                    if (distinctKeyMapCount > 1) {
+                    // 链内若声明了 MULTI_GROUP_JOIN_SEP / FIXED_SLOT_BUDGET_JOIN 辅助行，
+                    // 强制走多 key_map 链路径处理，不依赖 distinctKeyMapCount（即使该链
+                    // 只有 1 个真实数据源 key_map，如 TechnicallyPermissibleMaximumCombinationMass
+                    // 这种单来源 + 固定前缀场景，也必须走这条路径才能识别辅助行）。
+                    boolean hasCompositeAuxRule = chain.stream().anyMatch(d -> {
+                        String vm = d.getValueMap();
+                        if (StringUtils.isBlank(vm)) return false;
+                        String upper = vm.trim().toUpperCase();
+                        return upper.startsWith("MULTI_GROUP_JOIN_SEP")
+                                || upper.startsWith("FIXED_SLOT_BUDGET_JOIN");
+                    });
+
+                    if (distinctKeyMapCount > 1 || hasCompositeAuxRule) {
                         multiKeyChainMap.put(groupEntry.getKey(), chain);
                     } else {
                         String keyMap = chain.stream()
@@ -1083,7 +1096,112 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                 for (List<SysDictData> multiChain : multiKeyChainMap.values()) {
                     multiChain.sort(Comparator.comparingLong(SysDictData::getDictCode));
 
-                    // 从链中读取 GROUP_JOIN_SEP 声明，解析输出分隔符，默认逗号
+                    // 优先识别 MULTI_GROUP_JOIN_SEP 辅助行：该链走「分段+槛位」复合拼接，
+                    // 与 GROUP_JOIN_SEP 的「单层」拼接互斥（一条链只会配置其中一种辅助规则）。
+                    ValueMappingParser.MultiGroupJoinSpec multiGroupSpec = multiChain.stream()
+                            .map(SysDictData::getValueMap)
+                            .map(ValueMappingParser::extractMultiGroupJoinSep)
+                            .filter(Objects::nonNull)
+                            .findFirst()
+                            .orElse(null);
+
+                    if (multiGroupSpec != null) {
+                        // 先对链内每一行各自做值转换（不参与拼接的辅助行本身 value_map 已被跳过），
+                        // 按 key_map 建立「来源 → 转换后值」映射，供 MULTI_GROUP_JOIN_SEP 的槛位引用。
+                        Map<String, String> convertedByKeyMap = new LinkedHashMap<>();
+                        String multiGroupLabel = null;
+
+                        for (SysDictData rule : multiChain) {
+                            if (StringUtils.isNotBlank(rule.getValueMap())
+                                    && rule.getValueMap().trim().toUpperCase().startsWith("MULTI_GROUP_JOIN_SEP")) {
+                                continue; // 辅助行本身不参与值转换
+                            }
+                            if (StringUtils.isNotBlank(rule.getDictLabel())) {
+                                multiGroupLabel = rule.getDictLabel();
+                            }
+                            if (StringUtils.isBlank(rule.getKeyMap())) continue;
+
+                            Object rawObj = map.get(rule.getKeyMap());
+                            String rawValue = rawObj == null ? null : String.valueOf(rawObj);
+                            String converted = rawValue;
+
+                            if (StringUtils.isNotBlank(rule.getValueMap())) {
+                                Map<String, String> mergedMap =
+                                        ValueMappingParser.mergeValueConnection(rule.getValueConnection());
+                                String stepped = ValueMappingParser
+                                        .convertWithDictMap(rawValue, rule.getValueMap(), mergedMap);
+                                if (stepped != null && !ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
+                                    converted = stepped;
+                                } else if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
+                                    converted = null;
+                                }
+                            }
+                            converted = "N/A".equals(converted) ? null : converted;
+                            convertedByKeyMap.put(rule.getKeyMap(), converted);
+                        }
+
+                        String joined = ValueMappingParser.applyMultiGroupJoinSep(multiGroupSpec, convertedByKeyMap);
+                        if (StringUtils.isNotBlank(joined) && StringUtils.isNotBlank(multiGroupLabel)) {
+                            result.put(multiGroupLabel, joined);
+                        }
+                        continue; // 该链已通过 MULTI_GROUP_JOIN_SEP 处理完毕，跳过下方 GROUP_JOIN_SEP 流程
+                    }
+
+                    // 识别 FIXED_SLOT_BUDGET_JOIN 辅助行：固定分隔符配额拼接，
+                    // 同样与 GROUP_JOIN_SEP / MULTI_GROUP_JOIN_SEP 互斥。
+                    ValueMappingParser.FixedSlotBudgetSpec budgetSpec = multiChain.stream()
+                            .map(SysDictData::getValueMap)
+                            .map(ValueMappingParser::extractFixedSlotBudgetJoin)
+                            .filter(Objects::nonNull)
+                            .findFirst()
+                            .orElse(null);
+
+                    if (budgetSpec != null) {
+                        String budgetLabel = null;
+                        List<String> hitValues = new ArrayList<>();
+
+                        for (SysDictData rule : multiChain) {
+                            if (StringUtils.isNotBlank(rule.getValueMap())
+                                    && rule.getValueMap().trim().toUpperCase().startsWith("FIXED_SLOT_BUDGET_JOIN")) {
+                                continue; // 辅助行本身不参与值转换
+                            }
+                            if (StringUtils.isNotBlank(rule.getDictLabel())) {
+                                budgetLabel = rule.getDictLabel();
+                            }
+
+                            Object rawObj = StringUtils.isNotBlank(rule.getKeyMap())
+                                    ? map.get(rule.getKeyMap()) : null;
+                            String rawValue = rawObj == null ? null : String.valueOf(rawObj);
+                            String converted = rawValue;
+
+                            if (StringUtils.isNotBlank(rule.getValueMap())) {
+                                Map<String, String> mergedMap =
+                                        ValueMappingParser.mergeValueConnection(rule.getValueConnection());
+                                String stepped = ValueMappingParser
+                                        .convertWithDictMap(rawValue, rule.getValueMap(), mergedMap);
+                                if (ValueMappingParser.EMPTY_SENTINEL.equals(stepped)) {
+                                    continue;
+                                }
+                                if (stepped != null) converted = stepped;
+                            }
+                            converted = StringUtils.isNotBlank(converted) ? converted : rawValue;
+                            converted = "N/A".equals(converted) ? "" : converted;
+
+                            // 去重：同一值只计入一次，保持首次出现的顺序
+                            if (StringUtils.isNotBlank(converted) && !hitValues.contains(converted)) {
+                                hitValues.add(converted);
+                            }
+                        }
+
+                        String budgetJoined = ValueMappingParser.applyFixedSlotBudgetJoin(budgetSpec, hitValues);
+                        if (StringUtils.isNotBlank(budgetJoined) && StringUtils.isNotBlank(budgetLabel)) {
+                            result.put(budgetLabel, budgetJoined);
+                        }
+                        continue; // 该链已通过 FIXED_SLOT_BUDGET_JOIN 处理完毕，跳过下方 GROUP_JOIN_SEP 流程
+                    }
+
+                    // 从链中读取 GROUP_JOIN_SEP 声明，解析输出分隔符/去重/每项后缀开关
+                    // （默认逗号分隔、不去重、不带每项后缀）
                     String[] groupSeps = multiChain.stream()
                             .map(SysDictData::getValueMap)
                             .map(ValueMappingParser::extractGroupJoinSep)
@@ -1091,7 +1209,10 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                             .findFirst()
                             .orElse(null);
 
-                    String outSep = (groupSeps != null) ? groupSeps[1] : ",";
+                    String outSep = (groupSeps != null) ? groupSeps[0] : ",";
+                    boolean dedupOutput = groupSeps != null && "true".equalsIgnoreCase(groupSeps[1]);
+                    String segTerm = (groupSeps != null) ? groupSeps[2] : "";
+                    boolean useSegTerm = StringUtils.isNotBlank(segTerm);
 
                     for (SysDictData rule : multiChain) {
                         if (StringUtils.isBlank(rule.getDictLabel())) continue;
@@ -1133,11 +1254,26 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                         if (StringUtils.isNotBlank(converted)) {
                             String label = rule.getDictLabel();
                             Object existing = result.get(label);
-                            if (existing != null && StringUtils.isNotBlank(String.valueOf(existing))) {
-                                result.put(label, existing + outSep + converted);
-                            } else {
-                                result.put(label, converted);
+                            String existingStr = (existing != null) ? String.valueOf(existing) : "";
+
+                            // 去重模式：若该值已拼接过，则跳过本次拼接
+                            boolean alreadyPresent = dedupOutput && StringUtils.isNotBlank(existingStr)
+                                    && Arrays.asList(existingStr.split(Pattern.quote(outSep), -1)).contains(converted);
+                            if (alreadyPresent) {
+                                continue;
                             }
+
+                            String updated;
+                            if (useSegTerm) {
+                                // segTerm 模式：每个命中值后都追加 segTerm（含首项），
+                                // 不再使用「项间插入分隔符」语义，直接顺序拼接即可。
+                                updated = existingStr + converted + segTerm;
+                            } else if (StringUtils.isNotBlank(existingStr)) {
+                                updated = existingStr + outSep + converted;
+                            } else {
+                                updated = converted;
+                            }
+                            result.put(label, updated);
                         }
                     }
                 }
@@ -1146,32 +1282,57 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             }
         }
 
-        // ── JSON 映射后处理：EnergyConvertorCodeMarkedOnEnergyConvertor / EnergySource 段数对齐 ──
-        // 规则：若 EnergyConvertorCodeMarkedOnEnergyConvertor 的值包含分号（即多段拼接），
-        //       则 EnergySource 须与其段数保持一致；不足的段用 "95" 补齐，多余的段截断。
+        // ── JSON 映射后处理：EnergyConvertorCodeMarkedOnEnergyConvertor / EnergySource / WorkingPrinciple 段数对齐 ──
+        // 规则：targetCount 由 EnergyConvertorCodeMarkedOnEnergyConvertor 段数决定；
+        //       若只有1段，则检查四个功率标签（MaximumNetPowerCombustion / EngineSpeedMaximumNetPower /
+        //       Maximum30MinutesPower / MaximumNetPowerElectric）是否都有值，都有则 targetCount+1。
+        //       EnergySource 不足 targetCount 时补 "95"；WorkingPrinciple 不足时补 "ELECT"。
         if (finalMap != null) {
+            log.debug("[DEBUG] WorkingPrinciple before post-process = '{}'", finalMap.get("WorkingPrinciple"));
+            log.debug("[DEBUG] EnergyConvertor = '{}'", finalMap.get("EnergyConvertorCodeMarkedOnEnergyConvertor"));
             Object energyConvertorObj = finalMap.get("EnergyConvertorCodeMarkedOnEnergyConvertor");
             String energyConvertorStr = energyConvertorObj == null ? null : String.valueOf(energyConvertorObj);
-            if (StringUtils.isNotBlank(energyConvertorStr) && (energyConvertorStr.contains(";") || energyConvertorStr.contains("|"))) {
+
+            if (StringUtils.isNotBlank(energyConvertorStr)) {
+                // 1. 计算 EnergyConvertorCodeMarkedOnEnergyConvertor 的段数
                 String[] converterSegments = energyConvertorStr.split("[;|]", -1);
                 int targetCount = converterSegments.length;
 
+                // 2. 若只有1段，判断四个功率标签是否都有值，都有则 targetCount+1
+                if (targetCount == 1) {
+                    String v1 = finalMap.get("MaximumNetPowerCombustion") == null ? null : String.valueOf(finalMap.get("MaximumNetPowerCombustion"));
+                    String v2 = finalMap.get("EngineSpeedMaximumNetPower") == null ? null : String.valueOf(finalMap.get("EngineSpeedMaximumNetPower"));
+                    String v3 = finalMap.get("Maximum30MinutesPower") == null ? null : String.valueOf(finalMap.get("Maximum30MinutesPower"));
+                    String v4 = finalMap.get("MaximumNetPowerElectric") == null ? null : String.valueOf(finalMap.get("MaximumNetPowerElectric"));
+                    if (StringUtils.isNotBlank(v1) && StringUtils.isNotBlank(v2)
+                            && StringUtils.isNotBlank(v3) && StringUtils.isNotBlank(v4)) {
+                        targetCount = 2;
+                    }
+                }
+
+                // 3. EnergySource 段数对齐，不足补 "95"
                 Object energySourceObj = finalMap.get("EnergySource");
                 String energySourceStr = energySourceObj == null ? "" : String.valueOf(energySourceObj);
-
                 String[] sourceSegments = StringUtils.isNotBlank(energySourceStr)
                         ? energySourceStr.split("[;|]", -1)
                         : new String[0];
-
                 String[] alignedSegments = new String[targetCount];
                 for (int i = 0; i < targetCount; i++) {
-                    if (i < sourceSegments.length && StringUtils.isNotBlank(sourceSegments[i])) {
-                        alignedSegments[i] = sourceSegments[i];
-                    } else {
-                        alignedSegments[i] = "95";
-                    }
+                    alignedSegments[i] = (i < sourceSegments.length && StringUtils.isNotBlank(sourceSegments[i]))
+                            ? sourceSegments[i] : "95";
                 }
                 finalMap.put("EnergySource", String.join("|", alignedSegments));
+
+                // 4. WorkingPrinciple 段数对齐，不足补 "ELECT"
+                Object workingPrincipleObj = finalMap.get("WorkingPrinciple");
+                String workingPrincipleStr = workingPrincipleObj == null ? "" : String.valueOf(workingPrincipleObj);
+                List<String> wpSegments = StringUtils.isNotBlank(workingPrincipleStr)
+                        ? new ArrayList<>(Arrays.asList(workingPrincipleStr.split("\\|", -1)))
+                        : new ArrayList<>();
+                while (wpSegments.size() < targetCount) {
+                    wpSegments.add("ELECT");
+                }
+                finalMap.put("WorkingPrinciple", String.join("|", wpSegments));
             }
         }
 

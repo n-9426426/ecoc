@@ -244,7 +244,7 @@ public class MaterialServiceImpl implements IMaterialService {
         material.setUpdateBy(loginUser.getUsername());
         material.setUpdateTime(new Date());
         int row = materialMapper.updateMaterial(material);
-        if (!oldVersion.equals(newVersion)) {
+        if (oldVersion != null && !oldVersion.equals(newVersion)) {
             MaterialHistory history = new MaterialHistory();
             history.setMaterialId(material.getId());
             history.setOldVersion(oldVersion);
