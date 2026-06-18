@@ -1574,7 +1574,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             // 当 EnergySource 为单段，且燃油/电机四个功率字段均有值（单段混动场景）时，
             // 在 EnergySource 后拼接 "|95" 使其变为两段，复用下面的多段逻辑生成两个 PowerGroup
-            appendEnergySourceSegmentIfHybrid(jsonMap);
+            // 返回值标记本次是否真正发生了拼接，用于后面精简合成的 95 段 EnergySourceGroup
+            boolean hybridSingleSegmentEnergySourceExpanded = appendEnergySourceSegmentIfHybrid(jsonMap);
 
             // 当 EnergySource 为多段（含 |）时，在 Maximum30MinutesPower、MaximumNetPowerElectric
             // 的值开头各拼接一个 "0|"，使段数与 EnergySource 对齐（第0段对应燃油组，值为0/空均可跳过）
@@ -1683,6 +1684,15 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             // 13. 移除空结构节点
             removeEmptyStructNodes(root, attrList, dictCodeMap);
+
+            // 13a. 单段混动场景（appendEnergySourceSegmentIfHybrid 实际拼接出了合成的 95 段）
+            //   或多段场景下除首段外全部为 95 且不止 1 个（如 "10|95|95|95"，多个电机共用
+            //   同一能量类型代码 95，各自只有 1 个 PowerGroup）时，对应的 95 段 EnergySourceGroup
+            //   只保留 EnergySource、PowerGroup 两个标签，去掉从原始数据中共享复制过来的
+            //   其它无意义标签（WorkingPrinciple、TestFamilyIdentifiersTable 等）
+            boolean shouldRestrictElectricEnergySourceGroup = hybridSingleSegmentEnergySourceExpanded
+                    || hasRepeatedElectricSegmentsAfterFirst(jsonMap);
+            restrictHybridElectricEnergySourceGroup(root, shouldRestrictElectricEnergySourceGroup);
 
             // 13b. 当 EnergySource 为多段时，在 CocDataGroup 下追加汇总标签：
             //   ConsolidatedMaximum30MinutesPower  = Maximum30MinutesPower  各段之和
@@ -2941,14 +2951,26 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     //   （如 EnergySourceTable 内 EnergySource="10|95" 代表 2 个 EnergySourceGroup）。
                     //   此时应直接用 expandPipeLoop 展开，不应走 expandNestedPipeLoop 的外层切片逻辑：
                     //   切片会将 EnergySource="10|95" 按父行 rowIndex 取成单值 "10"，导致只生成 1 个 Group。
+                    //
+                    //   ★ 新增修复：但若该 | 字段的段数恰好等于外层容器（rootAttrPath，如
+                    //   EnergyConvertorGroup）自身的总行数，说明它实际是与外层行一一对齐的
+                    //   （如 4 个 EnergyConvertorGroup 对应 EnergySource="10|95|95|95"：第0段对应
+                    //   燃油机，第1~3段分别对应3个电机），而不是"本 Table 自身另有一套独立循环"。
+                    //   这种对齐场景必须改走 expandNestedPipeLoop 按外层 rowIndex 切出当前行专属的
+                    //   单段值，否则每个外层行都会用同一份未切片数据重新展开全部段，
+                    //   导致笛卡尔积式重复（如本例 4 外层 × 4 内层 = 16）。
                     int attrDepth = attrPath.split("\\.").length;
+                    int totalOuterRows = calcTotalRowsForGroup(attrList, dictCodeMap, jsonMap, rootAttrPath);
                     boolean hasDirectGroupPipe = subAttrs.stream().anyMatch(a -> {
                         if (a.getAttrPath().split("\\.").length != attrDepth + 2) return false;
                         String[] p = a.getAttrPath().split("\\.");
                         SysDictData d = dictCodeMap.get(p[p.length - 1]);
                         if (d == null || isStructNode(d)) return false;
                         Object raw = jsonMap.get(d.getDictLabel());
-                        return raw != null && raw.toString().contains("|");
+                        if (raw == null || !raw.toString().contains("|")) return false;
+                        int segs = raw.toString().trim().split("\\|", -1).length;
+                        if (totalOuterRows > 1 && segs <= totalOuterRows) return false;
+                        return true;
                     });
 
                     if (hasDirectGroupPipe) {
@@ -2960,7 +2982,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                 subMap, attrPath, pipeRows);
                         expandedStructPaths.add(attrPath);
                     } else {
-                        int nestedRows = detectNestedRowsForIndex(subAttrs, dictCodeMap, jsonMap, attrPath, rowIndex);
+                        int nestedRows = detectNestedRowsForIndex(subAttrs, dictCodeMap, jsonMap, attrPath, rowIndex, totalOuterRows);
                         if (nestedRows > 0) {
                             Map<String, Element> subMap = new LinkedHashMap<>();
                             subMap.put(attrPath, structElement);
@@ -3035,7 +3057,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                          Map<String, SysDictData> dictCodeMap,
                                          Map<String, Object> jsonMap,
                                          String containerPath,
-                                         int rowIndex) {
+                                         int rowIndex,
+                                         int totalOuterRows) {
         int maxRows = 0;
         int containerDepth = containerPath.split("\\.").length;
         boolean hasPipeField = false; // 子树中是否存在含 | 的字段
@@ -3053,13 +3076,22 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 hasPipeField = true;
                 int attrDepth = attr.getAttrPath().split("\\.").length;
                 if (attrDepth == containerDepth + 2) {
+                    int segs = val.split("\\|", -1).length;
+                    // ★ 修复：若该字段的 | 段数恰好等于外层容器自身总行数（totalOuterRows，>1），
+                    //   说明它是与外层行一一对齐的字段（如 EnergySource="10|95|95|95" 对应
+                    //   4 个 EnergyConvertorGroup），而不是"本 Table 自身另有一套独立循环"，
+                    //   不应据此把行数撑大——交由调用方传入的 slicedJsonMap（已按外层 rowIndex
+                    //   切到单段）走下面"至少 1 行"的兜底分支即可。
+                    if (totalOuterRows > 1 && segs <= totalOuterRows) {
+                        continue;
+                    }
                     // ★ 关键修复：直接子 Group 层叶子含 | 时，以 | 总段数作为子行数（即本 Table 内的 Group 数），
                     //   不再按 rowIndex 切片取单段。
                     //   原逻辑对 EnergySource="10|95"（containerDepth+2）按 rowIndex=0 取段 "10"（单值）→ maxRows=1，
                     //   导致 EnergySourceGroup 只创建 1 个。
                     //   正确语义：EnergySourceTable 内有几个 | 段就应创建几个 EnergySourceGroup。
                     foundDirectGroupLeaf = true;
-                    maxRows = Math.max(maxRows, val.split("\\|", -1).length);
+                    maxRows = Math.max(maxRows, segs);
                 }
             } else if (val.contains(";") && attr.getAttrPath().split("\\.").length == containerDepth + 2) {
                 // 无外层 |，直接按 ; 展开（所有父行共用）
@@ -3293,17 +3325,19 @@ public class XmlFileServiceImpl implements IXmlFileService {
      * 电机字段拼接 "0|" 前缀，干扰这里对原始值是否有值的判断。
      * <p>
      * 若 EnergySource 已是多段，或四个字段中有任意一个为空，则不做任何处理，保持原样。
+     *
+     * @return 是否实际执行了拼接（true=拼接成功，EnergySource 已变为两段；false=未做任何改动）
      */
-    private void appendEnergySourceSegmentIfHybrid(Map<String, Object> jsonMap) {
+    private boolean appendEnergySourceSegmentIfHybrid(Map<String, Object> jsonMap) {
         Object energySourceObj = jsonMap.get("EnergySource");
         if (energySourceObj == null) {
             log.info("=== appendEnergySourceSegmentIfHybrid skip: EnergySource为null");
-            return;
+            return false;
         }
         String energySource = energySourceObj.toString().trim();
         if (StringUtils.isBlank(energySource) || energySource.contains("|")) {
             log.info("=== appendEnergySourceSegmentIfHybrid skip: EnergySource={}（空值或已是多段）", energySource);
-            return; // 空值或已是多段，不处理
+            return false; // 空值或已是多段，不处理
         }
 
         for (String fieldName : Arrays.asList("MaximumNetPowerCombustion", "EngineSpeedMaximumNetPower",
@@ -3312,12 +3346,101 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (raw == null || StringUtils.isBlank(raw.toString())) {
                 log.info("=== appendEnergySourceSegmentIfHybrid skip: EnergySource={}，字段{}无值（raw={}）",
                         energySource, fieldName, raw);
-                return; // 四个字段任一为空，不是单段混动场景，保持原样
+                return false; // 四个字段任一为空，不是单段混动场景，保持原样
             }
         }
 
         jsonMap.put("EnergySource", energySource + "|95");
         log.info("=== appendEnergySourceSegmentIfHybrid 拼接成功，EnergySource变为: {}", jsonMap.get("EnergySource"));
+        return true;
+    }
+
+    /**
+     * 判断 EnergySource 是否为「多段，且第一段不是 95，且从第二段开始全部为 95」的场景。
+     * <p>
+     * 适用场景举例：
+     * <ul>
+     *   <li>"10|95"     — 真实单电机混动，1 个 95 段</li>
+     *   <li>"10|95|95|95" — 多电机混动，多个 95 段</li>
+     * </ul>
+     * 命中该场景时，所有 95 段对应的 EnergySourceGroup 只应保留 EnergySource、PowerGroup
+     * 两个标签，去掉从燃油段共享复制过来的其它无意义标签（WorkingPrinciple、
+     * TestFamilyIdentifiersTable 等）。
+     * <p>
+     * 若 EnergySource 为单段，或第一段本身就是 95，或存在非 95 的后续段，则返回 false，
+     * 保持各 EnergySourceGroup 的完整内容不变。
+     */
+    private boolean hasRepeatedElectricSegmentsAfterFirst(Map<String, Object> jsonMap) {
+        Object raw = jsonMap.get("EnergySource");
+        if (raw == null) return false;
+        String val = raw.toString().trim();
+        if (!val.contains("|")) return false; // 单段，无需处理
+        String[] segs = val.split("\\|", -1);
+        if (segs.length < 2) return false;
+        if ("95".equals(segs[0].trim())) return false; // 首段本身是 95，不属于此场景
+        for (int i = 1; i < segs.length; i++) {
+            if (!"95".equals(segs[i].trim())) return false; // 存在非 95 的后续段
+        }
+        return true;
+    }
+
+    /**
+     * 当 EnergySource 满足「第一段不是 95、且从第二段开始全部为 95」的条件时（包括：
+     * 单段混动由 appendEnergySourceSegmentIfHybrid 合成出 "|95" 段，以及真实多段如
+     * "10|95"、"10|95|95|95" 等场景），将所有 EnergySource 值为 "95" 的
+     * EnergySourceGroup 下除 EnergySource、PowerGroup（及其子标签）外的其余直属子标签
+     * 全部移除，只保留 EnergySource 和 PowerGroup 两个标签。
+     * <p>
+     * 移除原因：这些 Group 是从同一行数据切片而来，WorkingPrinciple、
+     * TestFamilyIdentifiersTable 等非功率字段对"电机段"而言没有实际意义，
+     * 应当精简以保证生成 XML 的正确性。
+     * <p>
+     * 若 {@code shouldRestrict} 为 false（EnergySource 为单段，或首段本身是 95，
+     * 或后续段存在非 95 值），则直接跳过，各 EnergySourceGroup 保持完整内容。
+     *
+     * @param root             已构建完成的 XML 根节点
+     * @param shouldRestrict   是否需要执行精简（由调用方根据 EnergySource 形态判断传入）
+     */
+    private void restrictHybridElectricEnergySourceGroup(Element root, boolean shouldRestrict) {
+        if (!shouldRestrict) {
+            return; // 不满足精简条件，EnergySourceGroup 保持原有完整内容
+        }
+        NodeList groupNodes = root.getElementsByTagName("EnergySourceGroup");
+        for (int i = 0; i < groupNodes.getLength(); i++) {
+            Node groupNode = groupNodes.item(i);
+            if (!(groupNode instanceof Element)) continue;
+            Element groupEl = (Element) groupNode;
+            NodeList children = groupEl.getChildNodes();
+
+            // 找到该 Group 下直属的 EnergySource 子标签，判断其值是否为 "95"（电机段）
+            String energySourceValue = null;
+            for (int j = 0; j < children.getLength(); j++) {
+                Node child = children.item(j);
+                if (child.getNodeType() == Node.ELEMENT_NODE && "EnergySource".equals(child.getNodeName())) {
+                    energySourceValue = child.getTextContent() == null ? "" : child.getTextContent().trim();
+                    break;
+                }
+            }
+            if (!"95".equals(energySourceValue)) {
+                continue; // 非电机段（首段燃油组），保持原样
+            }
+
+            // 移除该 Group 下除 EnergySource、PowerGroup 外的所有直属子标签
+            List<Node> toRemove = new ArrayList<>();
+            for (int j = 0; j < children.getLength(); j++) {
+                Node child = children.item(j);
+                if (child.getNodeType() != Node.ELEMENT_NODE) continue;
+                String tagName = child.getNodeName();
+                if (!"EnergySource".equals(tagName) && !"PowerGroup".equals(tagName)) {
+                    toRemove.add(child);
+                }
+            }
+            for (Node n : toRemove) {
+                groupEl.removeChild(n);
+            }
+            log.info("=== restrictHybridElectricEnergySourceGroup 已精简95段EnergySourceGroup，仅保留EnergySource与PowerGroup，移除标签数={}",
+                    toRemove.size());
+        }
     }
 
     /**
@@ -4330,7 +4453,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
         int max = 1;
         int rootDepth = rootAttrPath.split("\\.").length;
         for (XmlTemplateAttribute a : attrList) {
-            // 只看直接子叶子（rootDepth+1）
             if (a.getAttrPath().split("\\.").length != rootDepth + 1) continue;
             String[] parts = a.getAttrPath().split("\\.");
             SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
@@ -4338,9 +4460,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
             Object raw = jsonMap.get(d.getDictLabel());
             if (raw == null) continue;
             String val = raw.toString().trim();
-            String sep = val.contains("|") ? "\\|" : (val.contains(";") ? ";" : null);
-            if (sep != null) {
-                max = Math.max(max, countNonTrailingEmpty(val.split(sep, -1)));
+            // ★ 不截断尾部空段，直接用 split 长度，确保 totalOuterRows 与外层实际组数一致
+            if (val.contains("|")) {
+                max = Math.max(max, val.split("\\|", -1).length);
+            } else if (val.contains(";")) {
+                max = Math.max(max, val.split(";", -1).length);
             }
         }
         return max;
