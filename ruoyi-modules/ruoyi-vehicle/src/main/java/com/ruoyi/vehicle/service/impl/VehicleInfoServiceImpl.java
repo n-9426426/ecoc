@@ -557,7 +557,8 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         AbnormalClassify abnormalClassify;
         for (Long vehicleInfoId : vehicleInfoIds) {
             VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoById(vehicleInfoId);
-            ValidationReport validationReport = vehicleValidationService.validate(vehicleInfo.getJson(), vehicleInfo.getVehicleModel(), null);
+            ValidationReport validationReport = vehicleValidationService.validate(
+                    vehicleInfo.getJson(), vehicleInfo.getVehicleModel(), null, isFullyElectricFromJson(vehicleInfo.getJson()), true);
             if (validationReport.isAllValid()) {
                 vehicleInfo.setValidationResult(1);
             } else {
@@ -621,6 +622,31 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             abnormalClassifyMapper.batchInsert(abnormalClassifies);
         }
         return validationReports;
+    }
+
+    /**
+     * 从 JSON 字符串中提取 EnergySource 字段，判断车辆是否为纯电动：
+     * 按 "|" 分隔后所有分段均为 "95" 才返回 true，存在非 "95" 分段返回 false；
+     * EnergySource 缺失/为空，或 JSON 解析失败，返回 null（表示无法判定，
+     * 调用方按未传入处理，由 vehicleValidationService 内部走原有的自行计算兜底逻辑）。
+     */
+    private Boolean isFullyElectricFromJson(String json) {
+        if (StringUtils.isBlank(json)) return null;
+        try {
+            Map<String, Object> map = objectMapper.readValue(json,
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+            Object energySourceObj = map.get("EnergySource");
+            if (energySourceObj == null) return null;
+            String energySource = energySourceObj.toString().trim();
+            if (energySource.isEmpty()) return null;
+            for (String seg : energySource.split("\\|")) {
+                if (!"95".equals(seg.trim())) return false;
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("解析 JSON 获取 EnergySource 失败", e);
+            return null;
+        }
     }
 
     @Override

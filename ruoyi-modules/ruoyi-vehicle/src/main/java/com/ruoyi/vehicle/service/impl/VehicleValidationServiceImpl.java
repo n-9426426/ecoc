@@ -60,11 +60,14 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
 
         String vehicleCategory = extractVehicleCategoryFromJson(vehicleInfo.getJson());
         String stageOfCompletion = extractStageOfCompletionFromJson(vehicleInfo.getJson());
-        return validate(vehicleInfo.getJson(), vehicleCategory, stageOfCompletion);
+        Boolean isFullyElectric = isFullyElectricFromJson(vehicleInfo.getJson());
+        // splitBySeparator 默认 false，保持原有校验逻辑（按整字段值校验，不拆分）
+        return validate(vehicleInfo.getJson(), vehicleCategory, stageOfCompletion, isFullyElectric, false);
     }
 
     @Override
-    public ValidationReport validate(String jsonStr, String vehicleCategory, String stageOfCompletion) {
+    public ValidationReport validate(String jsonStr, String vehicleCategory, String stageOfCompletion,
+                                     Boolean isFullyElectric, boolean splitBySeparator) {
         ValidationReport report = ValidationReport.builder()
                 .vehicleCategory(vehicleCategory)
                 .stageOfCompletion(stageOfCompletion)
@@ -86,15 +89,16 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
         // 2. 解析列表字段（axleList、bodyworkList 等）
         Map<String, List<Map<String, Object>>> listFields = VehicleFieldParser.parseListFieldsFromMap(jsonMap, remoteDictService);
 
-        // 3. 构建上下文（字段名已转换为 dict_label）
-        Map<String, Object> context = buildContext(jsonMap, listFields, vehicleCategory, stageOfCompletion);
+        // 3. 构建上下文（字段名已转换为 dict_label）。isFullyElectric 优先使用调用方传入值，
+        //    传入为空时由 buildContext 内部自行按 EnergySource/PureElectricVehicleIndicator 计算
+        Map<String, Object> context = buildContext(jsonMap, listFields, vehicleCategory, stageOfCompletion, isFullyElectric);
 
         // 4. 遍历每个字段逐一校验
         for (Map.Entry<String, Object> entry : jsonMap.entrySet()) {
             String jsonKey = entry.getKey();
             Object value = entry.getValue();
 
-            FieldValidationResult result = validateSingleField(jsonKey, value, context, vehicleCategory, stageOfCompletion);
+            FieldValidationResult result = validateSingleField(jsonKey, value, context, vehicleCategory, stageOfCompletion, splitBySeparator);
             if (result != null) {
                 report.addFieldResult(result);
             }
@@ -116,7 +120,8 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
             Object value,
             Map<String, Object> context,
             String vehicleCategory,
-            String stageOfCompletion) {
+            String stageOfCompletion,
+            boolean splitBySeparator) {
 
         SysDictData dictData = queryDictData(jsonKey, vehicleCategory, stageOfCompletion);
         if (dictData == null) {
@@ -129,9 +134,12 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
         List<RuleItem> rules = FinalRuleParser.parseRules(dictData.getRule(), dictData.getRangeRule());
         FieldValidationResult result = null;
         if (!rules.isEmpty()) {
-            // ⚠️ 注意：此处传入的是原始 jsonKey，但 context 中字段名已是 dict_label
-            // FinalRuleExecutor 内部会从 context 查 dict_label 字段（正确）
-            result = FinalRuleExecutor.execute(jsonKey, value, rules, context);
+            if (splitBySeparator && value instanceof String) {
+                // 按分号(;)和竖线(|)拆分后逐个校验，违规结果合并到同一个 FieldValidationResult
+                result = validateSplitParts(jsonKey, (String) value, rules, context);
+            } else {
+                result = FinalRuleExecutor.execute(jsonKey, value, rules, context);
+            }
         }
 
         // ② 若 value_map 含 DICT_MAP，额外校验字段值是否在目标值集合内
@@ -149,6 +157,52 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
         }
 
         return result;
+    }
+
+    /**
+     * 将字段原始值按 ";" 和 "|" 拆分为多段，对每一段分别执行 rule/rangeRule 校验，
+     * 再将各段结果合并为一个 FieldValidationResult。
+     * <p>
+     * 例如：rawValue="1;2|3"，rules 要求是数字 → 拆分为 "1"、"2"、"3" 共 3 段，
+     * 分别执行 3 次 FinalRuleExecutor.execute，任一段不通过则整体 valid=false，
+     * 所有段的违规信息合并到一个结果中返回。
+     *
+     * @param jsonKey  字段 jsonKey
+     * @param rawValue 拆分前的原始字符串值
+     * @param rules    已解析的 rule/rangeRule 规则列表
+     * @param context  校验上下文（与未拆分场景共用同一份，不随每段变化）
+     * @return 合并后的 FieldValidationResult；rawValue 为空白时按原值（不拆分）单次校验
+     */
+    private FieldValidationResult validateSplitParts(String jsonKey, String rawValue, List<RuleItem> rules, Map<String, Object> context) {
+        String trimmedRaw = rawValue.trim();
+        if (trimmedRaw.isEmpty()) {
+            // 空字符串无需拆分，按原值单次校验（与未拆分逻辑一致）
+            return FinalRuleExecutor.execute(jsonKey, rawValue, rules, context);
+        }
+
+        String[] parts = FinalRuleParser.splitMultiValue(trimmedRaw);
+
+        boolean allValid = true;
+        List<RuleViolation> mergedViolations = new ArrayList<>();
+        for (String part : parts) {
+            String trimmedPart = part.trim();
+            FieldValidationResult partResult = FinalRuleExecutor.execute(jsonKey, trimmedPart, rules, context);
+            if (partResult != null) {
+                if (!partResult.isValid()) {
+                    allValid = false;
+                }
+                if (partResult.getViolations() != null) {
+                    mergedViolations.addAll(partResult.getViolations());
+                }
+            }
+        }
+
+        return FieldValidationResult.builder()
+                .fieldName(jsonKey)
+                .value(rawValue)
+                .valid(allValid)
+                .violations(mergedViolations)
+                .build();
     }
 
     // ==========================================
@@ -276,7 +330,8 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
             Map<String, Object> jsonMap,
             Map<String, List<Map<String, Object>>> listFields,
             String vehicleCategory,
-            String stageOfCompletion) {
+            String stageOfCompletion,
+            Boolean isFullyElectric) {
 
         Map<String, Object> context = new HashMap<>();
 
@@ -300,23 +355,29 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
         context.put("StageOfCompletion", stageOfCompletion);
 
         // 注入虚拟变量（@FullyElectricVehicle / @NotFullyElectricVehicle / @HybridVehicle）
-        Object energySourceVal = context.get("EnergySource");
-        String energySource = energySourceVal != null ? energySourceVal.toString().trim() : "";
+        // 优先使用调用方传入的 isFullyElectric；传入为空（null）时，按原有逻辑自行计算
+        boolean fullyElectric;
+        if (isFullyElectric != null) {
+            fullyElectric = isFullyElectric;
+        } else {
+            Object energySourceVal = context.get("EnergySource");
+            String energySource = energySourceVal != null ? energySourceVal.toString().trim() : "";
 
-        Object pureElectricVal = context.get("PureElectricVehicleIndicator");
-        String pureElectric = pureElectricVal != null ? pureElectricVal.toString().trim() : "";
+            Object pureElectricVal = context.get("PureElectricVehicleIndicator");
+            String pureElectric = pureElectricVal != null ? pureElectricVal.toString().trim() : "";
 
-        // 纯电动：EnergySource=95 或 PureElectricVehicleIndicator=Y
-        boolean isFullyElectric = "95".equals(energySource) || "Y".equals(pureElectric);
+            // 纯电动：EnergySource=95 或 PureElectricVehicleIndicator=Y
+            fullyElectric = "95".equals(energySource) || "Y".equals(pureElectric);
+        }
 
         // 混动：ClassHybridVehicle 有值且非纯电
         Object hybridVal = context.get("ClassHybridVehicle");
         String hybridClass = hybridVal != null ? hybridVal.toString().trim() : "";
-        boolean isHybrid = !hybridClass.isEmpty() && !isFullyElectric;
+        boolean isHybrid = !hybridClass.isEmpty() && !fullyElectric;
 
         // null 表示条件不满足，executor 的 isAbsent 会判定为缺失
-        context.put("FullyElectricVehicle",    isFullyElectric ? "Y" : null);
-        context.put("NotFullyElectricVehicle", !isFullyElectric ? "Y" : null);
+        context.put("FullyElectricVehicle",    fullyElectric ? "Y" : null);
+        context.put("NotFullyElectricVehicle", !fullyElectric ? "Y" : null);
         context.put("HybridVehicle",           isHybrid ? "Y" : null);
 
         return context;
@@ -430,6 +491,25 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
             log.error("JSON 解析失败: {}", e.getMessage(), e);
             return null;
         }
+    }
+
+    /**
+     * 从 JSON 字符串中提取 EnergySource 字段，判断车辆是否为纯电动：
+     * 按 "|" 分隔后所有分段均为 "95" 才返回 true，存在非 "95" 分段返回 false；
+     * EnergySource 缺失/为空，或 JSON 解析失败，返回 null（表示无法判定，
+     * 调用方按未传入处理，由 buildContext 走原有的自行计算兜底逻辑）。
+     */
+    private Boolean isFullyElectricFromJson(String jsonStr) {
+        Map<String, Object> map = parseJson(jsonStr);
+        if (map == null) return null;
+        Object energySourceObj = map.get("EnergySource");
+        if (energySourceObj == null) return null;
+        String energySource = energySourceObj.toString().trim();
+        if (energySource.isEmpty()) return null;
+        for (String seg : energySource.split("\\|")) {
+            if (!"95".equals(seg.trim())) return false;
+        }
+        return true;
     }
 
     // 从 JSON 字符串中提取 vehicleCategory 和 stageOfCompletion（避免重复解析）

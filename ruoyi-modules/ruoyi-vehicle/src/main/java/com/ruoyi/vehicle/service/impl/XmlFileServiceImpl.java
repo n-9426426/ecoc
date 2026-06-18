@@ -1277,6 +1277,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 stageOfCompletion = v != null ? v.toString() : null;
             }
 
+            // 整车是否为纯电动：XML 中所有 EnergySource 标签的值都是 "95"（且至少存在一个）
+            boolean isFullyElectric = isFullyElectricByEnergySource(doc);
+
             // ── 第一步：识别循环节点（与原逻辑相同）──────────────────────────
             NodeList allNodes = doc.getElementsByTagName("*");
             Map<String, Integer> parentTagCount = new LinkedHashMap<>();
@@ -1364,7 +1367,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (!baseJsonMap.isEmpty()) {
                 String jsonStr = new ObjectMapper().writeValueAsString(baseJsonMap);
                 ValidationReport report = vehicleValidationService.validate(
-                        jsonStr, vehicleCategory, stageOfCompletion);
+                        jsonStr, vehicleCategory, stageOfCompletion, isFullyElectric, false);
                 mergedReport = enrichAndMerge(mergedReport, report, keyMapMeta);
             }
 
@@ -1390,7 +1393,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
                     String jsonStr = new ObjectMapper().writeValueAsString(singleJsonMap);
                     ValidationReport report = vehicleValidationService.validate(
-                            jsonStr, vehicleCategory, stageOfCompletion);
+                            jsonStr, vehicleCategory, stageOfCompletion, isFullyElectric, false);
 
                     if (report != null && report.getFieldResults() != null) {
                         final int index = j + 1;
@@ -1698,6 +1701,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
             //   ConsolidatedMaximum30MinutesPower  = Maximum30MinutesPower  各段之和
             //   ConsolidatedMaximumNetPowerElectric = MaximumNetPowerElectric 各段之和
             appendConsolidatedPowerFields(doc, root, jsonMap);
+
+            // 13c. EnergySource 值为 90/91/95（氢能源/其他/电机等非内燃机类型）时，
+            //   删除该 EnergySource 父节点的父节点的同级容器（EnergyConvertorGroup）下的
+            //   EngineCapacity、NumberOfCylinders、ArrangementCylinders 三个标签
+            removeEngineCapacityForElectricEnergySource(doc);
 
             // 14. 生成XML字符串（不输出 <?xml ...?> 声明头）
             TransformerFactory transformerFactory = TransformerFactory.newInstance();
@@ -3241,13 +3249,22 @@ public class XmlFileServiceImpl implements IXmlFileService {
      *   <li>ConsolidatedMaximumNetPowerElectric —— MaximumNetPowerElectric 各段数值之和</li>
      * </ul>
      * 求和时跳过空段和无法解析为数字的段（如拼接的前缀 "0"）。
-     * 若 EnergySource 为单段，或两个字段均无有效值，则不写入任何标签。
+     * 若 EnergySource 为单段、分段后 "95"（电机组）数量少于两个，或两个字段均无有效值，
+     * 则不写入任何标签。
      */
     private void appendConsolidatedPowerFields(Document doc, Element root, Map<String, Object> jsonMap) {
         Object energySourceObj = jsonMap.get("EnergySource");
         if (energySourceObj == null) return;
         String energySource = energySourceObj.toString().trim();
         if (!energySource.contains("|")) return; // 单段，无需汇总
+
+        // 统计分段后 "95"（电机组）的数量：只有 0 或 1 个电机组时，单个 PowerGroup
+        // 已能表达功率，无需额外的 Consolidated 汇总标签，只有 >=2 个电机组才需要汇总
+        String[] energySourceSegs = energySource.split("\\|", -1);
+        long electricSegCount = Arrays.stream(energySourceSegs)
+                .filter(seg -> "95".equals(seg.trim()))
+                .count();
+        if (electricSegCount < 2) return;
 
         // 注意：此时 jsonMap 中的值已经过 prependZeroForElectricPowerFields 处理（开头有 "0|"）
         // 求和时对所有段累加，"0" 段不影响结果
@@ -3278,6 +3295,76 @@ public class XmlFileServiceImpl implements IXmlFileService {
             Element elNetElec = doc.createElement("ConsolidatedMaximumNetPowerElectric");
             elNetElec.setTextContent(sumNetElec.stripTrailingZeros().toPlainString());
             cocDataGroup.insertBefore(elNetElec, refNode);
+        }
+    }
+
+    /**
+     * 根据生成后 XML 中所有 EnergySource 标签的值，判断整车是否为纯电动：
+     * 当且仅当文档中存在至少一个 EnergySource 标签，且其值全部为 "95" 时返回 true。
+     * 文档中不存在任何 EnergySource 标签，或存在非 "95" 的值（如燃油 "10"、氢能源 "90" 等），
+     * 均返回 false。
+     */
+    private boolean isFullyElectricByEnergySource(Document doc) {
+        NodeList energySourceNodes = doc.getElementsByTagName("EnergySource");
+        if (energySourceNodes.getLength() == 0) return false;
+        for (int i = 0; i < energySourceNodes.getLength(); i++) {
+            String value = energySourceNodes.item(i).getTextContent();
+            value = value == null ? "" : value.trim();
+            if (!"95".equals(value)) return false;
+        }
+        return true;
+    }
+
+    /**
+     * 当某个 EnergySource 标签的值为 "90"、"91"、"95" 之一时（代表氢能源/其他/电机等
+     * 非内燃机类型的能量源），删除该 EnergySource 父节点的父节点的同级容器
+     * （即 EnergyConvertorGroup）下的 EngineCapacity、NumberOfCylinders、ArrangementCylinders
+     * 三个标签。
+     * <p>
+     * 即：EnergySource → 父节点 → 父节点的父节点（祖父节点）→ 祖父节点的父节点（同级容器，
+     * 通常是 EnergyConvertorGroup），在该容器的直属子标签中查找并删除上述三个标签。
+     * 三者均只对内燃机有意义（气缸容量、气缸数、气缸排列方式），当对应分组的能量源
+     * 为非内燃机类型时，该分组下不应再保留这三个标签；EngineCapacity 不存在等价于
+     * NumberOfCylinders/ArrangementCylinders 也不该保留，故合并为同一次删除。
+     * <p>
+     * 该方法仅依据 DOM 相对位置定位（父的父的同级容器），不对中间层级标签名称
+     * （如 EnergySourceGroup、EnergySourceTable）做硬编码假设。
+     * 若某一层级缺失（结构层级不够深）或未找到对应标签，则跳过，不报错。
+     */
+    private void removeEngineCapacityForElectricEnergySource(Document doc) {
+        Set<String> tagsToRemove = new HashSet<>(Arrays.asList(
+                "EngineCapacity", "NumberOfCylinders", "ArrangementCylinders"));
+
+        NodeList energySourceNodes = doc.getElementsByTagName("EnergySource");
+        Set<Element> toRemove = new LinkedHashSet<>();
+
+        for (int i = 0; i < energySourceNodes.getLength(); i++) {
+            Node esNode = energySourceNodes.item(i);
+            String value = esNode.getTextContent() == null ? "" : esNode.getTextContent().trim();
+            if (!"90".equals(value) && !"91".equals(value) && !"95".equals(value)) continue;
+
+            Node parent = esNode.getParentNode();                              // EnergySource 的父节点
+            Node grandParent = (parent != null) ? parent.getParentNode() : null; // 父的父（祖父节点）
+            Node siblingOwner = (grandParent != null) ? grandParent.getParentNode() : null; // 祖父节点的父节点（同级容器，即 EnergyConvertorGroup）
+            if (siblingOwner == null || siblingOwner.getNodeType() != Node.ELEMENT_NODE) continue;
+
+            NodeList siblingCandidates = siblingOwner.getChildNodes();
+            for (int j = 0; j < siblingCandidates.getLength(); j++) {
+                Node sibling = siblingCandidates.item(j);
+                if (sibling.getNodeType() == Node.ELEMENT_NODE && tagsToRemove.contains(sibling.getNodeName())) {
+                    toRemove.add((Element) sibling);
+                }
+            }
+        }
+
+        for (Element el : toRemove) {
+            Node parent = el.getParentNode();
+            if (parent != null) {
+                parent.removeChild(el);
+            }
+        }
+        if (!toRemove.isEmpty()) {
+            log.info("=== removeEngineCapacityForElectricEnergySource 已删除 EngineCapacity/NumberOfCylinders/ArrangementCylinders 标签数={}", toRemove.size());
         }
     }
 
@@ -3397,6 +3484,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
      * <p>
      * 若 {@code shouldRestrict} 为 false（EnergySource 为单段，或首段本身是 95，
      * 或后续段存在非 95 值），则直接跳过，各 EnergySourceGroup 保持完整内容。
+     * <p>
+     * 当 {@code shouldRestrict} 为 true 时，首段（燃油组，EnergySource 非 95）也会被处理：
+     * 其余子标签保持原样，但仍需移除其下的 WltpEmissionTestParametersGroup 标签
+     * （该字段按约定只保留在某一个 Group 中，避免多段重复）。
      *
      * @param root             已构建完成的 XML 根节点
      * @param shouldRestrict   是否需要执行精简（由调用方根据 EnergySource 形态判断传入）
@@ -3422,7 +3513,22 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 }
             }
             if (!"95".equals(energySourceValue)) {
-                continue; // 非电机段（首段燃油组），保持原样
+                // 非电机段（首段燃油组）：其余内容保持原样，但仍需移除 WltpEmissionTestParametersGroup 标签
+                List<Node> wltpToRemove = new ArrayList<>();
+                for (int j = 0; j < children.getLength(); j++) {
+                    Node child = children.item(j);
+                    if (child.getNodeType() == Node.ELEMENT_NODE && "WltpEmissionTestParametersGroup".equals(child.getNodeName())) {
+                        wltpToRemove.add(child);
+                    }
+                }
+                for (Node n : wltpToRemove) {
+                    groupEl.removeChild(n);
+                }
+                if (!wltpToRemove.isEmpty()) {
+                    log.info("=== restrictHybridElectricEnergySourceGroup 首段燃油组已移除 WltpEmissionTestParametersGroup 标签数={}",
+                            wltpToRemove.size());
+                }
+                continue; // 非电机段（首段燃油组），其余内容保持原样
             }
 
             // 移除该 Group 下除 EnergySource、PowerGroup 外的所有直属子标签
@@ -3431,14 +3537,14 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 Node child = children.item(j);
                 if (child.getNodeType() != Node.ELEMENT_NODE) continue;
                 String tagName = child.getNodeName();
-                if (!"EnergySource".equals(tagName) && !"PowerGroup".equals(tagName)) {
+                if (!"EnergySource".equals(tagName) && !"PowerGroup".equals(tagName) && !"WltpEmissionTestParametersGroup".equals(tagName)) {
                     toRemove.add(child);
                 }
             }
             for (Node n : toRemove) {
                 groupEl.removeChild(n);
             }
-            log.info("=== restrictHybridElectricEnergySourceGroup 已精简95段EnergySourceGroup，仅保留EnergySource与PowerGroup，移除标签数={}",
+            log.info("=== restrictHybridElectricEnergySourceGroup 已精简95段EnergySourceGroup，仅保留EnergySource与PowerGroup与WltpEmissionTestParametersGroup，移除标签数={}",
                     toRemove.size());
         }
     }

@@ -16,7 +16,7 @@ public interface IVehicleValidationService {
      * @param stageOfCompletion 完成阶段（如 C, A）
      * @return 校验报告，包含所有未通过的字段名和错误信息
      */
-    ValidationReport validate(String jsonStr, String vehicleCategory, String stageOfCompletion);
+    ValidationReport validate(String jsonStr, String vehicleCategory, String stageOfCompletion, Boolean isFullyElectric, boolean splitBySeparator);
 
     /**
      * 根据 vehicleId 从数据库读取 JSON 并校验
