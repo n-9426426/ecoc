@@ -1524,24 +1524,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
         Map<String, String> vehicleParams = getVehicleParams(vehicle);
 
         try {
-            Map<String, Object> jsonMap = vehicle.getJsonMap();
-            jsonMap.put("IviReferenceId", UUID.randomUUID().toString());
-            // IviVersionDateTime 是 DateTime 类型，需要带时区的完整格式
-            jsonMap.put("IviVersionDateTime", DateUtils.format(new Date(), "yyyy-MM-dd'T'HH:mm:ss'Z'"));
-//            jsonMap.put("CommercialName", vehicle.getSaleCompanyName());
-
-            // DateManufactureVehicle 和 SignatureDate 是 Date 类型，只需年月日
-            if (vehicle.getManufactureDate() != null) {
-                jsonMap.put("DateManufactureVehicle", DateUtils.format(vehicle.getManufactureDate(), "yyyy-MM-dd"));
-            }
-            if (vehicle.getIssueDate() != null) {
-                jsonMap.put("SignatureDate", DateUtils.format(vehicle.getIssueDate(), "yyyy-MM-dd"));
-            }
-            if (StringUtils.isBlank((String) (jsonMap.get("SignatureDate")))) {
-                jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
-            }
-
-            // 2.匹配模板
+            // 2. 匹配模板
             XmlTemplate xmlTemplate = matchTemplate(vehicle);
             if (xmlTemplate == null) {
                 msg.append("失败");
@@ -1553,281 +1536,33 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 throw new RuntimeException("未找到匹配的XML模板，VIN=" + vehicle.getVin());
             }
 
-            // 3. 查询字典数据，构建 uuid -> SysDictData 映射
-            List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
-            Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 为 uuid
-            for (SysDictData d : dictDataList) {
-                if (d.getUuid() != null) {
-                    dictCodeMap.putIfAbsent(d.getUuid(), d);   // ★ uuid 为 key，一个uuid多行取第一个
-                }
-            }
+            // 2a. 查询 energy_type 字典，把 xmlTemplate.getEnergyType()（dict_code）解析为 dict_value，
+            //     据此判断该模板属于哪种能源类型分类：
+            //       dict_value = hybrid（NOVC-HEV）或 HEV（OVC-HEV） → 混动，沿用现有逻辑生成一份完整XML
+            //       dict_value = pure_electric（纯电）或 fuel_oil（燃油） → 现有生成逻辑复制两份，
+            //         一份按纯电分支生成、一份按燃油分支生成，各自独立产出一份XML
+            //     模板未设置 energyType，或字典查不到对应记录时，按混动分支处理（与改造前行为保持一致）
+            String templateEnergyValue = resolveTemplateEnergyValue(xmlTemplate);
+            boolean isNovcOrOvc = templateEnergyValue == null
+                    || "hybrid".equals(templateEnergyValue)
+                    || "HEV".equals(templateEnergyValue);
 
-            // 4. 查询模板属性列表
-            List<XmlTemplateAttribute> attrList = xmlTemplateAttributeMapper.selectByTemplateId(xmlTemplate.getTemplateId());
-            if (attrList == null || attrList.isEmpty()) {
-                msg.append("失败");
-                sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
-                sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
-                sysNotice.setNoticeContent(msg.toString());
-                sysNotice.setSorts(Arrays.asList(14, 15));
-                remoteNoticeService.innerAdd(sysNotice);
-                throw new ServiceException("模板无属性定义，无法生成XML");
-            }
-
-            String methodAttachmentStatutoryPlate = null;
-            Object methodAttachmentStatutoryPlateObj = jsonMap.get("MethodAttachmentStatutoryPlate");
-            if (methodAttachmentStatutoryPlateObj != null
-                    && StringUtils.isNotBlank(methodAttachmentStatutoryPlateObj.toString())) {
-                methodAttachmentStatutoryPlate = methodAttachmentStatutoryPlateObj.toString();
-            }
-            if (StringUtils.isBlank(methodAttachmentStatutoryPlate)) {
-                for (XmlTemplateAttribute attr : attrList) {
-                    String[] parts = attr.getAttrPath().split("\\.");
-                    SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
-                    if (dict == null) continue;
-                    if ("MethodAttachmentStatutoryPlate".equals(sanitizeXmlTagName(dict.getDictLabel()))
-                            && StringUtils.isNotBlank(attr.getDefaultValue())) {
-                        methodAttachmentStatutoryPlate = attr.getDefaultValue();
-                        break;
-                    }
-                }
-            }
-            if (StringUtils.isNotBlank(methodAttachmentStatutoryPlate)) {
-                applyLocationMarkings(jsonMap, methodAttachmentStatutoryPlate);
-            }
-
-            // 当 EnergySource 为单段，且燃油/电机四个功率字段均有值（单段混动场景）时，
-            // 在 EnergySource 后拼接 "|95" 使其变为两段，复用下面的多段逻辑生成两个 PowerGroup
-            // 返回值标记本次是否真正发生了拼接，用于后面精简合成的 95 段 EnergySourceGroup
-            boolean hybridSingleSegmentEnergySourceExpanded = appendEnergySourceSegmentIfHybrid(jsonMap);
-
-            // 当 EnergySource 为多段（含 |）时，在 Maximum30MinutesPower、MaximumNetPowerElectric
-            // 的值开头各拼接一个 "0|"，使段数与 EnergySource 对齐（第0段对应燃油组，值为0/空均可跳过）
-            prependZeroForElectricPowerFields(jsonMap);
-
-            // 5. 单根节点校验
-            List<XmlTemplateAttribute> topLevelAttrs = attrList.stream()
-                    .filter(a -> a.getAttrPath() != null && a.getAttrPath().split("\\.").length == 1)
-                    .collect(Collectors.toList());
-            if (topLevelAttrs.isEmpty()) {
-                msg.append("失败");
-                sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
-                sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
-                sysNotice.setNoticeContent(msg.toString());
-                sysNotice.setSorts(Arrays.asList(14, 15));
-                remoteNoticeService.innerAdd(sysNotice);
-                throw new ServiceException("模板无顶层节点，XML必须有唯一根节点");
-            }
-            if (topLevelAttrs.size() > 1) {
-                msg.append("失败");
-                sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
-                sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
-                sysNotice.setNoticeContent(msg.toString());
-                sysNotice.setSorts(Arrays.asList(14, 15));
-                remoteNoticeService.innerAdd(sysNotice);
-                throw new ServiceException("模板存在多个顶层节点，XML 不允许多根节点");
-            }
-
-            // 6. 按模板定义顺序排序
-            Map<String, Integer> pathSortOrderMap = new HashMap<>();
-            for (XmlTemplateAttribute a : attrList) {
-                if (a.getAttrPath() != null) {
-                    pathSortOrderMap.put(a.getAttrPath(), a.getSortOrder() != null ? a.getSortOrder() : 0);
-                }
-            }
-            Comparator<XmlTemplateAttribute> templateOrderComparator = (a, b) -> {
-                String[] partsA = a.getAttrPath().split("\\.");
-                String[] partsB = b.getAttrPath().split("\\.");
-                int minLen = Math.min(partsA.length, partsB.length);
-                StringBuilder prefixA = new StringBuilder();
-                StringBuilder prefixB = new StringBuilder();
-                for (int idx = 0; idx < minLen; idx++) {
-                    if (idx > 0) { prefixA.append("."); prefixB.append("."); }
-                    prefixA.append(partsA[idx]);
-                    prefixB.append(partsB[idx]);
-                    int soA = pathSortOrderMap.getOrDefault(prefixA.toString(), 0);
-                    int soB = pathSortOrderMap.getOrDefault(prefixB.toString(), 0);
-                    if (soA != soB) return Integer.compare(soA, soB);
-                }
-                return Integer.compare(partsA.length, partsB.length);
-            };
-            attrList.sort(templateOrderComparator);
-
-            // 7. 创建XML文档
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            DocumentBuilder builder = factory.newDocumentBuilder();
-            Document doc = builder.newDocument();
-
-            // 8. 创建根节点，将 defaultValue 作为属性写入标签（如 <Root xmlns="123">）
-            XmlTemplateAttribute rootAttr = topLevelAttrs.get(0);
-            String rootAttrPath = rootAttr.getAttrPath();
-            SysDictData rootDict = dictCodeMap.get(rootAttrPath);
-            String rootTagName = (rootDict != null && StringUtils.isNotBlank(rootDict.getDictLabel()))
-                    ? sanitizeXmlTagName(rootDict.getDictLabel()) : "Root";
-            // 创建根节点：若 defaultValue 含 xmlns 则用 createElementNS，保证命名空间正确
-            String rootNsUri = extractNamespaceUri(rootAttr.getDefaultValue());
-            Element root = createElementWithDefault(doc, rootTagName, rootAttr.getDefaultValue());
-            doc.appendChild(root);
-
-            // 9. 路径 -> Element 映射（记录已创建的节点）
-            Map<String, Element> pathNodeMap = new LinkedHashMap<>();
-            pathNodeMap.put(rootAttrPath, root);
-
-            // 10. 识别所有结构节点（dict_value = "NULL"，表示容器节点，不含实际值）
-            Set<String> structNodePaths = attrList.stream()
-                    .filter(a -> {
-                        String[] parts = a.getAttrPath().split("\\.");
-                        SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
-                        return d != null && isStructNode(d);
-                    })
-                    .map(XmlTemplateAttribute::getAttrPath)
-                    .collect(Collectors.toSet());
-
-            // 11. 识别所有叶子节点（dict_value ！= "NULL"，对应 json 中的实际值）
-            List<XmlTemplateAttribute> leafNodes = attrList.stream()
-                    .filter(a -> {
-                        String[] parts = a.getAttrPath().split("\\.");
-                        SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
-                        return d != null && !isStructNode(d);
-                    })
-                    .collect(Collectors.toList());
-
-            // 12. 检测循环模式
-            LoopDetectionResult loopResult = detectLoopPattern(leafNodes, dictCodeMap, jsonMap);
-
-            if (loopResult.getLoopMode() == LoopMode.NONE) {
-                buildNormalTree(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, rootAttrPath);
-            } else if (loopResult.getLoopMode() == LoopMode.PARENT_LEVEL) {
-                buildParentLevelLoop(doc, root, attrList, dictCodeMap, jsonMap,
-                        pathNodeMap, structNodePaths, loopResult, rootAttrPath);
+            List<String> xmlContents = new ArrayList<>();
+            if (isNovcOrOvc) {
+                // NOVC/OVC 混动：沿用现有逻辑，生成一份完整XML
+                Document doc = buildXmlDocumentForNovcOvc(vehicle, xmlTemplate, sysNotice, msg, vehicleParams);
+                xmlContents.add(saveGeneratedXmlDocument(doc, vehicle, xmlTemplate));
             } else {
-                buildSiblingLevelLoop(doc, root, attrList, dictCodeMap, jsonMap,
-                        pathNodeMap, structNodePaths, loopResult, rootAttrPath);
-                buildUnprocessedNodes(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, rootAttrPath);
+                // 纯电 / 燃油：现有生成逻辑复制两份，各自独立生成、独立保存
+                // （两份逻辑目前内容相同，分开成独立方法是为了后续可以分别单独调整，不互相影响）
+                Document docElectric = buildXmlDocumentForPureElectric(vehicle, xmlTemplate, sysNotice, msg, vehicleParams);
+                xmlContents.add(saveGeneratedXmlDocument(docElectric, vehicle, xmlTemplate));
+
+                Document docFuel = buildXmlDocumentForFuelOil(vehicle, xmlTemplate, sysNotice, msg, vehicleParams);
+                xmlContents.add(saveGeneratedXmlDocument(docFuel, vehicle, xmlTemplate));
             }
 
-            // 13. 移除空结构节点
-            removeEmptyStructNodes(root, attrList, dictCodeMap);
-
-            // 13a. 单段混动场景（appendEnergySourceSegmentIfHybrid 实际拼接出了合成的 95 段）
-            //   或多段场景下除首段外全部为 95 且不止 1 个（如 "10|95|95|95"，多个电机共用
-            //   同一能量类型代码 95，各自只有 1 个 PowerGroup）时，对应的 95 段 EnergySourceGroup
-            //   只保留 EnergySource、PowerGroup 两个标签，去掉从原始数据中共享复制过来的
-            //   其它无意义标签（WorkingPrinciple、TestFamilyIdentifiersTable 等）
-            boolean shouldRestrictElectricEnergySourceGroup = hybridSingleSegmentEnergySourceExpanded
-                    || hasRepeatedElectricSegmentsAfterFirst(jsonMap);
-            restrictHybridElectricEnergySourceGroup(root, shouldRestrictElectricEnergySourceGroup);
-
-            // 13a2. TestWltpElectricRangeGroup（纯电续航）、TestWltpEnergyConsumptionGroup（能耗）
-            //   描述的是车辆的纯电相关数据，按校验规则应挂在每一个 EnergySource=95（电机）的
-            //   EnergySourceGroup 下；但源 JSON 中这两组字段未按 EnergySource 分段，树构建时
-            //   默认落在第一个 EnergySourceGroup（往往是燃油段）下，需复制到所有 95 段下
-            relocateElectricOnlyTestGroupsToElectricEnergySource(root);
-
-            // 13b. 当 EnergySource 为多段时，在 CocDataGroup 下追加汇总标签：
-            //   ConsolidatedMaximum30MinutesPower  = Maximum30MinutesPower  各段之和
-            //   ConsolidatedMaximumNetPowerElectric = MaximumNetPowerElectric 各段之和
-            appendConsolidatedPowerFields(doc, root, jsonMap);
-
-            // 13c. EnergySource 值为 90/91/95（氢能源/其他/电机等非内燃机类型）时，
-            //   删除该 EnergySource 父节点的父节点的同级容器（EnergyConvertorGroup）下的
-            //   EngineCapacity、NumberOfCylinders、ArrangementCylinders 三个标签
-            removeEngineCapacityForElectricEnergySource(doc);
-
-            // 14. 生成XML字符串（不输出 <?xml ...?> 声明头）
-            TransformerFactory transformerFactory = TransformerFactory.newInstance();
-            Transformer transformer = transformerFactory.newTransformer();
-            transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-            transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
-            transformer.setOutputProperty(OutputKeys.ENCODING, "UTF-8");
-            transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
-            StringWriter writer = new StringWriter();
-            transformer.transform(new DOMSource(doc), new StreamResult(writer));
-            String xmlContent = writer.toString();
-
-            // 15. 版本管理
-            String xmlVersion = xmlFileMapper.selectVersionByFileName("vehicle_" + vehicle.getVin());
-            xmlVersion = StringUtils.isBlank(xmlVersion) ? "1.0" : String.valueOf(new BigDecimal(xmlVersion).add(new BigDecimal(1)));
-            xmlFileMapper.updateIsLatestToFalse("vehicle_" + vehicle.getVin());
-
-            // 16. 上传文件
-            MultipartFile multipartFile = FileUtils.createMultipartFile(
-                    xmlContent, vehicle.getVin() + ".xml", "application/xml");
-            String filePath = remoteFileService.upload(multipartFile).getData().getUrl();
-
-            // 17. 保存 XmlFile记录
-            XmlFile xmlFile = new XmlFile();
-            xmlFile.setFileName("vehicle_" + vehicle.getVin() + ".xml");
-            xmlFile.setFilePath(filePath);
-            xmlFile.setFileSize((long) xmlContent.getBytes(StandardCharsets.UTF_8).length);
-            xmlFile.setFileLevel("1");
-            xmlFile.setVersion(xmlVersion);
-            xmlFile.setVin(vehicle.getVin());
-            xmlFile.setIsLatest(true);
-            xmlFile.setStatus("0");
-            xmlFile.setDeleted(0);
-            xmlFile.setUploadResult("1");
-            xmlFile.setCreateBy(SecurityUtils.getUsername());
-            xmlFile.setCreateTime(new Date());
-            xmlFile.setRemark("由车辆VIN: " + vehicle.getVin() + " 生成XML,版本: " + xmlVersion);
-            xmlFile.setVin(vehicle.getVin());
-            xmlFile.setXmlTemplateId(xmlTemplate.getTemplateId());
-            xmlFile.setModelCode(String.valueOf(vehicle.getVehicleModel()));
-            xmlFile.setFactoryCode(vehicle.getFactoryCode());
-            xmlFile.setVehicleMaterialNo(vehicle.getMaterialNo());
-            xmlFile.setCountry(vehicle.getCountry());
-            xmlFile.setIssueDate(vehicle.getIssueDate());
-            xmlFile.setValidateResult(0);
-            xmlFileMapper.insertXmlFile(xmlFile);
-
-            try {
-                validateXml(xmlFile.getId());
-            } catch (Exception e) {
-                log.warn("自动校验失败，xmlFileId={}，原因={}", xmlFile.getId(), e.getMessage());
-                // 校验失败不影响生成结果，只记录日志
-            }
-
-            // 18. 保存版本记录
-            XmlVersion version = new XmlVersion();
-            version.setFileId(xmlFile.getId());
-            version.setVersion(xmlVersion);
-            version.setFilePath(filePath);
-            version.setChangeType("生成");
-            version.setChangeDesc("由车辆VIN: " + vehicle.getVin() + " 生成XML, 版本: " + xmlVersion);
-            version.setCreateBy(SecurityUtils.getUsername());
-            version.setCreateTime(new Date());
-            xmlVersionMapper.insertXmlVersion(version);
-
-            // 19. 更新状态
-            VehicleInfo updateObj = new VehicleInfo();
-            updateObj.setVehicleId(vehicle.getVehicleId());
-            updateObj.setIssueDate(vehicle.getIssueDate());
-            updateObj.setUploadStatus(2);
-
-            // 20. 记录生命周期
-            vehicleLifecycle.setEntryId(vehicle.getVehicleId());
-            vehicleLifecycle.setTime(new Date());
-            vehicleLifecycle.setVin(vehicle.getVin());
-            vehicleLifecycle.setOperate(VehicleLifecycleOperation.VEHICLE_BUILD_XML.getOperation());
-            vehicleLifecycle.setResult(0);
-            vehicleInfoService.updateVehicleInfo(updateObj, false);
-            vehicleLifecycleMapper.insert(vehicleLifecycle);
-
-            msg.append("成功");
-            Map<String, String> params = new HashMap<>();
-            params.put("id", String.valueOf(xmlFile.getId()));
-            params.put("vin", xmlFile.getVin());
-            params.put("modelCode", xmlFile.getModelCode());
-            params.put("factoryCode", xmlFile.getFactoryCode());
-            params.put("country", xmlFile.getCountry());
-            params.put("issueDate", com.ruoyi.common.core.utils.DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", xmlFile.getIssueDate()));
-            sysNotice.setModel(SysNoticeModel.XML_FILE.getModel());
-            sysNotice.setQueryParams(JSON.toJSONString(params));
-            sysNotice.setNoticeContent(msg.toString());
-            sysNotice.setSorts(Arrays.asList(14, 15));
-            remoteNoticeService.innerAdd(sysNotice);
-
-            return xmlContent;
+            return String.join(System.lineSeparator() + System.lineSeparator(), xmlContents);
         } catch (Exception e) {
             log.error("生成XML文件失败", e);
             vehicleLifecycle.setEntryId(vehicleId);
@@ -1845,6 +1580,783 @@ public class XmlFileServiceImpl implements IXmlFileService {
             remoteNoticeService.innerAdd(sysNotice);
             throw new RuntimeException("生成XML失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 通过 energy_type 字典，把模板的 xmlTemplate.getEnergyType()（dict_code）解析为 dict_value。
+     * dict_value 含义同 {@link #resolveEnergyType}：
+     *   fuel_oil       = 燃油
+     *   pure_electric  = 纯电
+     *   hybrid         = NOVC-HEV 混动
+     *   HEV            = OVC-HEV
+     * 模板未设置 energyType，或字典查不到对应 dict_code 时，返回 null。
+     */
+    private String resolveTemplateEnergyValue(XmlTemplate xmlTemplate) {
+        if (xmlTemplate.getEnergyType() == null) {
+            return null;
+        }
+        List<SysDictData> energyDictList = remoteDictService.getDictDataByType("energy_type").getData();
+        for (SysDictData d : energyDictList) {
+            if (Objects.equals(d.getDictCode(), xmlTemplate.getEnergyType())) {
+                return d.getDictValue();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 生成XML文档 —— NOVC/OVC 混动分支。
+     * 即改造前 generateXmlFromDatabase 中"匹配模板"之后、"生成XML字符串"之前的原有逻辑（步骤3~13c），
+     * 原样保留，未做任何调整。
+     */
+    private Document buildXmlDocumentForNovcOvc(VehicleInfo vehicle, XmlTemplate xmlTemplate,
+                                                SysNotice sysNotice, StringBuilder msg,
+                                                Map<String, String> vehicleParams) throws Exception {
+        Map<String, Object> jsonMap = vehicle.getJsonMap();
+        jsonMap.put("IviReferenceId", UUID.randomUUID().toString());
+        // IviVersionDateTime 是 DateTime 类型，需要带时区的完整格式
+        jsonMap.put("IviVersionDateTime", DateUtils.format(new Date(), "yyyy-MM-dd'T'HH:mm:ss'Z'"));
+//            jsonMap.put("CommercialName", vehicle.getSaleCompanyName());
+
+        // DateManufactureVehicle 和 SignatureDate 是 Date 类型，只需年月日
+        if (vehicle.getManufactureDate() != null) {
+            jsonMap.put("DateManufactureVehicle", DateUtils.format(vehicle.getManufactureDate(), "yyyy-MM-dd"));
+        }
+        if (vehicle.getIssueDate() != null) {
+            jsonMap.put("SignatureDate", DateUtils.format(vehicle.getIssueDate(), "yyyy-MM-dd"));
+        }
+        if (StringUtils.isBlank((String) (jsonMap.get("SignatureDate")))) {
+            jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
+        }
+
+        // 3. 查询字典数据，构建 uuid -> SysDictData 映射
+        List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
+        Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 为 uuid
+        for (SysDictData d : dictDataList) {
+            if (d.getUuid() != null) {
+                dictCodeMap.putIfAbsent(d.getUuid(), d);   // ★ uuid 为 key，一个uuid多行取第一个
+            }
+        }
+
+        // 4. 查询模板属性列表
+        List<XmlTemplateAttribute> attrList = xmlTemplateAttributeMapper.selectByTemplateId(xmlTemplate.getTemplateId());
+        if (attrList == null || attrList.isEmpty()) {
+            msg.append("失败");
+            sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
+            sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
+            sysNotice.setNoticeContent(msg.toString());
+            sysNotice.setSorts(Arrays.asList(14, 15));
+            remoteNoticeService.innerAdd(sysNotice);
+            throw new ServiceException("模板无属性定义，无法生成XML");
+        }
+
+        String methodAttachmentStatutoryPlate = null;
+        Object methodAttachmentStatutoryPlateObj = jsonMap.get("MethodAttachmentStatutoryPlate");
+        if (methodAttachmentStatutoryPlateObj != null
+                && StringUtils.isNotBlank(methodAttachmentStatutoryPlateObj.toString())) {
+            methodAttachmentStatutoryPlate = methodAttachmentStatutoryPlateObj.toString();
+        }
+        if (StringUtils.isBlank(methodAttachmentStatutoryPlate)) {
+            for (XmlTemplateAttribute attr : attrList) {
+                String[] parts = attr.getAttrPath().split("\\.");
+                SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
+                if (dict == null) continue;
+                if ("MethodAttachmentStatutoryPlate".equals(sanitizeXmlTagName(dict.getDictLabel()))
+                        && StringUtils.isNotBlank(attr.getDefaultValue())) {
+                    methodAttachmentStatutoryPlate = attr.getDefaultValue();
+                    break;
+                }
+            }
+        }
+        if (StringUtils.isNotBlank(methodAttachmentStatutoryPlate)) {
+            applyLocationMarkings(jsonMap, methodAttachmentStatutoryPlate);
+        }
+
+        // 当 EnergySource 为单段，且燃油/电机四个功率字段均有值（单段混动场景）时，
+        // 在 EnergySource 后拼接 "|95" 使其变为两段，复用下面的多段逻辑生成两个 PowerGroup
+        // 返回值标记本次是否真正发生了拼接，用于后面精简合成的 95 段 EnergySourceGroup
+        boolean hybridSingleSegmentEnergySourceExpanded = appendEnergySourceSegmentIfHybrid(jsonMap);
+
+        // 当 EnergySource 为多段（含 |）时，在 Maximum30MinutesPower、MaximumNetPowerElectric
+        // 的值开头各拼接一个 "0|"，使段数与 EnergySource 对齐（第0段对应燃油组，值为0/空均可跳过）
+        prependZeroForElectricPowerFields(jsonMap);
+
+        // 5. 单根节点校验
+        List<XmlTemplateAttribute> topLevelAttrs = attrList.stream()
+                .filter(a -> a.getAttrPath() != null && a.getAttrPath().split("\\.").length == 1)
+                .collect(Collectors.toList());
+        if (topLevelAttrs.isEmpty()) {
+            msg.append("失败");
+            sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
+            sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
+            sysNotice.setNoticeContent(msg.toString());
+            sysNotice.setSorts(Arrays.asList(14, 15));
+            remoteNoticeService.innerAdd(sysNotice);
+            throw new ServiceException("模板无顶层节点，XML必须有唯一根节点");
+        }
+        if (topLevelAttrs.size() > 1) {
+            msg.append("失败");
+            sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
+            sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
+            sysNotice.setNoticeContent(msg.toString());
+            sysNotice.setSorts(Arrays.asList(14, 15));
+            remoteNoticeService.innerAdd(sysNotice);
+            throw new ServiceException("模板存在多个顶层节点，XML 不允许多根节点");
+        }
+
+        // 6. 按模板定义顺序排序
+        Map<String, Integer> pathSortOrderMap = new HashMap<>();
+        for (XmlTemplateAttribute a : attrList) {
+            if (a.getAttrPath() != null) {
+                pathSortOrderMap.put(a.getAttrPath(), a.getSortOrder() != null ? a.getSortOrder() : 0);
+            }
+        }
+        Comparator<XmlTemplateAttribute> templateOrderComparator = (a, b) -> {
+            String[] partsA = a.getAttrPath().split("\\.");
+            String[] partsB = b.getAttrPath().split("\\.");
+            int minLen = Math.min(partsA.length, partsB.length);
+            StringBuilder prefixA = new StringBuilder();
+            StringBuilder prefixB = new StringBuilder();
+            for (int idx = 0; idx < minLen; idx++) {
+                if (idx > 0) { prefixA.append("."); prefixB.append("."); }
+                prefixA.append(partsA[idx]);
+                prefixB.append(partsB[idx]);
+                int soA = pathSortOrderMap.getOrDefault(prefixA.toString(), 0);
+                int soB = pathSortOrderMap.getOrDefault(prefixB.toString(), 0);
+                if (soA != soB) return Integer.compare(soA, soB);
+            }
+            return Integer.compare(partsA.length, partsB.length);
+        };
+        attrList.sort(templateOrderComparator);
+
+        // 7. 创建XML文档
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        DocumentBuilder builder = factory.newDocumentBuilder();
+        Document doc = builder.newDocument();
+
+        // 8. 创建根节点，将 defaultValue 作为属性写入标签（如 <Root xmlns="123">）
+        XmlTemplateAttribute rootAttr = topLevelAttrs.get(0);
+        String rootAttrPath = rootAttr.getAttrPath();
+        SysDictData rootDict = dictCodeMap.get(rootAttrPath);
+        String rootTagName = (rootDict != null && StringUtils.isNotBlank(rootDict.getDictLabel()))
+                ? sanitizeXmlTagName(rootDict.getDictLabel()) : "Root";
+        // 创建根节点：若 defaultValue 含 xmlns 则用 createElementNS，保证命名空间正确
+        String rootNsUri = extractNamespaceUri(rootAttr.getDefaultValue());
+        Element root = createElementWithDefault(doc, rootTagName, rootAttr.getDefaultValue());
+        doc.appendChild(root);
+
+        // 9. 路径 -> Element 映射（记录已创建的节点）
+        Map<String, Element> pathNodeMap = new LinkedHashMap<>();
+        pathNodeMap.put(rootAttrPath, root);
+
+        // 10. 识别所有结构节点（dict_value = "NULL"，表示容器节点，不含实际值）
+        Set<String> structNodePaths = attrList.stream()
+                .filter(a -> {
+                    String[] parts = a.getAttrPath().split("\\.");
+                    SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
+                    return d != null && isStructNode(d);
+                })
+                .map(XmlTemplateAttribute::getAttrPath)
+                .collect(Collectors.toSet());
+
+        // 11. 识别所有叶子节点（dict_value ！= "NULL"，对应 json 中的实际值）
+        List<XmlTemplateAttribute> leafNodes = attrList.stream()
+                .filter(a -> {
+                    String[] parts = a.getAttrPath().split("\\.");
+                    SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
+                    return d != null && !isStructNode(d);
+                })
+                .collect(Collectors.toList());
+
+        // 12. 检测循环模式
+        LoopDetectionResult loopResult = detectLoopPattern(leafNodes, dictCodeMap, jsonMap);
+
+        if (loopResult.getLoopMode() == LoopMode.NONE) {
+            buildNormalTree(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, rootAttrPath);
+        } else if (loopResult.getLoopMode() == LoopMode.PARENT_LEVEL) {
+            buildParentLevelLoop(doc, root, attrList, dictCodeMap, jsonMap,
+                    pathNodeMap, structNodePaths, loopResult, rootAttrPath);
+        } else {
+            buildSiblingLevelLoop(doc, root, attrList, dictCodeMap, jsonMap,
+                    pathNodeMap, structNodePaths, loopResult, rootAttrPath);
+            buildUnprocessedNodes(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, rootAttrPath);
+        }
+
+        // 13. 移除空结构节点
+        removeEmptyStructNodes(root, attrList, dictCodeMap);
+
+        // 13a. 单段混动场景（appendEnergySourceSegmentIfHybrid 实际拼接出了合成的 95 段）
+        //   或多段场景下除首段外全部为 95 且不止 1 个（如 "10|95|95|95"，多个电机共用
+        //   同一能量类型代码 95，各自只有 1 个 PowerGroup）时，对应的 95 段 EnergySourceGroup
+        //   只保留 EnergySource、PowerGroup 两个标签，去掉从原始数据中共享复制过来的
+        //   其它无意义标签（WorkingPrinciple、TestFamilyIdentifiersTable 等）
+        boolean shouldRestrictElectricEnergySourceGroup = hybridSingleSegmentEnergySourceExpanded
+                || hasRepeatedElectricSegmentsAfterFirst(jsonMap);
+        restrictHybridElectricEnergySourceGroup(root, shouldRestrictElectricEnergySourceGroup);
+
+        // 13a2. TestWltpElectricRangeGroup（纯电续航）、TestWltpEnergyConsumptionGroup（能耗）
+        //   描述的是车辆的纯电相关数据，按校验规则应挂在每一个 EnergySource=95（电机）的
+        //   EnergySourceGroup 下；但源 JSON 中这两组字段未按 EnergySource 分段，树构建时
+        //   默认落在第一个 EnergySourceGroup（往往是燃油段）下，需复制到所有 95 段下
+        relocateElectricOnlyTestGroupsToElectricEnergySource(root);
+
+        // 13b. 当 EnergySource 为多段时，在 CocDataGroup 下追加汇总标签：
+        //   ConsolidatedMaximum30MinutesPower  = Maximum30MinutesPower  各段之和
+        //   ConsolidatedMaximumNetPowerElectric = MaximumNetPowerElectric 各段之和
+        appendConsolidatedPowerFields(doc, root, jsonMap);
+
+        // 13c. EnergySource 值为 90/91/95（氢能源/其他/电机等非内燃机类型）时，
+        //   删除该 EnergySource 父节点的父节点的同级容器（EnergyConvertorGroup）下的
+        //   EngineCapacity、NumberOfCylinders、ArrangementCylinders 三个标签
+        removeEngineCapacityForElectricEnergySource(doc);
+
+        return doc;
+    }
+
+    /**
+     * 生成XML文档 —— 纯电分支。
+     * 当模板 energyType 解析为"纯电"或"燃油"（非 NOVC/OVC 混动）时，与
+     * {@link #buildXmlDocumentForFuelOil} 一起被各调用一次，分别产出一份独立XML。
+     * 当前内容与 {@link #buildXmlDocumentForNovcOvc} 完全一致，单独拆成方法是为了
+     * 后续可以只针对"纯电"场景单独调整逻辑，不影响另外两条分支。
+     */
+    private Document buildXmlDocumentForPureElectric(VehicleInfo vehicle, XmlTemplate xmlTemplate,
+                                                     SysNotice sysNotice, StringBuilder msg,
+                                                     Map<String, String> vehicleParams) throws Exception {
+        Map<String, Object> jsonMap = vehicle.getJsonMap();
+        jsonMap.put("IviReferenceId", UUID.randomUUID().toString());
+        // IviVersionDateTime 是 DateTime 类型，需要带时区的完整格式
+        jsonMap.put("IviVersionDateTime", DateUtils.format(new Date(), "yyyy-MM-dd'T'HH:mm:ss'Z'"));
+//            jsonMap.put("CommercialName", vehicle.getSaleCompanyName());
+
+        // DateManufactureVehicle 和 SignatureDate 是 Date 类型，只需年月日
+        if (vehicle.getManufactureDate() != null) {
+            jsonMap.put("DateManufactureVehicle", DateUtils.format(vehicle.getManufactureDate(), "yyyy-MM-dd"));
+        }
+        if (vehicle.getIssueDate() != null) {
+            jsonMap.put("SignatureDate", DateUtils.format(vehicle.getIssueDate(), "yyyy-MM-dd"));
+        }
+        if (StringUtils.isBlank((String) (jsonMap.get("SignatureDate")))) {
+            jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
+        }
+
+        // 3. 查询字典数据，构建 uuid -> SysDictData 映射
+        List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
+        Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 为 uuid
+        for (SysDictData d : dictDataList) {
+            if (d.getUuid() != null) {
+                dictCodeMap.putIfAbsent(d.getUuid(), d);   // ★ uuid 为 key，一个uuid多行取第一个
+            }
+        }
+
+        // 4. 查询模板属性列表
+        List<XmlTemplateAttribute> attrList = xmlTemplateAttributeMapper.selectByTemplateId(xmlTemplate.getTemplateId());
+        if (attrList == null || attrList.isEmpty()) {
+            msg.append("失败");
+            sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
+            sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
+            sysNotice.setNoticeContent(msg.toString());
+            sysNotice.setSorts(Arrays.asList(14, 15));
+            remoteNoticeService.innerAdd(sysNotice);
+            throw new ServiceException("模板无属性定义，无法生成XML");
+        }
+
+        String methodAttachmentStatutoryPlate = null;
+        Object methodAttachmentStatutoryPlateObj = jsonMap.get("MethodAttachmentStatutoryPlate");
+        if (methodAttachmentStatutoryPlateObj != null
+                && StringUtils.isNotBlank(methodAttachmentStatutoryPlateObj.toString())) {
+            methodAttachmentStatutoryPlate = methodAttachmentStatutoryPlateObj.toString();
+        }
+        if (StringUtils.isBlank(methodAttachmentStatutoryPlate)) {
+            for (XmlTemplateAttribute attr : attrList) {
+                String[] parts = attr.getAttrPath().split("\\.");
+                SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
+                if (dict == null) continue;
+                if ("MethodAttachmentStatutoryPlate".equals(sanitizeXmlTagName(dict.getDictLabel()))
+                        && StringUtils.isNotBlank(attr.getDefaultValue())) {
+                    methodAttachmentStatutoryPlate = attr.getDefaultValue();
+                    break;
+                }
+            }
+        }
+        if (StringUtils.isNotBlank(methodAttachmentStatutoryPlate)) {
+            applyLocationMarkings(jsonMap, methodAttachmentStatutoryPlate);
+        }
+
+        // 当 EnergySource 为单段，且燃油/电机四个功率字段均有值（单段混动场景）时，
+        // 在 EnergySource 后拼接 "|95" 使其变为两段，复用下面的多段逻辑生成两个 PowerGroup
+        // 返回值标记本次是否真正发生了拼接，用于后面精简合成的 95 段 EnergySourceGroup
+        boolean hybridSingleSegmentEnergySourceExpanded = appendEnergySourceSegmentIfHybrid(jsonMap);
+
+        // 当 EnergySource 为多段（含 |）时，在 Maximum30MinutesPower、MaximumNetPowerElectric
+        // 的值开头各拼接一个 "0|"，使段数与 EnergySource 对齐（第0段对应燃油组，值为0/空均可跳过）
+        prependZeroForElectricPowerFields(jsonMap);
+
+        // 5. 单根节点校验
+        List<XmlTemplateAttribute> topLevelAttrs = attrList.stream()
+                .filter(a -> a.getAttrPath() != null && a.getAttrPath().split("\\.").length == 1)
+                .collect(Collectors.toList());
+        if (topLevelAttrs.isEmpty()) {
+            msg.append("失败");
+            sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
+            sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
+            sysNotice.setNoticeContent(msg.toString());
+            sysNotice.setSorts(Arrays.asList(14, 15));
+            remoteNoticeService.innerAdd(sysNotice);
+            throw new ServiceException("模板无顶层节点，XML必须有唯一根节点");
+        }
+        if (topLevelAttrs.size() > 1) {
+            msg.append("失败");
+            sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
+            sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
+            sysNotice.setNoticeContent(msg.toString());
+            sysNotice.setSorts(Arrays.asList(14, 15));
+            remoteNoticeService.innerAdd(sysNotice);
+            throw new ServiceException("模板存在多个顶层节点，XML 不允许多根节点");
+        }
+
+        // 6. 按模板定义顺序排序
+        Map<String, Integer> pathSortOrderMap = new HashMap<>();
+        for (XmlTemplateAttribute a : attrList) {
+            if (a.getAttrPath() != null) {
+                pathSortOrderMap.put(a.getAttrPath(), a.getSortOrder() != null ? a.getSortOrder() : 0);
+            }
+        }
+        Comparator<XmlTemplateAttribute> templateOrderComparator = (a, b) -> {
+            String[] partsA = a.getAttrPath().split("\\.");
+            String[] partsB = b.getAttrPath().split("\\.");
+            int minLen = Math.min(partsA.length, partsB.length);
+            StringBuilder prefixA = new StringBuilder();
+            StringBuilder prefixB = new StringBuilder();
+            for (int idx = 0; idx < minLen; idx++) {
+                if (idx > 0) { prefixA.append("."); prefixB.append("."); }
+                prefixA.append(partsA[idx]);
+                prefixB.append(partsB[idx]);
+                int soA = pathSortOrderMap.getOrDefault(prefixA.toString(), 0);
+                int soB = pathSortOrderMap.getOrDefault(prefixB.toString(), 0);
+                if (soA != soB) return Integer.compare(soA, soB);
+            }
+            return Integer.compare(partsA.length, partsB.length);
+        };
+        attrList.sort(templateOrderComparator);
+
+        // 7. 创建XML文档
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        DocumentBuilder builder = factory.newDocumentBuilder();
+        Document doc = builder.newDocument();
+
+        // 8. 创建根节点，将 defaultValue 作为属性写入标签（如 <Root xmlns="123">）
+        XmlTemplateAttribute rootAttr = topLevelAttrs.get(0);
+        String rootAttrPath = rootAttr.getAttrPath();
+        SysDictData rootDict = dictCodeMap.get(rootAttrPath);
+        String rootTagName = (rootDict != null && StringUtils.isNotBlank(rootDict.getDictLabel()))
+                ? sanitizeXmlTagName(rootDict.getDictLabel()) : "Root";
+        // 创建根节点：若 defaultValue 含 xmlns 则用 createElementNS，保证命名空间正确
+        String rootNsUri = extractNamespaceUri(rootAttr.getDefaultValue());
+        Element root = createElementWithDefault(doc, rootTagName, rootAttr.getDefaultValue());
+        doc.appendChild(root);
+
+        // 9. 路径 -> Element 映射（记录已创建的节点）
+        Map<String, Element> pathNodeMap = new LinkedHashMap<>();
+        pathNodeMap.put(rootAttrPath, root);
+
+        // 10. 识别所有结构节点（dict_value = "NULL"，表示容器节点，不含实际值）
+        Set<String> structNodePaths = attrList.stream()
+                .filter(a -> {
+                    String[] parts = a.getAttrPath().split("\\.");
+                    SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
+                    return d != null && isStructNode(d);
+                })
+                .map(XmlTemplateAttribute::getAttrPath)
+                .collect(Collectors.toSet());
+
+        // 11. 识别所有叶子节点（dict_value ！= "NULL"，对应 json 中的实际值）
+        List<XmlTemplateAttribute> leafNodes = attrList.stream()
+                .filter(a -> {
+                    String[] parts = a.getAttrPath().split("\\.");
+                    SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
+                    return d != null && !isStructNode(d);
+                })
+                .collect(Collectors.toList());
+
+        // 12. 检测循环模式
+        LoopDetectionResult loopResult = detectLoopPattern(leafNodes, dictCodeMap, jsonMap);
+
+        if (loopResult.getLoopMode() == LoopMode.NONE) {
+            buildNormalTree(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, rootAttrPath);
+        } else if (loopResult.getLoopMode() == LoopMode.PARENT_LEVEL) {
+            buildParentLevelLoop(doc, root, attrList, dictCodeMap, jsonMap,
+                    pathNodeMap, structNodePaths, loopResult, rootAttrPath);
+        } else {
+            buildSiblingLevelLoop(doc, root, attrList, dictCodeMap, jsonMap,
+                    pathNodeMap, structNodePaths, loopResult, rootAttrPath);
+            buildUnprocessedNodes(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, rootAttrPath);
+        }
+
+        // 13. 移除空结构节点
+        removeEmptyStructNodes(root, attrList, dictCodeMap);
+
+        // 13a. 单段混动场景（appendEnergySourceSegmentIfHybrid 实际拼接出了合成的 95 段）
+        //   或多段场景下除首段外全部为 95 且不止 1 个（如 "10|95|95|95"，多个电机共用
+        //   同一能量类型代码 95，各自只有 1 个 PowerGroup）时，对应的 95 段 EnergySourceGroup
+        //   只保留 EnergySource、PowerGroup 两个标签，去掉从原始数据中共享复制过来的
+        //   其它无意义标签（WorkingPrinciple、TestFamilyIdentifiersTable 等）
+        boolean shouldRestrictElectricEnergySourceGroup = hybridSingleSegmentEnergySourceExpanded
+                || hasRepeatedElectricSegmentsAfterFirst(jsonMap);
+        restrictHybridElectricEnergySourceGroup(root, shouldRestrictElectricEnergySourceGroup);
+
+        // 13a2. TestWltpElectricRangeGroup（纯电续航）、TestWltpEnergyConsumptionGroup（能耗）
+        //   描述的是车辆的纯电相关数据，按校验规则应挂在每一个 EnergySource=95（电机）的
+        //   EnergySourceGroup 下；但源 JSON 中这两组字段未按 EnergySource 分段，树构建时
+        //   默认落在第一个 EnergySourceGroup（往往是燃油段）下，需复制到所有 95 段下
+        relocateElectricOnlyTestGroupsToElectricEnergySource(root);
+
+        // 13b. 当 EnergySource 为多段时，在 CocDataGroup 下追加汇总标签：
+        //   ConsolidatedMaximum30MinutesPower  = Maximum30MinutesPower  各段之和
+        //   ConsolidatedMaximumNetPowerElectric = MaximumNetPowerElectric 各段之和
+        appendConsolidatedPowerFields(doc, root, jsonMap);
+
+        // 13c. EnergySource 值为 90/91/95（氢能源/其他/电机等非内燃机类型）时，
+        //   删除该 EnergySource 父节点的父节点的同级容器（EnergyConvertorGroup）下的
+        //   EngineCapacity、NumberOfCylinders、ArrangementCylinders 三个标签
+        removeEngineCapacityForElectricEnergySource(doc);
+
+        return doc;
+    }
+
+    /**
+     * 生成XML文档 —— 燃油分支。
+     * 当模板 energyType 解析为"纯电"或"燃油"（非 NOVC/OVC 混动）时，与
+     * {@link #buildXmlDocumentForPureElectric} 一起被各调用一次，分别产出一份独立XML。
+     * 当前内容与 {@link #buildXmlDocumentForNovcOvc} 完全一致，单独拆成方法是为了
+     * 后续可以只针对"燃油"场景单独调整逻辑，不影响另外两条分支。
+     */
+    private Document buildXmlDocumentForFuelOil(VehicleInfo vehicle, XmlTemplate xmlTemplate,
+                                                SysNotice sysNotice, StringBuilder msg,
+                                                Map<String, String> vehicleParams) throws Exception {
+        Map<String, Object> jsonMap = vehicle.getJsonMap();
+        jsonMap.put("IviReferenceId", UUID.randomUUID().toString());
+        // IviVersionDateTime 是 DateTime 类型，需要带时区的完整格式
+        jsonMap.put("IviVersionDateTime", DateUtils.format(new Date(), "yyyy-MM-dd'T'HH:mm:ss'Z'"));
+//            jsonMap.put("CommercialName", vehicle.getSaleCompanyName());
+
+        // DateManufactureVehicle 和 SignatureDate 是 Date 类型，只需年月日
+        if (vehicle.getManufactureDate() != null) {
+            jsonMap.put("DateManufactureVehicle", DateUtils.format(vehicle.getManufactureDate(), "yyyy-MM-dd"));
+        }
+        if (vehicle.getIssueDate() != null) {
+            jsonMap.put("SignatureDate", DateUtils.format(vehicle.getIssueDate(), "yyyy-MM-dd"));
+        }
+        if (StringUtils.isBlank((String) (jsonMap.get("SignatureDate")))) {
+            jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
+        }
+
+        // 3. 查询字典数据，构建 uuid -> SysDictData 映射
+        List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
+        Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 为 uuid
+        for (SysDictData d : dictDataList) {
+            if (d.getUuid() != null) {
+                dictCodeMap.putIfAbsent(d.getUuid(), d);   // ★ uuid 为 key，一个uuid多行取第一个
+            }
+        }
+
+        // 4. 查询模板属性列表
+        List<XmlTemplateAttribute> attrList = xmlTemplateAttributeMapper.selectByTemplateId(xmlTemplate.getTemplateId());
+        if (attrList == null || attrList.isEmpty()) {
+            msg.append("失败");
+            sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
+            sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
+            sysNotice.setNoticeContent(msg.toString());
+            sysNotice.setSorts(Arrays.asList(14, 15));
+            remoteNoticeService.innerAdd(sysNotice);
+            throw new ServiceException("模板无属性定义，无法生成XML");
+        }
+
+        String methodAttachmentStatutoryPlate = null;
+        Object methodAttachmentStatutoryPlateObj = jsonMap.get("MethodAttachmentStatutoryPlate");
+        if (methodAttachmentStatutoryPlateObj != null
+                && StringUtils.isNotBlank(methodAttachmentStatutoryPlateObj.toString())) {
+            methodAttachmentStatutoryPlate = methodAttachmentStatutoryPlateObj.toString();
+        }
+        if (StringUtils.isBlank(methodAttachmentStatutoryPlate)) {
+            for (XmlTemplateAttribute attr : attrList) {
+                String[] parts = attr.getAttrPath().split("\\.");
+                SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
+                if (dict == null) continue;
+                if ("MethodAttachmentStatutoryPlate".equals(sanitizeXmlTagName(dict.getDictLabel()))
+                        && StringUtils.isNotBlank(attr.getDefaultValue())) {
+                    methodAttachmentStatutoryPlate = attr.getDefaultValue();
+                    break;
+                }
+            }
+        }
+        if (StringUtils.isNotBlank(methodAttachmentStatutoryPlate)) {
+            applyLocationMarkings(jsonMap, methodAttachmentStatutoryPlate);
+        }
+
+        // 当 EnergySource 为单段，且燃油/电机四个功率字段均有值（单段混动场景）时，
+        // 在 EnergySource 后拼接 "|95" 使其变为两段，复用下面的多段逻辑生成两个 PowerGroup
+        // 返回值标记本次是否真正发生了拼接，用于后面精简合成的 95 段 EnergySourceGroup
+        boolean hybridSingleSegmentEnergySourceExpanded = appendEnergySourceSegmentIfHybrid(jsonMap);
+
+        // 当 EnergySource 为多段（含 |）时，在 Maximum30MinutesPower、MaximumNetPowerElectric
+        // 的值开头各拼接一个 "0|"，使段数与 EnergySource 对齐（第0段对应燃油组，值为0/空均可跳过）
+        prependZeroForElectricPowerFields(jsonMap);
+
+        // 5. 单根节点校验
+        List<XmlTemplateAttribute> topLevelAttrs = attrList.stream()
+                .filter(a -> a.getAttrPath() != null && a.getAttrPath().split("\\.").length == 1)
+                .collect(Collectors.toList());
+        if (topLevelAttrs.isEmpty()) {
+            msg.append("失败");
+            sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
+            sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
+            sysNotice.setNoticeContent(msg.toString());
+            sysNotice.setSorts(Arrays.asList(14, 15));
+            remoteNoticeService.innerAdd(sysNotice);
+            throw new ServiceException("模板无顶层节点，XML必须有唯一根节点");
+        }
+        if (topLevelAttrs.size() > 1) {
+            msg.append("失败");
+            sysNotice.setQueryParams(JSON.toJSONString(vehicleParams));
+            sysNotice.setModel(SysNoticeModel.VEHICLE_INFO.getModel());
+            sysNotice.setNoticeContent(msg.toString());
+            sysNotice.setSorts(Arrays.asList(14, 15));
+            remoteNoticeService.innerAdd(sysNotice);
+            throw new ServiceException("模板存在多个顶层节点，XML 不允许多根节点");
+        }
+
+        // 6. 按模板定义顺序排序
+        Map<String, Integer> pathSortOrderMap = new HashMap<>();
+        for (XmlTemplateAttribute a : attrList) {
+            if (a.getAttrPath() != null) {
+                pathSortOrderMap.put(a.getAttrPath(), a.getSortOrder() != null ? a.getSortOrder() : 0);
+            }
+        }
+        Comparator<XmlTemplateAttribute> templateOrderComparator = (a, b) -> {
+            String[] partsA = a.getAttrPath().split("\\.");
+            String[] partsB = b.getAttrPath().split("\\.");
+            int minLen = Math.min(partsA.length, partsB.length);
+            StringBuilder prefixA = new StringBuilder();
+            StringBuilder prefixB = new StringBuilder();
+            for (int idx = 0; idx < minLen; idx++) {
+                if (idx > 0) { prefixA.append("."); prefixB.append("."); }
+                prefixA.append(partsA[idx]);
+                prefixB.append(partsB[idx]);
+                int soA = pathSortOrderMap.getOrDefault(prefixA.toString(), 0);
+                int soB = pathSortOrderMap.getOrDefault(prefixB.toString(), 0);
+                if (soA != soB) return Integer.compare(soA, soB);
+            }
+            return Integer.compare(partsA.length, partsB.length);
+        };
+        attrList.sort(templateOrderComparator);
+
+        // 7. 创建XML文档
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        DocumentBuilder builder = factory.newDocumentBuilder();
+        Document doc = builder.newDocument();
+
+        // 8. 创建根节点，将 defaultValue 作为属性写入标签（如 <Root xmlns="123">）
+        XmlTemplateAttribute rootAttr = topLevelAttrs.get(0);
+        String rootAttrPath = rootAttr.getAttrPath();
+        SysDictData rootDict = dictCodeMap.get(rootAttrPath);
+        String rootTagName = (rootDict != null && StringUtils.isNotBlank(rootDict.getDictLabel()))
+                ? sanitizeXmlTagName(rootDict.getDictLabel()) : "Root";
+        // 创建根节点：若 defaultValue 含 xmlns 则用 createElementNS，保证命名空间正确
+        String rootNsUri = extractNamespaceUri(rootAttr.getDefaultValue());
+        Element root = createElementWithDefault(doc, rootTagName, rootAttr.getDefaultValue());
+        doc.appendChild(root);
+
+        // 9. 路径 -> Element 映射（记录已创建的节点）
+        Map<String, Element> pathNodeMap = new LinkedHashMap<>();
+        pathNodeMap.put(rootAttrPath, root);
+
+        // 10. 识别所有结构节点（dict_value = "NULL"，表示容器节点，不含实际值）
+        Set<String> structNodePaths = attrList.stream()
+                .filter(a -> {
+                    String[] parts = a.getAttrPath().split("\\.");
+                    SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
+                    return d != null && isStructNode(d);
+                })
+                .map(XmlTemplateAttribute::getAttrPath)
+                .collect(Collectors.toSet());
+
+        // 11. 识别所有叶子节点（dict_value ！= "NULL"，对应 json 中的实际值）
+        List<XmlTemplateAttribute> leafNodes = attrList.stream()
+                .filter(a -> {
+                    String[] parts = a.getAttrPath().split("\\.");
+                    SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
+                    return d != null && !isStructNode(d);
+                })
+                .collect(Collectors.toList());
+
+        // 12. 检测循环模式
+        LoopDetectionResult loopResult = detectLoopPattern(leafNodes, dictCodeMap, jsonMap);
+
+        if (loopResult.getLoopMode() == LoopMode.NONE) {
+            buildNormalTree(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, rootAttrPath);
+        } else if (loopResult.getLoopMode() == LoopMode.PARENT_LEVEL) {
+            buildParentLevelLoop(doc, root, attrList, dictCodeMap, jsonMap,
+                    pathNodeMap, structNodePaths, loopResult, rootAttrPath);
+        } else {
+            buildSiblingLevelLoop(doc, root, attrList, dictCodeMap, jsonMap,
+                    pathNodeMap, structNodePaths, loopResult, rootAttrPath);
+            buildUnprocessedNodes(doc, root, attrList, dictCodeMap, jsonMap, pathNodeMap, rootAttrPath);
+        }
+
+        // 13. 移除空结构节点
+        removeEmptyStructNodes(root, attrList, dictCodeMap);
+
+        // 13a. 单段混动场景（appendEnergySourceSegmentIfHybrid 实际拼接出了合成的 95 段）
+        //   或多段场景下除首段外全部为 95 且不止 1 个（如 "10|95|95|95"，多个电机共用
+        //   同一能量类型代码 95，各自只有 1 个 PowerGroup）时，对应的 95 段 EnergySourceGroup
+        //   只保留 EnergySource、PowerGroup 两个标签，去掉从原始数据中共享复制过来的
+        //   其它无意义标签（WorkingPrinciple、TestFamilyIdentifiersTable 等）
+        boolean shouldRestrictElectricEnergySourceGroup = hybridSingleSegmentEnergySourceExpanded
+                || hasRepeatedElectricSegmentsAfterFirst(jsonMap);
+        restrictHybridElectricEnergySourceGroup(root, shouldRestrictElectricEnergySourceGroup);
+
+        // 13a2. TestWltpElectricRangeGroup（纯电续航）、TestWltpEnergyConsumptionGroup（能耗）
+        //   描述的是车辆的纯电相关数据，按校验规则应挂在每一个 EnergySource=95（电机）的
+        //   EnergySourceGroup 下；但源 JSON 中这两组字段未按 EnergySource 分段，树构建时
+        //   默认落在第一个 EnergySourceGroup（往往是燃油段）下，需复制到所有 95 段下
+        relocateElectricOnlyTestGroupsToElectricEnergySource(root);
+
+        // 13b. 当 EnergySource 为多段时，在 CocDataGroup 下追加汇总标签：
+        //   ConsolidatedMaximum30MinutesPower  = Maximum30MinutesPower  各段之和
+        //   ConsolidatedMaximumNetPowerElectric = MaximumNetPowerElectric 各段之和
+        appendConsolidatedPowerFields(doc, root, jsonMap);
+
+        // 13c. EnergySource 值为 90/91/95（氢能源/其他/电机等非内燃机类型）时，
+        //   删除该 EnergySource 父节点的父节点的同级容器（EnergyConvertorGroup）下的
+        //   EngineCapacity、NumberOfCylinders、ArrangementCylinders 三个标签
+        removeEngineCapacityForElectricEnergySource(doc);
+
+        return doc;
+    }
+
+    /**
+     * 复用的XML保存逻辑（原步骤14~20）：将构建好的 Document 序列化为字符串、管理版本号、
+     * 上传文件、保存 XmlFile/XmlVersion 记录、触发自动校验、更新车辆状态、记录生命周期、
+     * 发送"成功"通知。NOVC/OVC、纯电、燃油 三条生成分支共用此方法；纯电/燃油拆分场景下
+     * 会被调用两次，各自独立生成一条 XmlFile 记录。内部使用方法内自建的 sysNotice / msg /
+     * vehicleLifecycle，互不干扰，可安全多次调用。
+     * <p>
+     * ★ 注意：本方法沿用了改造前完全相同的保存逻辑，未做任何调整 —— XmlFile 的 fileName
+     *   仍以 "vehicle_"+vin 命名，不区分纯电/燃油。也就是说拆分场景下纯电先保存、燃油后保存时，
+     *   两次调用会被当成"同一份文件的两次版本更新"：第二次（燃油）保存时 updateIsLatestToFalse
+     *   会把第一次（纯电）那条记录标记为非最新版本，版本号也会从 1.0 递增到 2.0，
+     *   而不是两份并存的"最新文档"。如果业务上需要纯电/燃油两份文档同时作为各自独立的最新版本存在，
+     *   后续需要给 fileName 增加区分后缀（例如 vin_BEV.xml / vin_FUEL.xml）；本次按你的要求暂未改动。
+     */
+    private String saveGeneratedXmlDocument(Document doc, VehicleInfo vehicle, XmlTemplate xmlTemplate) throws Exception {
+        VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
+        SysNotice sysNotice = new SysNotice();
+        sysNotice.setIsRead(false);
+        sysNotice.setNoticeType("1");
+        sysNotice.setNoticeTitle("XML文件生成通知");
+        sysNotice.setCreateBy("自动提醒");
+        sysNotice.setCreateTime(new Date());
+
+        // 14. 生成XML字符串（不输出 <?xml ...?> 声明头）
+        TransformerFactory transformerFactory = TransformerFactory.newInstance();
+        Transformer transformer = transformerFactory.newTransformer();
+        transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+        transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
+        transformer.setOutputProperty(OutputKeys.ENCODING, "UTF-8");
+        transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+        StringWriter writer = new StringWriter();
+        transformer.transform(new DOMSource(doc), new StreamResult(writer));
+        String xmlContent = writer.toString();
+
+        // 15. 版本管理
+        String xmlVersion = xmlFileMapper.selectVersionByFileName("vehicle_" + vehicle.getVin());
+        xmlVersion = StringUtils.isBlank(xmlVersion) ? "1.0" : String.valueOf(new BigDecimal(xmlVersion).add(new BigDecimal(1)));
+        xmlFileMapper.updateIsLatestToFalse("vehicle_" + vehicle.getVin());
+
+        // 16. 上传文件
+        MultipartFile multipartFile = FileUtils.createMultipartFile(
+                xmlContent, vehicle.getVin() + ".xml", "application/xml");
+        String filePath = remoteFileService.upload(multipartFile).getData().getUrl();
+
+        // 17. 保存 XmlFile记录
+        XmlFile xmlFile = new XmlFile();
+        xmlFile.setFileName("vehicle_" + vehicle.getVin() + ".xml");
+        xmlFile.setFilePath(filePath);
+        xmlFile.setFileSize((long) xmlContent.getBytes(StandardCharsets.UTF_8).length);
+        xmlFile.setFileLevel("1");
+        xmlFile.setVersion(xmlVersion);
+        xmlFile.setVin(vehicle.getVin());
+        xmlFile.setIsLatest(true);
+        xmlFile.setStatus("0");
+        xmlFile.setDeleted(0);
+        xmlFile.setUploadResult("1");
+        xmlFile.setCreateBy(SecurityUtils.getUsername());
+        xmlFile.setCreateTime(new Date());
+        xmlFile.setRemark("由车辆VIN: " + vehicle.getVin() + " 生成XML,版本: " + xmlVersion);
+        xmlFile.setVin(vehicle.getVin());
+        xmlFile.setXmlTemplateId(xmlTemplate.getTemplateId());
+        xmlFile.setModelCode(String.valueOf(vehicle.getVehicleModel()));
+        xmlFile.setFactoryCode(vehicle.getFactoryCode());
+        xmlFile.setVehicleMaterialNo(vehicle.getMaterialNo());
+        xmlFile.setCountry(vehicle.getCountry());
+        xmlFile.setIssueDate(vehicle.getIssueDate());
+        xmlFile.setValidateResult(0);
+        xmlFileMapper.insertXmlFile(xmlFile);
+
+        try {
+            validateXml(xmlFile.getId());
+        } catch (Exception e) {
+            log.warn("自动校验失败，xmlFileId={}，原因={}", xmlFile.getId(), e.getMessage());
+            // 校验失败不影响生成结果，只记录日志
+        }
+
+        // 18. 保存版本记录
+        XmlVersion version = new XmlVersion();
+        version.setFileId(xmlFile.getId());
+        version.setVersion(xmlVersion);
+        version.setFilePath(filePath);
+        version.setChangeType("生成");
+        version.setChangeDesc("由车辆VIN: " + vehicle.getVin() + " 生成XML, 版本: " + xmlVersion);
+        version.setCreateBy(SecurityUtils.getUsername());
+        version.setCreateTime(new Date());
+        xmlVersionMapper.insertXmlVersion(version);
+
+        // 19. 更新状态
+        VehicleInfo updateObj = new VehicleInfo();
+        updateObj.setVehicleId(vehicle.getVehicleId());
+        updateObj.setIssueDate(vehicle.getIssueDate());
+        updateObj.setUploadStatus(2);
+
+        // 20. 记录生命周期
+        vehicleLifecycle.setEntryId(vehicle.getVehicleId());
+        vehicleLifecycle.setTime(new Date());
+        vehicleLifecycle.setVin(vehicle.getVin());
+        vehicleLifecycle.setOperate(VehicleLifecycleOperation.VEHICLE_BUILD_XML.getOperation());
+        vehicleLifecycle.setResult(0);
+        vehicleInfoService.updateVehicleInfo(updateObj, false);
+        vehicleLifecycleMapper.insert(vehicleLifecycle);
+
+        StringBuilder msg = new StringBuilder();
+        msg.append(System.lineSeparator());
+        msg.append("车辆vin ");
+        msg.append(vehicle.getVin());
+        msg.append("生成XML文件的结果为: ");
+        msg.append("成功");
+        Map<String, String> params = new HashMap<>();
+        params.put("id", String.valueOf(xmlFile.getId()));
+        params.put("vin", xmlFile.getVin());
+        params.put("modelCode", xmlFile.getModelCode());
+        params.put("factoryCode", xmlFile.getFactoryCode());
+        params.put("country", xmlFile.getCountry());
+        params.put("issueDate", com.ruoyi.common.core.utils.DateUtils.parseDateToStr("yyyy-MM-dd HH:mm:ss", xmlFile.getIssueDate()));
+        sysNotice.setModel(SysNoticeModel.XML_FILE.getModel());
+        sysNotice.setQueryParams(JSON.toJSONString(params));
+        sysNotice.setNoticeContent(msg.toString());
+        sysNotice.setSorts(Arrays.asList(14, 15));
+        remoteNoticeService.innerAdd(sysNotice);
+
+        return xmlContent;
     }
 
     /**
