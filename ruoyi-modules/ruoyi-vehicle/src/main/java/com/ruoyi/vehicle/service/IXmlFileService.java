@@ -45,6 +45,12 @@ public interface IXmlFileService {
     int uploadXmlFilesToApprove(List<Long> xmlIds);
 
     /**
+     * 强制上传：跳过校验失败限制，但首台车未确认时仍不允许
+     * 成功后将该记录标记为 force_uploaded=1
+     */
+    void forceUploadXml(Long id);
+
+    /**
      * 预览XML文件
      */
     String previewXml(Long id);

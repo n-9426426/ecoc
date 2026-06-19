@@ -178,6 +178,22 @@ public class XmlController extends BaseController {
     }
 
     /**
+     * 强制上传：校验失败时仍可上传，但首台车未确认时仍拒绝
+     */
+    @Operation(summary = "强制上传XML文件（跳过校验失败限制）")
+    @RequiresPermissions("system:xml:add")
+    @Log(title = "XML文件管理", businessType = BusinessType.UPLOAD)
+    @PostMapping("/forceUpload/{id}")
+    public AjaxResult forceUpload(@PathVariable Long id) {
+        try {
+            xmlFileService.forceUploadXml(id);
+            return success();
+        } catch (Exception e) {
+            return error(e.getMessage());
+        }
+    }
+
+    /**
      * 修改XML文件
      */
     @Operation(summary = "修改XML文件")

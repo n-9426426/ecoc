@@ -31,22 +31,41 @@
         <result property="issueDate" column="issue_date"/>
         <result property="validateResult" column="validate_result"/>
         <result property="validationReportJson" column="validation_report_json"/>
-        <result property="uploadAffirm" column="upload_affirm"/>
+        <result property="uploadAffirm" column="vi_upload_affirm"/>
+        <result property="generateAffirm" column="vi_generate_affirm"/>
         <result property="vehicleInfoId" column="vehicle_id"/>
         <result property="generateCount" column="generate_count"/>
+        <result property="forceUploaded" column="force_uploaded"/>
     </resultMap>
 
     <sql id="selectXmlFileVo">
         select xl.id, xl.vin, xl.file_name, xl.file_path, xl.file_size, xl.file_level, xl.version, xl.is_latest,
                xl.pdf_path, xl.status, xl.deleted, xl.create_by, xl.create_time, xl.update_by, xl.update_time,
                xl.remark, xl.xml_template_id, xl.model_code, xl.factory_code, xl.vehicle_material_no, xl.country,
-               xl.upload_result, xl.upload_date, xl.issue_date, xl.validate_result,xt.template_name xml_template_name,
-               xl.validation_report_json, sdd.dict_label model_name, vi.upload_affirm, vi.vehicle_id, vc.generate_count
+               xl.upload_result, xl.upload_date, xl.issue_date, xl.validate_result, xl.force_uploaded,
+               xt.template_name xml_template_name,
+               xl.validation_report_json, sdd.dict_label model_name,
+               vi.upload_affirm  vi_upload_affirm,
+               vi.generate_affirm vi_generate_affirm,
+               vi.vehicle_id,
+               vc.generate_count
         from xml_file xl
-        left join xml_template xt on xl.xml_template_id = xt.template_id
-        left join sys_dict_data sdd on sdd.dict_value = xl.model_code
-        left join vehicle_info vi on vi.vin = xl.vin
-        left join (SELECT vin, COUNT(*) AS generate_count FROM xml_file WHERE deleted = 0 GROUP BY vin) vc ON vc.vin = xl.vin
+                 left join xml_template xt on xl.xml_template_id = xt.template_id
+                 left join sys_dict_data sdd on sdd.dict_value = xl.model_code
+                 left join (
+            SELECT vin,
+                   MAX(upload_affirm)   AS upload_affirm,
+                   MAX(generate_affirm) AS generate_affirm,
+                   MAX(vehicle_id)      AS vehicle_id
+            FROM vehicle_info
+            GROUP BY vin
+        ) vi on vi.vin = xl.vin
+                 left join (
+            SELECT vin, COUNT(*) AS generate_count
+            FROM xml_file
+            WHERE deleted = 0 AND is_latest = 1
+            GROUP BY vin
+        ) vc ON vc.vin = xl.vin
     </sql>
 
     <select id="selectXmlFileList" parameterType="XmlFile" resultMap="XmlFileResult">
@@ -224,9 +243,15 @@
             <if test="vin != null">vin = #{vin},</if>
             <if test="validateResult != null">validate_result = #{validateResult},</if>
             <if test="validationReportJson != null and validationReportJson != ''">validation_report_json = #{validationReportJson},</if>
+            <if test="forceUploaded != null">force_uploaded = #{forceUploaded},</if>
             update_time = sysdate()
         </trim>
         where id = #{id}
+    </update>
+
+    <!-- 标记为曾经强制上传 -->
+    <update id="updateForceUploaded" parameterType="long">
+        update xml_file set force_uploaded = 1, update_time = sysdate() where id = #{id}
     </update>
 
     <update id="deleteXmlFileById" parameterType="Long">
@@ -275,7 +300,7 @@
         FROM xml_file
         WHERE file_name LIKE CONCAT(#{fileName}, '%')
         ORDER BY cast(version as UNSIGNED) desc
-        limit 1
+            limit 1
     </select>
 
     <update id="updateIsLatestToFalse">
@@ -284,23 +309,23 @@
 
     <select id="checkXmlFileTimeoutUpload" resultMap="XmlFileResult">
         SELECT xl.id, xl.vin,
-            xl.file_name, xl.file_path, xl.file_size, xl.file_level, xl.version, xl.is_latest,
-            xl.pdf_path, xl.status, xl.deleted, xl.create_by, xl.create_time, xl.update_by,
-            NOW() AS update_time, xl.remark, xl.xml_template_id, xl.model_code, xl.factory_code,
-            xl.vehicle_material_no, xl.country, xl.upload_result, xl.upload_date, xl.issue_date,
-            xl.validate_result, xl.validation_report_json,
-            sdd.dict_label AS model_name
+        xl.file_name, xl.file_path, xl.file_size, xl.file_level, xl.version, xl.is_latest,
+        xl.pdf_path, xl.status, xl.deleted, xl.create_by, xl.create_time, xl.update_by,
+        NOW() AS update_time, xl.remark, xl.xml_template_id, xl.model_code, xl.factory_code,
+        xl.vehicle_material_no, xl.country, xl.upload_result, xl.upload_date, xl.issue_date,
+        xl.validate_result, xl.validation_report_json,
+        sdd.dict_label AS model_name
         FROM xml_file xl
         INNER JOIN (
-            select *
-            from sys_dict_data
-            where dict_type = 'reminder_time' AND status = '0' and dict_sort = 1
+        select *
+        from sys_dict_data
+        where dict_type = 'reminder_time' AND status = '0' and dict_sort = 1
         ) sdd ON 1 = 1
         WHERE xl.upload_result = 2 AND xl.deleted = '0' AND xl.is_latest = 1
-            <if test="noticeStatus != null">
-                and xl.timeout_notice = #{noticeStatus}
-            </if>
-            AND TIMESTAMPDIFF(MICROSECOND, xl.create_time, NOW()) / 1000 &gt;= CAST(sdd.dict_value AS SIGNED)
+        <if test="noticeStatus != null">
+            and xl.timeout_notice = #{noticeStatus}
+        </if>
+        AND TIMESTAMPDIFF(MICROSECOND, xl.create_time, NOW()) / 1000 &gt;= CAST(sdd.dict_value AS SIGNED)
     </select>
 
     <update id="updateXmlFileTimeoutUpload">

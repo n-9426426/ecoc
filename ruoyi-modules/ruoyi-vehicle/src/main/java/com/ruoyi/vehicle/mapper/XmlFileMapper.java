@@ -68,4 +68,9 @@ public interface XmlFileMapper {
     void updateXmlFileTimeoutUpload(@Param("xmlFileIds") List<Long> xmlFileIds, @Param("status") Integer status);
 
     List<XmlFile> selectXmlFileByIds(@Param("xmlIds") Long[] xmlIds);
+
+    /**
+     * 将指定 XML 记录标记为曾经强制上传（force_uploaded = 1）
+     */
+    int updateForceUploaded(Long id);
 }
