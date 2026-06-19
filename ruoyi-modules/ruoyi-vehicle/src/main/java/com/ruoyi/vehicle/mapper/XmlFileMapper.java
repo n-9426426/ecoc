@@ -73,4 +73,6 @@ public interface XmlFileMapper {
      * 将指定 XML 记录标记为曾经强制上传（force_uploaded = 1）
      */
     int updateForceUploaded(Long id);
+
+
 }

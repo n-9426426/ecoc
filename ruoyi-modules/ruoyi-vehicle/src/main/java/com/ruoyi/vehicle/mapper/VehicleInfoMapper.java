@@ -253,4 +253,13 @@ public interface VehicleInfoMapper {
             @Param("vehicleModel")        String vehicleModel,
             @Param("projectName")         String projectName
     );
+
+    /**
+     * 按 VIN 更新车辆上传状态
+     *
+     * @param vin          车辆VIN
+     * @param uploadStatus 新状态（0=未生成 1=已生成 2=已上传 3=未上传 4=上传失败）
+     */
+    void updateUploadStatusByVin(@Param("vin") String vin,
+                                 @Param("uploadStatus") int uploadStatus);
 }

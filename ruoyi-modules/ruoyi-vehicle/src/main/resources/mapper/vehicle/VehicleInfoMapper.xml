@@ -1011,4 +1011,13 @@
 		WHERE vehicle_id = #{vehicleId}
 		  AND deleted = 0
 	</update>
+
+	<!-- 按 VIN 更新车辆上传状态 -->
+	<update id="updateUploadStatusByVin">
+		UPDATE vehicle_info
+		SET upload_status = #{uploadStatus},
+			update_time   = NOW()
+		WHERE vin = #{vin}
+		  AND deleted = 0
+	</update>
 </mapper>

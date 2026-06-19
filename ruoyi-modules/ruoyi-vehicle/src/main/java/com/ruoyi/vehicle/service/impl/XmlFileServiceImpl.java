@@ -380,6 +380,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
             xmlFile.setUpdateBy(SecurityUtils.getUsername());
             xmlFileMapper.updateXmlFile(xmlFile);
 
+            vehicleInfoMapper.updateUploadStatusByVin(xmlFile.getVin(), 4);
+
             // 记录生命周期
             VehicleLifecycle lc = new VehicleLifecycle();
             lc.setEntryId(xmlFile.getId());
@@ -415,7 +417,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
         xmlFile.setUploadResult("4");           // 4=上传成功（按你的业务枚举调整）
         xmlFile.setUploadDate(new Date());
         xmlFile.setUpdateBy(SecurityUtils.getUsername());
+        xmlFile.setForceUploaded(true);
         xmlFileMapper.updateXmlFile(xmlFile);
+
+        // ★ 同步更新 vehicle_info 上传状态为「已上传」
+        vehicleInfoMapper.updateUploadStatusByVin(xmlFile.getVin(), 4);
 
         // 记录生命周期
         VehicleLifecycle lc = new VehicleLifecycle();
