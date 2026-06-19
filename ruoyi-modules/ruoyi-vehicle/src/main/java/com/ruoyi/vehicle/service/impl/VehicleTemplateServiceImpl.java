@@ -1309,11 +1309,12 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             }
         }
 
-        // ── JSON 映射后处理：EnergyConvertorCodeMarkedOnEnergyConvertor / EnergySource / WorkingPrinciple 段数对齐 ──
+        // ── JSON 映射后处理：EnergyConvertorCodeMarkedOnEnergyConvertor / EnergySource / WorkingPrinciple / CombustionCycle 段数对齐 ──
         // 规则：targetCount 由 EnergyConvertorCodeMarkedOnEnergyConvertor 段数决定；
         //       若只有1段，则检查四个功率标签（MaximumNetPowerCombustion / EngineSpeedMaximumNetPower /
         //       Maximum30MinutesPower / MaximumNetPowerElectric）是否都有值，都有则 targetCount+1。
-        //       EnergySource 不足 targetCount 时补 "95"；WorkingPrinciple 不足时补 "ELECT"。
+        //       EnergySource 不足 targetCount 时补 "95"；WorkingPrinciple 不足时补 "ELECT"；
+        //       CombustionCycle 不足时只补空位（即用 "|" 占位，不像前两者那样补固定值）。
         if (finalMap != null) {
             log.debug("[DEBUG] WorkingPrinciple before post-process = '{}'", finalMap.get("WorkingPrinciple"));
             log.debug("[DEBUG] EnergyConvertor = '{}'", finalMap.get("EnergyConvertorCodeMarkedOnEnergyConvertor"));
@@ -1360,6 +1361,39 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                     wpSegments.add("ELECT");
                 }
                 finalMap.put("WorkingPrinciple", String.join("|", wpSegments));
+
+                // 5. CombustionCycle 段数对齐，不足补空（即只用 | 占位，不像 EnergySource/WorkingPrinciple 那样补固定值）
+                Object combustionCycleObj = finalMap.get("CombustionCycle");
+                String combustionCycleStr = combustionCycleObj == null ? "" : String.valueOf(combustionCycleObj);
+                String[] ccSegments = StringUtils.isNotBlank(combustionCycleStr)
+                        ? combustionCycleStr.split("[;|]", -1)
+                        : new String[0];
+                String[] alignedCcSegments = new String[targetCount];
+                for (int i = 0; i < targetCount; i++) {
+                    alignedCcSegments[i] = (i < ccSegments.length && StringUtils.isNotBlank(ccSegments[i]))
+                            ? ccSegments[i] : "";
+                }
+                finalMap.put("CombustionCycle", String.join("|", alignedCcSegments));
+            }
+        }
+
+        // ── WltpType1NumberOfParticles 映射后处理：若有值，则紧跟在其后插入 WltpType1NumberOfParticlesExponent = "11" ──
+        if (finalMap != null) {
+            Object particlesObj = finalMap.get("WltpType1NumberOfParticles");
+            String particlesStr = particlesObj == null ? "" : String.valueOf(particlesObj);
+            if (StringUtils.isNotBlank(particlesStr)) {
+                Map<String, Object> rebuilt = new LinkedHashMap<>();
+                for (Map.Entry<String, Object> entry : finalMap.entrySet()) {
+                    if ("WltpType1NumberOfParticlesExponent".equals(entry.getKey())) {
+                        // 若该字段已存在于旧位置，先剔除，统一改为紧跟在 WltpType1NumberOfParticles 后面
+                        continue;
+                    }
+                    rebuilt.put(entry.getKey(), entry.getValue());
+                    if ("WltpType1NumberOfParticles".equals(entry.getKey())) {
+                        rebuilt.put("WltpType1NumberOfParticlesExponent", "11");
+                    }
+                }
+                finalMap = rebuilt;
             }
         }
 

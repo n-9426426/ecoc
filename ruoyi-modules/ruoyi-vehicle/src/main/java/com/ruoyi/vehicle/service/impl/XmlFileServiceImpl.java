@@ -1295,6 +1295,27 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 }
             }
 
+            // ★ 修复：补充识别"跨父节点重复"的结构循环节点。上面的检测只能识别"同一父节点下
+            //   兄弟标签重复"（如 4 个 EnergyConvertorGroup 同为 EnergyConvertorTable 的子节点）。
+            //   但像 EnergySourceGroup 这样的结构，每个 EnergyConvertorGroup 下只有 1 个实例
+            //   （父节点各不相同），不会被上面的逻辑识别为循环节点，导致它在全文档范围内出现了
+            //   4 次却被当作"非循环"处理：既不会被第三步收集为行列表，使 COUNT(@EnergySource
+            //   IN ['95']) 等聚合规则永远统计不到任何值（恒为 0），结果误判。
+            //   这里按"该 STRUCT 标签在全文档范围内出现次数 >= 2"补充识别，只针对结构节点
+            //   （不影响叶子字段在第二步的取值逻辑），把这类跨父节点重复的结构节点同样纳入
+            //   loopTagNames，交给第三步正确收集为行列表。
+            Map<String, Integer> globalTagCount = new HashMap<>();
+            for (int i = 0; i < allNodes.getLength(); i++) {
+                globalTagCount.merge(((Element) allNodes.item(i)).getTagName(), 1, Integer::sum);
+            }
+            for (Map.Entry<String, Integer> entry : globalTagCount.entrySet()) {
+                if (entry.getValue() < 2 || loopTagNames.contains(entry.getKey())) continue;
+                SysDictData tagDict = labelToDictMap.get(entry.getKey());
+                if (tagDict != null && isStructNode(tagDict)) {
+                    loopTagNames.add(entry.getKey());
+                }
+            }
+
             // ── 第二步：构建非循环节点的 baseJsonMap ──────────────────────────────
             // ★ 修复：统一以 dictLabel（XML 标签名）作为 key 写入 baseJsonMap，每个字段独立，
             //   不再写入 keyMap 兜底，避免同一字段被规则引擎当作两个 key 校验两次（产生重复结果）。
@@ -1696,6 +1717,12 @@ public class XmlFileServiceImpl implements IXmlFileService {
             boolean shouldRestrictElectricEnergySourceGroup = hybridSingleSegmentEnergySourceExpanded
                     || hasRepeatedElectricSegmentsAfterFirst(jsonMap);
             restrictHybridElectricEnergySourceGroup(root, shouldRestrictElectricEnergySourceGroup);
+
+            // 13a2. TestWltpElectricRangeGroup（纯电续航）、TestWltpEnergyConsumptionGroup（能耗）
+            //   描述的是车辆的纯电相关数据，按校验规则应挂在每一个 EnergySource=95（电机）的
+            //   EnergySourceGroup 下；但源 JSON 中这两组字段未按 EnergySource 分段，树构建时
+            //   默认落在第一个 EnergySourceGroup（往往是燃油段）下，需复制到所有 95 段下
+            relocateElectricOnlyTestGroupsToElectricEnergySource(root);
 
             // 13b. 当 EnergySource 为多段时，在 CocDataGroup 下追加汇总标签：
             //   ConsolidatedMaximum30MinutesPower  = Maximum30MinutesPower  各段之和
@@ -3544,9 +3571,107 @@ public class XmlFileServiceImpl implements IXmlFileService {
             for (Node n : toRemove) {
                 groupEl.removeChild(n);
             }
-            log.info("=== restrictHybridElectricEnergySourceGroup 已精简95段EnergySourceGroup，仅保留EnergySource与PowerGroup与WltpEmissionTestParametersGroup，移除标签数={}",
+            log.info("=== restrictHybridElectricEnergySourceGroup 已精简95段EnergySourceGroup，仅保留EnergySource与PowerGroup，移除标签数={}",
                     toRemove.size());
         }
+    }
+
+    /**
+     * TestWltpElectricRangeGroup（纯电续航：WltpEquivalentAllElectricOffVehicleChargingRange 等）
+     * 和 TestWltpEnergyConsumptionGroup（纯电能耗：WltpEnergyConsumptionExternallyChargedXxx 等）
+     * 描述的是车辆的纯电相关数据，按校验规则的设计意图应挂在每一个 EnergySource=95（电机）的
+     * EnergySourceGroup 下；但源 JSON 中这两组字段未按 EnergySource 分段（只有一份单一值），
+     * 树构建时默认落在第一个 EnergySourceGroup 下——若该 EnergySourceGroup 恰好是燃油段
+     * （EnergySource≠95，如混动场景的首段），就会出现"挂错分组"的问题，导致依赖
+     * "EnergySource=95 且本字段有值"的条件必填规则误判为缺失。
+     * <p>
+     * 本方法在树构建完成后扫描全文档：若这两个标签当前挂在 EnergySource≠95 的
+     * EnergySourceGroup 下，则深拷贝一份分别追加到文档中**每一个** EnergySource=95 的
+     * EnergySourceGroup 下，并从原（非 95）分组中移除；若文档中不存在任何 95 段，
+     * 或这两个标签本就不存在，则不做改动。
+     *
+     * @param root 已构建完成的 XML 根节点
+     */
+    private void relocateElectricOnlyTestGroupsToElectricEnergySource(Element root) {
+        String[] tagsToRelocate = {"TestWltpElectricRangeGroup", "TestWltpEnergyConsumptionGroup"};
+
+        List<Element> electricGroups = findAllElectricEnergySourceGroups(root);
+        if (electricGroups.isEmpty()) {
+            return; // 文档中不存在 EnergySource=95 的分组，无迁移目标，保持原样
+        }
+
+        NodeList groupNodes = root.getElementsByTagName("EnergySourceGroup");
+        // groupNodes 是“活”列表，先收集快照再处理，避免在迁移过程中改变其长度导致遍历错乱
+        List<Element> groupSnapshot = new ArrayList<>();
+        for (int i = 0; i < groupNodes.getLength(); i++) {
+            Node n = groupNodes.item(i);
+            if (n instanceof Element) groupSnapshot.add((Element) n);
+        }
+
+        int copiedCount = 0;
+        for (Element groupEl : groupSnapshot) {
+            if (electricGroups.contains(groupEl)) continue; // 95 段本身，跳过
+
+            String energySourceValue = getDirectChildText(groupEl, "EnergySource");
+            if ("95".equals(energySourceValue)) continue; // 双重保险，理论上已被上面排除
+
+            for (String tagName : tagsToRelocate) {
+                List<Node> toMove = new ArrayList<>();
+                NodeList children = groupEl.getChildNodes();
+                for (int j = 0; j < children.getLength(); j++) {
+                    Node child = children.item(j);
+                    if (child.getNodeType() == Node.ELEMENT_NODE && tagName.equals(child.getNodeName())) {
+                        toMove.add(child);
+                    }
+                }
+                for (Node original : toMove) {
+                    // 深拷贝一份，分别追加到每一个 95 段（各段互不影响）
+                    for (Element electricGroup : electricGroups) {
+                        electricGroup.appendChild(original.cloneNode(true));
+                    }
+                    // 原（非 95）分组下的这一份不再保留
+                    groupEl.removeChild(original);
+                    copiedCount++;
+                }
+            }
+        }
+        if (copiedCount > 0) {
+            log.info("=== relocateElectricOnlyTestGroupsToElectricEnergySource 已将标签复制到全部{}个EnergySource=95分组，处理标签数={}",
+                    electricGroups.size(), copiedCount);
+        }
+    }
+
+    /**
+     * 在文档中查找所有 EnergySource 直属子标签值为 "95" 的 EnergySourceGroup。
+     * 未找到返回空列表。
+     */
+    private List<Element> findAllElectricEnergySourceGroups(Element root) {
+        List<Element> result = new ArrayList<>();
+        NodeList groupNodes = root.getElementsByTagName("EnergySourceGroup");
+        for (int i = 0; i < groupNodes.getLength(); i++) {
+            Node n = groupNodes.item(i);
+            if (!(n instanceof Element)) continue;
+            Element groupEl = (Element) n;
+            if ("95".equals(getDirectChildText(groupEl, "EnergySource"))) {
+                result.add(groupEl);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 获取某元素下指定标签名的直属子节点的文本内容（trim 后），未找到返回 null。
+     */
+    private String getDirectChildText(Element parent, String tagName) {
+        NodeList children = parent.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node child = children.item(i);
+            if (child.getNodeType() == Node.ELEMENT_NODE && tagName.equals(child.getNodeName())) {
+                String text = child.getTextContent();
+                return text == null ? "" : text.trim();
+            }
+        }
+        return null;
     }
 
     /**
@@ -4527,13 +4652,15 @@ public class XmlFileServiceImpl implements IXmlFileService {
      */
     private void applyLocationMarkings(Map<String, Object> jsonMap, String methodAttach) {
         switch (methodAttach) {
-            case "A1":
+            case "B2":
                 jsonMap.put("LocationMarkingsSubject",               "STAT;VIN");
                 jsonMap.put("LocationMarkingsVehiclePart",           "BPILR;PASCT");
                 jsonMap.put("LocationMarkingsVehiclePartSide",       "RIGHTSIDE;RIGHTSIDE");
                 jsonMap.put("LocationMarkingsVehiclePartSideSection", ";FRONT");
                 break;
-            case "B2":
+            case "A0":
+                jsonMap.remove("MethodAttachmentStatutoryPlate");
+                jsonMap.put("MethodAttachmentStatutoryPlate",  "A1");
                 jsonMap.put("LocationMarkingsSubject",         "STAT;VIN");
                 jsonMap.put("LocationMarkingsVehiclePart",     "BPILR;ENGCT");
                 jsonMap.put("LocationMarkingsVehiclePartSide", "RIGHTSIDE;RIGHTSIDE");
