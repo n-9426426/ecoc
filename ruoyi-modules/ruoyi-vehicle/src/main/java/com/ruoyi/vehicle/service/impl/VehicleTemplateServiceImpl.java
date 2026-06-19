@@ -1314,10 +1314,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         //       若只有1段，则检查四个功率标签（MaximumNetPowerCombustion / EngineSpeedMaximumNetPower /
         //       Maximum30MinutesPower / MaximumNetPowerElectric）是否都有值，都有则 targetCount+1。
         //       EnergySource 不足 targetCount 时补 "95"；WorkingPrinciple 不足时补 "ELECT"；
-        //       CombustionCycle 不足时只补空位（即用 "|" 占位，不像前两者那样补固定值）。
+        //       CombustionCycle 不足时只补空位（即用 "|" 占位，不像前两者那样补固定值）；
+        //       ManufacturerEnergyConvertor 在 targetCount=4 且自身为3段时，复制第二段拼接成4段。
         if (finalMap != null) {
-            log.debug("[DEBUG] WorkingPrinciple before post-process = '{}'", finalMap.get("WorkingPrinciple"));
-            log.debug("[DEBUG] EnergyConvertor = '{}'", finalMap.get("EnergyConvertorCodeMarkedOnEnergyConvertor"));
             Object energyConvertorObj = finalMap.get("EnergyConvertorCodeMarkedOnEnergyConvertor");
             String energyConvertorStr = energyConvertorObj == null ? null : String.valueOf(energyConvertorObj);
 
@@ -1374,6 +1373,22 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                             ? ccSegments[i] : "";
                 }
                 finalMap.put("CombustionCycle", String.join("|", alignedCcSegments));
+
+                // 6. ManufacturerEnergyConvertor 特殊对齐：仅当 EnergyConvertorCodeMarkedOnEnergyConvertor
+                //    为 4 段、且 ManufacturerEnergyConvertor 恰好为 3 段时，复制第二段（索引1）拼接成 4 段。
+                //    例：ManufacturerEnergyConvertor = 1|2|3 → 1|2|2|3
+                Object manufacturerEnergyConvertorObj = finalMap.get("ManufacturerEnergyConvertor");
+                String manufacturerEnergyConvertorStr = manufacturerEnergyConvertorObj == null
+                        ? "" : String.valueOf(manufacturerEnergyConvertorObj);
+                if (targetCount == 4 && StringUtils.isNotBlank(manufacturerEnergyConvertorStr)) {
+                    String[] mecSegments = manufacturerEnergyConvertorStr.split("[;|]", -1);
+                    if (mecSegments.length == 3) {
+                        String[] duplicated = new String[]{
+                                mecSegments[0], mecSegments[1], mecSegments[1], mecSegments[2]
+                        };
+                        finalMap.put("ManufacturerEnergyConvertor", String.join("|", duplicated));
+                    }
+                }
             }
         }
 
