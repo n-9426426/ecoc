@@ -66,4 +66,12 @@ public interface MaterialMapper {
 
     void updateVehicleTemplateIdByUuid(@Param("uuid") String uuid,
                                        @Param("templateId") Long templateId);
+
+    /**
+     * 查询 tvv 匹配且 vehicle_template_id 为空的物料号列表
+     * 用于导入 COC 模版后回溯补关联物料
+     *
+     * @param tvv 已去掉逗号的 tvv（与 material 表存储格式一致）
+     */
+    List<Material> selectUnlinkedMaterialsByTvv(@Param("tvv") String tvv);
 }

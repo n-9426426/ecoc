@@ -277,4 +277,12 @@
     <delete id="deleteByMaterialNo">
         DELETE FROM material WHERE material_no = #{materialNo}
     </delete>
+
+    <!-- 查询 tvv 匹配且尚未关联模版的物料号（回溯补关联用） -->
+    <select id="selectUnlinkedMaterialsByTvv" resultMap="MaterialResult">
+        SELECT *
+        FROM material
+        WHERE tvv = #{tvv}
+          AND (vehicle_template_id IS NULL)
+    </select>
 </mapper>

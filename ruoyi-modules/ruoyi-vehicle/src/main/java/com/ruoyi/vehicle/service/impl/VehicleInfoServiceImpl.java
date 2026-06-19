@@ -251,37 +251,40 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         if (!materialList.isEmpty()) {
             Material material = materialList.get(0);
             vehicleTemplateId = material.getVehicleTemplateId();
-            // 查模板详情，自动填充关联字段
-            VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(vehicleTemplateId);
-            if (template == null) {
-                throw new RuntimeException("模板不存在，templateId=" + vehicleTemplateId);
+
+            // ★ 新增：物料存在但还没关联模板，跳过模板字段填充，等回溯来补
+            if (vehicleTemplateId == null) {
+                log.info("[insertVehicleInfo] 物料 {} 尚未关联模板，跳过模板字段填充，等待回溯",
+                        vehicleInfo.getMaterialNo());
+            } else {
+                VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(vehicleTemplateId);
+                if (template == null) {
+                    throw new RuntimeException("模板不存在，templateId=" + vehicleTemplateId);
+                }
+
+                String json = "";
+                try {
+                    JsonNode rootNode = objectMapper.readTree(template.getJson());
+                    replaceFieldValues(rootNode, material);
+                    json = objectMapper.writeValueAsString(rootNode);
+                } catch (JsonProcessingException e) {
+                    throw new RuntimeException("动态参数替换失败");
+                }
+                vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
+                vehicleInfo.setTvv(template.getTvv().replace(",", ""));
+                vehicleInfo.setWvtaNo(template.getWvtaCocNo());
+                vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
+                vehicleInfo.setJson(json);
+                vehicleInfo.setVehicleModel(material.getVehicleModel());
+                vehicleInfo.setProjectName(material.getName());
+                vehicleInfo.setBrand(material.getBrand());
+                vehicleInfo.setTireResistanceGrade(material.getTireResistanceGrade());
+                vehicleInfo.setSaleName(material.getSaleName());
+                vehicleInfo.setWeight(material.getWeight());
+                vehicleInfo.setTire(material.getTire());
+
+                applyFirstVehicleAffirm(vehicleInfo, vehicleInfo.getMaterialNo(), String.valueOf(vehicleTemplateId));
             }
-
-            String json = "";
-            try {
-                JsonNode rootNode = objectMapper.readTree(template.getJson());
-                // 扁平化并替换字段值
-                replaceFieldValues(rootNode, material);
-                json = objectMapper.writeValueAsString(rootNode);
-            } catch (JsonProcessingException e) {
-                throw new RuntimeException("动态参数替换失败");
-            }
-            vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
-            vehicleInfo.setTvv(template.getTvv().replace(",", ""));
-            vehicleInfo.setWvtaNo(template.getWvtaCocNo());
-            vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
-            vehicleInfo.setJson(json);
-            vehicleInfo.setVehicleModel(material.getVehicleModel());
-            vehicleInfo.setProjectName(material.getName());
-            vehicleInfo.setBrand(material.getBrand());
-            vehicleInfo.setTireResistanceGrade(material.getTireResistanceGrade());
-            vehicleInfo.setSaleName(material.getSaleName());
-            vehicleInfo.setWeight(material.getWeight());
-            vehicleInfo.setTire(material.getTire());
-
-
-            // 按物料号首台车逻辑覆盖 generate_affirm
-            applyFirstVehicleAffirm(vehicleInfo, vehicleInfo.getMaterialNo(), String.valueOf(vehicleTemplateId));
         }
         vehicleInfo.setUploadStatus(0);
         vehicleInfo.setValidationResult(0);
@@ -855,8 +858,20 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
                         // 查模板
                         VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(templateId);
-                        if (template == null) {
-                            throw new IllegalArgumentException("模板ID[" + templateId + "]不存在");
+                        if (templateId == null) {
+                            log.info("[导入] 物料 {} 尚未关联模板，跳过模板字段填充", vehicleInfo.getMaterialNo());
+                            vehicleInfo.setCreateBy(createBy);
+                            vehicleInfo.setVehicleModel(materialList.get(0).getVehicleModel());
+                            if (vehicleInfo.getIssueDate() == null) {
+                                vehicleInfo.setIssueDate(new Date());
+                            }
+                            vehicleInfoMapper.insertVehicleInfo(vehicleInfo);
+                            checkMaterialInBlacklist(vehicleInfo);
+                            importedList.add(vehicleInfo);
+                            successCount++;
+                            pushEvent(sink, "progress", String.format(
+                                    "{\"row\":%d,\"total\":%d,\"status\":\"success\"}", rowNum, total));
+                            continue;  // 跳过后续模板相关逻辑
                         }
 
                         vehicleInfo.setCreateBy(createBy);

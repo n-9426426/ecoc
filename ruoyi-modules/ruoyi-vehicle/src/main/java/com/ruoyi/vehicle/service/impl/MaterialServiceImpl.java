@@ -65,6 +65,9 @@ public class MaterialServiceImpl implements IMaterialService {
     @Autowired
     private RemoteDictService remoteDictService;
 
+    @Autowired
+    private RetroactiveLinkService retroactiveLinkService;
+
     /** SSE sink 注册表，taskId -> sink */
     private final Map<String, Sinks.Many<ServerSentEvent<String>>> sinks = new ConcurrentHashMap<>();
 
@@ -119,88 +122,108 @@ public class MaterialServiceImpl implements IMaterialService {
                 throw new RuntimeException("车型代码不存在");
             }
         }
+
         // 按 MES 字段映射规则，将物料关键字段转换后写入 material.json
         applyMesJsonToMaterial(material);
         material.setCreateBy(createBy);
         material.setCreateTime(new Date());
         material.setRemark(StringUtils.isBlank(material.getSwitchRemark()) ? null : material.getSwitchRemark());
+
+        // 查匹配的 COC 模版
         List<VehicleTemplate> templates = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(null,
                 material.getBrand(), material.getWeight(), material.getSaleName(), material.getTire(), material.getTvv()
         );
+
+        // ★ 新增：记录匹配到的模版，供后续回溯使用（null 表示未匹配到）
+        VehicleTemplate matchedTemplate = null;
+
         if (templates.isEmpty()) {
+            // 未匹配到模版：正常 insert，templateId 留空，等待模版后续导入时触发回溯
             applyMaterialAffirm(material);
-            return materialMapper.insertMaterial(material);
+
+        } else {
+            Map<String, VehicleTemplate> templateMap = templates.stream()
+                    .sorted(Comparator.comparing(
+                            VehicleTemplate::getEffectiveDate,
+                            Comparator.nullsLast(Comparator.reverseOrder())
+                    ))
+                    .collect(Collectors.toMap(
+                            VehicleTemplate::getTvv,
+                            t -> t,
+                            (existing, replacement) -> existing,
+                            LinkedHashMap::new
+                    ));
+            Map.Entry<String, VehicleTemplate> firstEntry = templateMap.entrySet().iterator().next();
+            VehicleTemplate template = firstEntry.getValue();
+            matchedTemplate = template; // ★ 新增：记录匹配模版
+
+            try {
+                JsonNode templateJson = new ObjectMapper().readTree(template.getJson());
+
+                String makeStr = getJsonText(templateJson, "Make");
+                List<String> makeList = splitBySemicolon(makeStr);
+                if (StringUtils.isBlank(material.getBrand()) && makeList.size() > 1) {
+                    throw new RuntimeException("Make存在多个值，请指定品牌");
+                }
+
+                String massStr = getJsonText(templateJson, "ActualMass");
+                List<String> massList = splitBySemicolon(massStr);
+                if (StringUtils.isBlank(material.getWeight()) && massList.size() > 1) {
+                    throw new RuntimeException("ActualMass存在多个值，请指定重量");
+                }
+
+                String commercialStr = getJsonText(templateJson, "CommercialName");
+                List<String> commercialList = splitBySemicolon(commercialStr);
+                if (StringUtils.isBlank(material.getSaleName()) && commercialList.size() > 1) {
+                    throw new RuntimeException("CommercialName存在多个值，请指定销售名称");
+                }
+
+                String tyreSizeStr = getJsonText(templateJson, "TyreSize");
+                List<String> tyreSizeList = splitBySemicolon(tyreSizeStr);
+                if (StringUtils.isBlank(material.getTire()) && tyreSizeList.size() > 1) {
+                    throw new RuntimeException("TyreSize存在多个值，请指定轮胎");
+                }
+
+                if (StringUtils.isBlank(material.getBrand()) && makeList.size() == 1) {
+                    material.setBrand(makeList.get(0));
+                }
+                if (StringUtils.isBlank(material.getWeight()) && massList.size() == 1) {
+                    material.setWeight(massList.get(0));
+                }
+                if (StringUtils.isBlank(material.getSaleName()) && commercialList.size() == 1) {
+                    material.setSaleName(commercialList.get(0));
+                }
+                if (StringUtils.isBlank(material.getTire()) && tyreSizeList.size() == 1) {
+                    material.setTire(tyreSizeList.get(0));
+                }
+
+            } catch (RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                log.warn("insertMaterial: template json 解析失败, templateId={}", template.getTemplateId(), e);
+            }
+
+            material.setVersion(template.getVersion());
+            material.setVehicleTemplateId(template.getTemplateId());
+            material.setVehicleTemplateUuid(template.getUuid());
+
+            applyMaterialAffirm(material);
         }
-        Map<String, VehicleTemplate> templateMap = templates.stream()
-                .sorted(Comparator.comparing(
-                        VehicleTemplate::getEffectiveDate,
-                        Comparator.nullsLast(Comparator.reverseOrder())
-                ))
-                .collect(Collectors.toMap(
-                        VehicleTemplate::getTvv,
-                        t -> t,
-                        (existing, replacement) -> existing,
-                        LinkedHashMap::new
-                ));
-        Map.Entry<String, VehicleTemplate> firstEntry = templateMap.entrySet().iterator().next();
-        VehicleTemplate template = firstEntry.getValue();
-        try {
-            JsonNode templateJson = new ObjectMapper().readTree(template.getJson());
 
-            // Make → brand
-            String makeStr = getJsonText(templateJson, "Make");
-            List<String> makeList = splitBySemicolon(makeStr);
-            if (StringUtils.isBlank(material.getBrand()) && makeList.size() > 1) {
-                throw new RuntimeException("Make存在多个值，请指定品牌");
-            }
+        int result = materialMapper.insertMaterial(material);
 
-            // ActualMass → weight
-            String massStr = getJsonText(templateJson, "ActualMass");
-            List<String> massList = splitBySemicolon(massStr);
-            if (StringUtils.isBlank(material.getWeight()) && massList.size() > 1) {
-                throw new RuntimeException("ActualMass存在多个值，请指定重量");
+        // ★ 新增：insert 成功后，回溯补关联该物料下已有但未关联模版的车辆信息
+        //    matchedTemplate 为 null 时，retroactiveLinkVehiclesByMaterial 内部直接返回，无副作用
+        if (result > 0) {
+            try {
+                retroactiveLinkService.retroactiveLinkVehiclesByMaterial(material, matchedTemplate);
+            } catch (Exception e) {
+                log.warn("[回溯] insertMaterial 触发车辆回溯失败，materialNo={}, error={}",
+                        material.getMaterialNo(), e.getMessage());
             }
-
-            // CommercialName → saleName
-            String commercialStr = getJsonText(templateJson, "CommercialName");
-            List<String> commercialList = splitBySemicolon(commercialStr);
-            if (StringUtils.isBlank(material.getSaleName()) && commercialList.size() > 1) {
-                throw new RuntimeException("CommercialName存在多个值，请指定销售名称");
-            }
-
-            // TyreSize → tire
-            String tyreSizeStr = getJsonText(templateJson, "TyreSize");
-            List<String> tyreSizeList = splitBySemicolon(tyreSizeStr);
-            if (StringUtils.isBlank(material.getTire()) && tyreSizeList.size() > 1) {
-                throw new RuntimeException("TyreSize存在多个值，请指定轮胎");
-            }
-
-            // 校验通过后，将模板字段值同步给 material（仅在 material 自身为空时填充）
-            if (StringUtils.isBlank(material.getBrand()) && makeList.size() == 1) {
-                material.setBrand(makeList.get(0));
-            }
-            if (StringUtils.isBlank(material.getWeight()) && massList.size() == 1) {
-                material.setWeight(massList.get(0));
-            }
-            if (StringUtils.isBlank(material.getSaleName()) && commercialList.size() == 1) {
-                material.setSaleName(commercialList.get(0));
-            }
-            if (StringUtils.isBlank(material.getTire()) && tyreSizeList.size() == 1) {
-                material.setTire(tyreSizeList.get(0));
-            }
-
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            log.warn("insertMaterial: template json 解析失败, templateId={}", template.getTemplateId(), e);
         }
 
-        material.setVersion(template.getVersion());
-        material.setVehicleTemplateId(template.getTemplateId());
-        material.setVehicleTemplateUuid(template.getUuid());
-
-        applyMaterialAffirm(material);
-        return materialMapper.insertMaterial(material);
+        return result;
     }
 
     /**

@@ -983,4 +983,32 @@
 		WHERE vehicle_template_id = #{templateId}
 		  AND deleted = 0
 	</update>
+
+	<!-- 查询指定 material_no 下、vehicle_template_id 为空的车辆（回溯补关联用） -->
+	<select id="selectByMaterialNoWithoutTemplate" resultMap="VehicleInfoResult">
+		SELECT *
+		FROM vehicle_info
+		WHERE material_no = #{materialNo}
+		  AND (vehicle_template_id IS NULL OR vehicle_template_id = '')
+		  AND deleted = 0
+	</select>
+
+	<!-- 回溯补关联：仅更新模版相关字段 -->
+	<update id="retroactiveLinkTemplate">
+		UPDATE vehicle_info
+		SET vehicle_template_id   = #{templateId},
+			tvv                   = #{tvv},
+			wvta_no               = #{wvtaNo},
+			json                  = #{json},
+			brand                 = #{brand},
+			weight                = #{weight},
+			sale_name             = #{saleName},
+			tire                  = #{tire},
+			tire_resistance_grade = #{tireResistanceGrade},
+			vehicle_model         = #{vehicleModel},
+			project_name          = #{projectName},
+			update_time           = SYSDATE()
+		WHERE vehicle_id = #{vehicleId}
+		  AND deleted = 0
+	</update>
 </mapper>

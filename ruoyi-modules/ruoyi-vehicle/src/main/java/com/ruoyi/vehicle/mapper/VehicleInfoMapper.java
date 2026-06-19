@@ -229,4 +229,28 @@ public interface VehicleInfoMapper {
 
     void updateUploadAffirmByTemplateId(@Param("templateId") String templateId,
                                         @Param("uploadAffirm") int uploadAffirm);
+
+    /**
+     * 查询指定 material_no 下、vehicle_template_id 为空的车辆信息
+     * 用于回溯补关联
+     */
+    List<VehicleInfo> selectByMaterialNoWithoutTemplate(@Param("materialNo") String materialNo);
+
+    /**
+     * 回溯补关联：只更新模版相关字段，不影响其他业务字段
+     */
+    void retroactiveLinkTemplate(
+            @Param("vehicleId")           Long   vehicleId,
+            @Param("templateId")          String templateId,
+            @Param("tvv")                 String tvv,
+            @Param("wvtaNo")              String wvtaNo,
+            @Param("json")                String json,
+            @Param("brand")               String brand,
+            @Param("weight")              String weight,
+            @Param("saleName")            String saleName,
+            @Param("tire")                String tire,
+            @Param("tireResistanceGrade") String tireResistanceGrade,
+            @Param("vehicleModel")        String vehicleModel,
+            @Param("projectName")         String projectName
+    );
 }

@@ -111,6 +111,9 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
     @Autowired
     private MaterialMapper materialMapper;
 
+    @Autowired
+    private RetroactiveLinkService retroactiveLinkService;
+
     @Override
     public List<VehicleTemplate> selectVehicleTemplateList(VehicleTemplate template) {
         template.setIsLast(1);
@@ -244,6 +247,14 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         }
         int row = templateMapper.insertVehicleTemplate(template);
         batchValidate(template.getTemplateId());
+
+        if (row > 0 && "0".equals(template.getStatus())) {
+            try {
+                retroactiveLinkService.retroactiveLinkMaterialsAndVehiclesByTemplate(template);
+            } catch (Exception e) {
+                log.warn("[回溯] insertVehicleTemplate 触发回溯失败...");
+            }
+        }
         return row;
     }
 
@@ -369,10 +380,25 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
         if (status.equals(template.getStatus())) {
             return 1;
         }
-        if (template.getOverdueDate() != null && status.equals("0") && new Date().after(template.getOverdueDate())) {
+        if (template.getOverdueDate() != null && status.equals("0")
+                && new Date().after(template.getOverdueDate())) {
             throw new RuntimeException("已超过失效时间，操作无法执行。如需启用该模版请先修改失效时间后重试");
         }
-        return templateMapper.updateStatus(templateId, status);
+
+        int row = templateMapper.updateStatus(templateId, status);
+
+        // ★ 新增：从停用切换为启用时，触发回溯补关联
+        if (row > 0 && "0".equals(status)) {
+            // 重新查一次拿到完整对象（含 tvv、uuid 等字段）
+            VehicleTemplate enabledTemplate = templateMapper.selectVehicleTemplateById(templateId);
+            try {
+                retroactiveLinkService.retroactiveLinkMaterialsAndVehiclesByTemplate(enabledTemplate);
+            } catch (Exception e) {
+                log.warn("[回溯] updateStatus 触发回溯失败，templateId={}, error={}", templateId, e.getMessage());
+            }
+        }
+
+        return row;
     }
 
     @Override
@@ -714,6 +740,11 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
                     pushEvent(sink, "progress", String.format(
                             "{\"row\":%d,\"total\":%d,\"status\":\"fail\",\"reason\":\"%s\"}",
                             rowNum, total, escapeJson(reason)));
+                    try {
+                        retroactiveLinkService.retroactiveLinkMaterialsAndVehiclesByTemplate(template);
+                    } catch (Exception retroEx) {
+                        log.warn("[回溯] doImport 行 {} 触发回溯失败: {}", rowNum, retroEx.getMessage());
+                    }
                     continue;
                 }
 
@@ -782,6 +813,14 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
 
                     pushEvent(sink, "progress", String.format(
                             "{\"row\":%d,\"total\":%d,\"status\":\"success\"}", rowNum, total));
+
+                    if ("0".equals(template.getStatus())) {
+                        try {
+                            retroactiveLinkService.retroactiveLinkMaterialsAndVehiclesByTemplate(template);
+                        } catch (Exception retroEx) {
+                            log.warn("[回溯] doImport 行 {} 触发回溯失败: {}", rowNum, retroEx.getMessage());
+                        }
+                    }
 
                 } catch (Exception rowEx) {
                     failCount++;
