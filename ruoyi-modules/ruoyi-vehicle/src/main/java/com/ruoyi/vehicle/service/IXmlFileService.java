@@ -30,7 +30,7 @@ public interface IXmlFileService {
     /**
      * 修改XML文件
      */
-    int updateXmlFile(XmlFile xmlFile);
+    Long updateXmlFile(XmlFile xmlFile);
 
     /**
      * 批量删除XML文件

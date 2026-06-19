@@ -142,7 +142,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public int updateXmlFile(XmlFile xmlFile) {
+    public Long updateXmlFile(XmlFile xmlFile) {
         // 1. 保存前端传入的 content
         String base64Content = xmlFile.getContent();
         // 还原 URL-safe Base64 为标准 Base64
@@ -210,6 +210,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
         dbXmlFile.setRemark(remark);
         dbXmlFile.setCreateBy(SecurityUtils.getUsername());
         dbXmlFile.setCreateTime(new Date());
+        dbXmlFile.setValidateResult(0);
         int rows = xmlFileMapper.insertXmlFile(dbXmlFile);
 
         // 11. 插入 xml_version 历史记录
@@ -223,7 +224,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
         xmlVersion.setCreateTime(new Date());
         xmlVersionMapper.insertXmlVersion(xmlVersion);
 
-        return rows;
+        log.info("dbXmlFile.getId={}", dbXmlFile.getId());
+        // 12. 重新校验xml文件
+        validateXml(dbXmlFile.getId());
+
+        return dbXmlFile.getId();
     }
 
     /**
