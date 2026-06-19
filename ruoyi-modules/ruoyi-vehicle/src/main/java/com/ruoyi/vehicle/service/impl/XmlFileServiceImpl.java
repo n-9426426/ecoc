@@ -4199,10 +4199,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
      * 仅在 EnergySource 含 | 时执行，单段场景不影响。
      */
     private void prependZeroForElectricPowerFields(Map<String, Object> jsonMap) {
-        Object energySourceObj = jsonMap.get("EnergySource");
-        if (energySourceObj == null) return;
-        String energySource = energySourceObj.toString().trim();
-        if (!energySource.contains("|")) return; // 单段，无需处理
+        if (!hasRepeatedElectricSegmentsAfterFirst(jsonMap)) {
+            return;
+        }
 
         for (String fieldName : Arrays.asList("Maximum30MinutesPower", "MaximumNetPowerElectric")) {
             Object raw = jsonMap.get(fieldName);
@@ -4642,6 +4641,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
     }
 
     private void addElement(Document doc, Element parent, String tagName, String textContent, boolean required) {
+        if (textContent != null && "N/A".equals(textContent.trim())) {
+            textContent = "";
+        }
         if (StringUtils.isBlank(textContent) && !required) {
             // 无值且非必须则不添加该标签
             return;
