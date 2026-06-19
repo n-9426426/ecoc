@@ -155,8 +155,35 @@ public class ConditionExpression {
         }
 
         // 原有字面量比较逻辑
+        String actualStr = actual == null ? "" : actual.toString();
+
+        // ★ 修复：actual 为多值字段（含 | 或 ; 分隔符，如 EnergySource="10|95|95|95"）时，
+        //   整串与单个字面量直接做数值/字符串比较在语义上必然失真：
+        //     - 数值解析：Double.parseDouble("10|95|95|95") 直接抛 NumberFormatException；
+        //     - 字符串相等：拼接后的整串几乎不可能字面等于单个枚举值，导致 EQ 恒为 false、
+        //       NEQ 恒为 true，与"该值是否出现在多值字段中"的本意完全不符
+        //       （如 "ANY EnergySource != '95'" 对任何混动车都会恒成立，
+        //       即便其 EnergySource 中确实包含 95）。
+        //   这里按集合语义处理：
+        //     EQ  → 任一分段等于 expectValue 即视为匹配（存在性，"95" ∈ {10,95,95,95}）；
+        //     NEQ → 所有分段都不等于 expectValue 才视为不匹配（EQ 的逻辑取反，
+        //           "95" ∉ {10,95,95,95} 才为 true）。
+        //   其余运算符（>、<、>=、<=）暂不做多值拆分，维持原有按整串数值解析失败即按
+        //   运算符类型默认处理（非 EQ/NEQ 一律 false）的行为，避免引入未经验证的新语义。
+        if (isMultiValue(actualStr)
+                && (this.operator == CompareOperator.EQ || this.operator == CompareOperator.NEQ)) {
+            boolean anyMatch = false;
+            for (String part : splitMultiValue(actualStr)) {
+                if (Objects.equals(this.expectValue, part == null ? null : part.trim())) {
+                    anyMatch = true;
+                    break;
+                }
+            }
+            return this.operator == CompareOperator.EQ ? anyMatch : !anyMatch;
+        }
+
         try {
-            double actualNum   = Double.parseDouble(actual == null ? "0" : actual.toString());
+            double actualNum   = Double.parseDouble(actualStr.isEmpty() ? "0" : actualStr);
             double expectedNum = Double.parseDouble(this.expectValue);
             return this.operator.apply(actualNum, expectedNum);
         } catch (NumberFormatException e) {
@@ -168,6 +195,33 @@ public class ConditionExpression {
                 return false;
             }
         }
+    }
+
+    /**
+     * 判断字段值是否为多值字段（含 | 或 ; 分隔符）。
+     * 与 {@code com.ruoyi.common.core.parser.FinalRuleParser#isMultiValue} 逻辑保持一致，
+     * 此处独立实现以避免 model 包反向依赖 parser 包。
+     */
+    private static boolean isMultiValue(String value) {
+        return value != null && (value.contains("|") || value.contains(";"));
+    }
+
+    /**
+     * 按 | 或 ; 拆分多值字段。
+     * 与 {@code com.ruoyi.common.core.parser.FinalRuleParser#splitMultiValue} 逻辑保持一致，
+     * 此处独立实现以避免 model 包反向依赖 parser 包。
+     */
+    private static String[] splitMultiValue(String value) {
+        if (value == null || value.isEmpty()) {
+            return new String[]{value};
+        }
+        if (value.contains("|")) {
+            return value.split("\\|", -1);
+        }
+        if (value.contains(";")) {
+            return value.split(";", -1);
+        }
+        return new String[]{value};
     }
 
     private boolean isAbsent(Object value) {

@@ -526,33 +526,43 @@ public class FinalRuleExecutor {
         }
 
         Object listObj = context.get(listFieldName);
-        if (!(listObj instanceof List)) {
-            // 列表字段不存在或不是 List 类型：COUNT = 0，按 0 参与比较
-            // 这允许空列表场景下 COUNT < N 正确触发禁填
-            long count = 0L;
-            if (!af.getOperator().apply((double) count, af.getThreshold())) {
-                // COUNT 条件不满足，规则不触发
-                return null;
-            }
-            // COUNT 条件满足（如 0 < 2 时 "IS ABSENT" 应触发）→ 进入 Step 3
-            return checkPresenceByOperator(rule, fieldName, actualValue, count);
-        }
-
-        List<?> list = (List<?>) listObj;
         List<String> withinVals = af.getEnumValues();
+        long count;
 
-        long count = list.stream()
-                .filter(item -> item instanceof Map)
-                .filter(item -> {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> row = (Map<String, Object>) item;
-                    // 列表字段名既是 context key 也是行内字段名（EnergySource -> row["EnergySource"]）
-                    Object rowVal = row.get(listFieldName);
-                    if (rowVal == null) return false;
-                    String strVal = rowVal.toString().trim();
-                    return withinVals != null && withinVals.contains(strVal);
-                })
-                .count();
+        if (listObj instanceof List) {
+            // ---- 情形 1：listField 在 context 中是 List<Map<String,Object>>（如 AxleGroup 行结构）----
+            List<?> list = (List<?>) listObj;
+            count = list.stream()
+                    .filter(item -> item instanceof Map)
+                    .filter(item -> {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> row = (Map<String, Object>) item;
+                        // 列表字段名既是 context key 也是行内字段名（EnergySource -> row["EnergySource"]）
+                        Object rowVal = row.get(listFieldName);
+                        if (rowVal == null) return false;
+                        String strVal = rowVal.toString().trim();
+                        return withinVals != null && withinVals.contains(strVal);
+                    })
+                    .count();
+        } else if (listObj != null) {
+            // ---- 情形 2：listField 在 context 中是原始标量字符串（如 EnergySource="10|95|95|95"）----
+            // VehicleFieldParser 未对该字段做 List<Map> 转换时，回退为直接按分隔符拆分计数，
+            // 避免误判为"列表不存在"而把 COUNT 强制按 0 处理（这是导致误报的根因）。
+            String rawStr = String.valueOf(listObj);
+            String[] parts = FinalRuleParser.splitMultiValue(rawStr);
+            long matched = 0L;
+            for (String part : parts) {
+                String trimmed = part == null ? "" : part.trim();
+                if (withinVals != null && withinVals.contains(trimmed)) {
+                    matched++;
+                }
+            }
+            count = matched;
+        } else {
+            // ---- 情形 3：listField 在 context 中不存在（null）：COUNT = 0，按 0 参与比较 ----
+            // 这允许空列表场景下 COUNT < N 正确触发禁填
+            count = 0L;
+        }
 
         // ---- Step 3：COUNT 比较 ----
         if (!af.getOperator().apply((double) count, af.getThreshold())) {

@@ -201,7 +201,7 @@ public class XmlController extends BaseController {
     @Log(title = "XML文件管理", businessType = BusinessType.UPDATE)
     @PutMapping
     public AjaxResult edit(@RequestBody XmlFile xmlFile) {
-        return toAjax(xmlFileService.updateXmlFile(xmlFile));
+        return success().put("xmlId", xmlFileService.updateXmlFile(xmlFile));
     }
 
     /**
