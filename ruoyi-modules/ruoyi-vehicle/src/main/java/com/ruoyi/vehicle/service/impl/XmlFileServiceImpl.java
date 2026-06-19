@@ -1320,17 +1320,51 @@ public class XmlFileServiceImpl implements IXmlFileService {
             // ★ 修复：统一以 dictLabel（XML 标签名）作为 key 写入 baseJsonMap，每个字段独立，
             //   不再写入 keyMap 兜底，避免同一字段被规则引擎当作两个 key 校验两次（产生重复结果）。
             //   enrichAndMerge 通过同时支持 keyMap 和 dictLabel 两种 key 的查找来适配规则引擎返回值。
+            //
+            // ★ 新增修复：叶子字段若在全文档范围内重复出现（如 EnergySource 分别位于不同
+            //   EnergyConvertorGroup 下各自的 EnergySourceGroup 中，每个父节点下只有 1 个实例，
+            //   不会被第一步的"同父节点下兄弟标签重复"逻辑识别为循环节点；又因为它不是结构节点，
+            //   第1307-1317行的补充修复也不会把它纳入 loopTagNames）。此前这类字段会在下方循环里
+            //   被逐个 put 覆盖，最终只保留文档中最后一个实例的值，导致：
+            //     1) COUNT(@EnergySource IN [...]) 等聚合规则统计到的实际可用值只有 1 个，而非真实的
+            //        重复次数（即便 FinalRuleExecutor 已对标量管道字段做了拆分兜底，源头只剩 1 个值
+            //        也无法还原真实计数）；
+            //     2) 该字段自身的枚举/范围规则也只会按最后一个值校验一次，漏过其余实例。
+            //   这里按"该叶子标签全局出现次数 >= 2 且未被识别为循环节点"，收集其全部取值，
+            //   按 | 拼接后整体写入 baseJsonMap（与内部 JSON 存储的管道分隔约定保持一致），
+            //   配合 FinalRuleExecutor 对标量管道字段的拆分计数逻辑，恢复正确的 COUNT 结果。
+            Map<String, List<String>> multiLeafValues = new LinkedHashMap<>();
+            for (int i = 0; i < allNodes.getLength(); i++) {
+                Element element = (Element) allNodes.item(i);
+                String tagName  = element.getTagName();
+                SysDictData dict = labelToDictMap.get(tagName);
+                if (dict == null || isStructNode(dict) || StringUtils.isBlank(dict.getKeyMap())) continue;
+                if (loopTagNames.contains(tagName)) continue;
+                if (globalTagCount.getOrDefault(tagName, 0) < 2) continue;
+
+                String value = StringUtils.defaultString(element.getTextContent());
+                multiLeafValues.computeIfAbsent(sanitizeXmlTagName(dict.getDictLabel()), k -> new ArrayList<>())
+                        .add(value);
+            }
+            if (!multiLeafValues.isEmpty()) {
+                log.debug("★ 检测到全局重复但未被识别为循环节点的叶子字段，按 | 拼接: {}", multiLeafValues.keySet());
+            }
+
             Map<String, Object> baseJsonMap = new LinkedHashMap<>();
+            for (Map.Entry<String, List<String>> entry : multiLeafValues.entrySet()) {
+                baseJsonMap.put(entry.getKey(), String.join("|", entry.getValue()));
+            }
             for (int i = 0; i < allNodes.getLength(); i++) {
                 Element element = (Element) allNodes.item(i);
                 String tagName  = element.getTagName();
                 SysDictData dict = labelToDictMap.get(tagName);
                 if (dict == null || isStructNode(dict) || StringUtils.isBlank(dict.getKeyMap())) continue;
 
-                if (!loopTagNames.contains(tagName)) {
+                String dictLabel = sanitizeXmlTagName(dict.getDictLabel());
+                if (!loopTagNames.contains(tagName) && !multiLeafValues.containsKey(dictLabel)) {
                     String value = StringUtils.defaultString(element.getTextContent());
                     // 以 dictLabel 为唯一 key，保证每个字段独立，不互相覆盖
-                    baseJsonMap.put(sanitizeXmlTagName(dict.getDictLabel()), value);
+                    baseJsonMap.put(dictLabel, value);
                 }
             }
 
