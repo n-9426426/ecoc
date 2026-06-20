@@ -1789,18 +1789,20 @@ public class XmlFileServiceImpl implements IXmlFileService {
             boolean isNovcOrOvc = templateEnergyValue == null
                     || "hybrid".equals(templateEnergyValue)
                     || "HEV".equals(templateEnergyValue);
+            boolean isElectricity = templateEnergyValue == null
+                    || "pure_electric".equals(templateEnergyValue);
 
             List<String> xmlContents = new ArrayList<>();
             if (isNovcOrOvc) {
                 // NOVC/OVC 混动：沿用现有逻辑，生成一份完整XML
                 Document doc = buildXmlDocumentForNovcOvc(vehicle, xmlTemplate, sysNotice, msg, vehicleParams);
                 xmlContents.add(saveGeneratedXmlDocument(doc, vehicle, xmlTemplate));
-            } else {
+            } else if (isElectricity){
                 // 纯电 / 燃油：现有生成逻辑复制两份，各自独立生成、独立保存
                 // （两份逻辑目前内容相同，分开成独立方法是为了后续可以分别单独调整，不互相影响）
                 Document docElectric = buildXmlDocumentForPureElectric(vehicle, xmlTemplate, sysNotice, msg, vehicleParams);
                 xmlContents.add(saveGeneratedXmlDocument(docElectric, vehicle, xmlTemplate));
-
+            } else {
                 Document docFuel = buildXmlDocumentForFuelOil(vehicle, xmlTemplate, sysNotice, msg, vehicleParams);
                 xmlContents.add(saveGeneratedXmlDocument(docFuel, vehicle, xmlTemplate));
             }
@@ -2513,20 +2515,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
         return doc;
     }
 
-    /**
-     * 复用的XML保存逻辑（原步骤14~20）：将构建好的 Document 序列化为字符串、管理版本号、
-     * 上传文件、保存 XmlFile/XmlVersion 记录、触发自动校验、更新车辆状态、记录生命周期、
-     * 发送"成功"通知。NOVC/OVC、纯电、燃油 三条生成分支共用此方法；纯电/燃油拆分场景下
-     * 会被调用两次，各自独立生成一条 XmlFile 记录。内部使用方法内自建的 sysNotice / msg /
-     * vehicleLifecycle，互不干扰，可安全多次调用。
-     * <p>
-     * ★ 注意：本方法沿用了改造前完全相同的保存逻辑，未做任何调整 —— XmlFile 的 fileName
-     *   仍以 "vehicle_"+vin 命名，不区分纯电/燃油。也就是说拆分场景下纯电先保存、燃油后保存时，
-     *   两次调用会被当成"同一份文件的两次版本更新"：第二次（燃油）保存时 updateIsLatestToFalse
-     *   会把第一次（纯电）那条记录标记为非最新版本，版本号也会从 1.0 递增到 2.0，
-     *   而不是两份并存的"最新文档"。如果业务上需要纯电/燃油两份文档同时作为各自独立的最新版本存在，
-     *   后续需要给 fileName 增加区分后缀（例如 vin_BEV.xml / vin_FUEL.xml）；本次按你的要求暂未改动。
-     */
     private String saveGeneratedXmlDocument(Document doc, VehicleInfo vehicle, XmlTemplate xmlTemplate) throws Exception {
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
         SysNotice sysNotice = new SysNotice();
