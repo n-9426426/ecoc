@@ -8,6 +8,7 @@ import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.model.FieldValidationResult;
 import com.ruoyi.common.core.model.RuleViolation;
 import com.ruoyi.common.core.model.ValidationReport;
+import com.ruoyi.common.core.parser.ValueMappingParser;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.security.utils.SecurityUtils;
@@ -58,6 +59,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -1021,12 +1027,17 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             // 3. 构建"模板标签路径 → 是否循环节点"映射
             //    循环节点定义：该路径对应dict_value='NULL'且其子孙叶子节点中至少一个值含分号
+            // ★ 新增：同步构建"模板标签路径 → 数据类型"映射。dict_value 字段对属性行而言
+            //   存储的就是数据类型名（String/Short/DateTime/Date/Decimal/Int/Structure/NULL），
+            //   供下面的 DATA_FORMAT 校验直接使用，不需要额外的字典关联表。
             Map<String, String> attrPathToTagName = new LinkedHashMap<>(); // attrPath → tagName
+            Map<String, String> attrPathToDataType = new LinkedHashMap<>(); // attrPath → 数据类型（dict_value）
             for (XmlTemplateAttribute attr : attrList) {
                 String[] parts = attr.getAttrPath().split("\\.");
                 SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
                 if (d != null && StringUtils.isNotBlank(d.getDictLabel())) {
                     attrPathToTagName.put(attr.getAttrPath(), sanitizeXmlTagName(d.getDictLabel()));
+                    attrPathToDataType.put(attr.getAttrPath(), d.getDictValue());
                 }
             }
 
@@ -1049,6 +1060,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
             Map<String, Boolean> tagPathIsLoop = new LinkedHashMap<>();
             // tagPath → is_required（true=必须，false=非必须）
             Map<String, Boolean> tagPathIsRequired = new HashMap<>();
+            // ★ 新增：tagPath → 数据类型（dict_value），结构遍历时顺带做 DATA_FORMAT 校验
+            Map<String, String> tagPathToDataType = new HashMap<>();
             Map<String, String> attrPathToTagPath = new HashMap<>();
             for (XmlTemplateAttribute attr : sortedAttrList) {
                 String attrPath = attr.getAttrPath();
@@ -1069,6 +1082,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 attrPathToTagPath.put(attrPath, tagPath);
                 boolean isLoop = loopContainerPaths.contains(attrPath);
                 tagPathIsLoop.put(tagPath, isLoop);
+                tagPathToDataType.put(tagPath, attrPathToDataType.get(attrPath));
                 // 记录 is_required：同一 tagPath 只要有一个 required=1 则为必须
                 boolean required = attr.getIsRequired() != null && attr.getIsRequired() == 1;
                 tagPathIsRequired.merge(tagPath, required, (a, b) -> a || b);
@@ -1076,7 +1090,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             // 6. 对XML DOM做DFS遍历，按层级路径逐节点与模板比对
             Element root = doc.getDocumentElement();
-            checkElementStructure(root, "", tagPathIsLoop, tagPathIsRequired, results);
+            checkElementStructure(root, "", tagPathIsLoop, tagPathIsRequired, tagPathToDataType, results);
 
         } catch (Exception e) {
             results.add(buildStructureFieldResult("STRUCTURE",
@@ -1100,6 +1114,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
     private void checkElementStructure(Element element, String parentPath,
                                        Map<String, Boolean> tagPathIsLoop,
                                        Map<String, Boolean> tagPathIsRequired,
+                                       Map<String, String> tagPathToDataType,
                                        List<FieldValidationResult> results) {
         String tagName = element.getTagName();
         String currentPath = parentPath.isEmpty() ? tagName : parentPath + "/" + tagName;
@@ -1111,6 +1126,26 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     String.format("标签 <%s> 不在模板定义中（路径：%s），属于多余节点或层级位置错误",
                             tagName, currentPath)));
             return;
+        }
+
+        // ★ 新增：数据类型校验（DATA_FORMAT，与 STRUCTURE 同级错误）。
+        //   dict_value = Structure / NULL（含空白）的节点不做类型校验（结构节点或未指定类型）；
+        //   值为空、或为 "N/A"（与 addElement 生成阶段的占位约定保持一致）也不校验，
+        //   是否必填由 is_required / STRUCTURE 的"缺少必须标签"检查单独负责，这里只管"有值时值符不符合类型"。
+        String dataType = tagPathToDataType.get(currentPath);
+        if (StringUtils.isNotBlank(dataType)
+                && !"Structure".equalsIgnoreCase(dataType)
+                && !"NULL".equalsIgnoreCase(dataType)) {
+            String textValue = element.getTextContent();
+            String trimmed = textValue == null ? "" : textValue.trim();
+            if (StringUtils.isNotBlank(trimmed) && !"N/A".equalsIgnoreCase(trimmed)
+                    && !isDataTypeValid(trimmed, dataType)) {
+                results.add(buildStructureFieldResult("DATA_FORMAT",
+                        String.format("Tag <%s> value \"%s\" does not match declared data type \"%s\" (path: \"%s\")",
+                                tagName, trimmed, dataType, currentPath),
+                        String.format("标签 <%s> 的值 \"%s\" 不符合声明的数据类型 \"%s\"（路径：%s）",
+                                tagName, trimmed, dataType, currentPath)));
+            }
         }
 
         // 判断当前节点自身是否为循环节点（在父节点下可重复出现）
@@ -1228,8 +1263,111 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
         // ★ 递归处理全部子节点
         for (Element childEl : childElements) {
-            checkElementStructure(childEl, currentPath, tagPathIsLoop, tagPathIsRequired, results);
+            checkElementStructure(childEl, currentPath, tagPathIsLoop, tagPathIsRequired, tagPathToDataType, results);
         }
+    }
+
+    /**
+     * 按"数据类型"字典（sys_dict_data.dict_value，对属性字段而言存储的就是数据类型名）
+     * 校验叶子节点文本值是否符合声明类型。调用方已过滤掉 Structure/NULL/空值/N/A，
+     * 这里只处理真正需要按类型解析的值。
+     * <p>
+     * 类型对应关系：
+     *   String  → 任意文本，恒为 true
+     *   Short   → {@link Short#parseShort}
+     *   Int     → {@link Integer#parseInt}
+     *   Decimal → {@link BigDecimal#BigDecimal(String)}
+     *   DateTime→ 能被任意一种常见日期时间格式解析即算通过
+     *   Date    → 纯日期，分隔符允许 "-" 或 "/"
+     *   未识别的类型名 → 不阻断校验，按 true 处理（避免字典里出现新类型名时把所有该类型字段都判错）
+     */
+    private boolean isDataTypeValid(String value, String dataType) {
+        switch (dataType.trim()) {
+            case "String":
+                return true;
+            case "Short":
+                try {
+                    Short.parseShort(value);
+                    return true;
+                } catch (NumberFormatException e) {
+                    return false;
+                }
+            case "Int":
+                try {
+                    Integer.parseInt(value);
+                    return true;
+                } catch (NumberFormatException e) {
+                    return false;
+                }
+            case "Decimal":
+                try {
+                    new BigDecimal(value);
+                    return true;
+                } catch (NumberFormatException e) {
+                    return false;
+                }
+            case "DateTime":
+                return tryParseDateTime(value);
+            case "Date":
+                return tryParseDate(value);
+            default:
+                return true;
+        }
+    }
+
+    // 纯日期格式，分隔符允许 "-" 或 "/"
+    private static final DateTimeFormatter[] DATE_ONLY_FORMATS = {
+            DateTimeFormatter.ofPattern("yyyy-MM-dd"),
+            DateTimeFormatter.ofPattern("yyyy/MM/dd"),
+    };
+
+    // 不带时区/偏移量的日期时间格式（含日期、不含日期两类分隔符写法）
+    private static final DateTimeFormatter[] LOCAL_DATETIME_FORMATS = {
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"),
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+            DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"),
+    };
+
+    private boolean tryParseDate(String value) {
+        for (DateTimeFormatter f : DATE_ONLY_FORMATS) {
+            try {
+                LocalDate.parse(value, f);
+                return true;
+            } catch (Exception ignored) {
+                // 尝试下一种格式
+            }
+        }
+        return false;
+    }
+
+    private boolean tryParseDateTime(String value) {
+        // 1. 标准 ISO 8601，含 Z / 时区偏移量（如 2026-06-19T16:34:53Z）
+        try {
+            OffsetDateTime.parse(value);
+            return true;
+        } catch (Exception ignored) {
+        }
+        try {
+            Instant.parse(value);
+            return true;
+        } catch (Exception ignored) {
+        }
+        // 2. 不带时区的常见写法
+        try {
+            LocalDateTime.parse(value);
+            return true;
+        } catch (Exception ignored) {
+        }
+        for (DateTimeFormatter f : LOCAL_DATETIME_FORMATS) {
+            try {
+                LocalDateTime.parse(value, f);
+                return true;
+            } catch (Exception ignored) {
+                // 尝试下一种格式
+            }
+        }
+        // 3. 兜底：纯日期也算"能转换为时间"
+        return tryParseDate(value);
     }
 
     /**
@@ -1658,18 +1796,20 @@ public class XmlFileServiceImpl implements IXmlFileService {
             boolean isNovcOrOvc = templateEnergyValue == null
                     || "hybrid".equals(templateEnergyValue)
                     || "HEV".equals(templateEnergyValue);
+            boolean isElectricity = templateEnergyValue == null
+                    || "pure_electric".equals(templateEnergyValue);
 
             List<String> xmlContents = new ArrayList<>();
             if (isNovcOrOvc) {
                 // NOVC/OVC 混动：沿用现有逻辑，生成一份完整XML
                 Document doc = buildXmlDocumentForNovcOvc(vehicle, xmlTemplate, sysNotice, msg, vehicleParams);
                 xmlContents.add(saveGeneratedXmlDocument(doc, vehicle, xmlTemplate));
-            } else {
+            } else if (isElectricity){
                 // 纯电 / 燃油：现有生成逻辑复制两份，各自独立生成、独立保存
                 // （两份逻辑目前内容相同，分开成独立方法是为了后续可以分别单独调整，不互相影响）
                 Document docElectric = buildXmlDocumentForPureElectric(vehicle, xmlTemplate, sysNotice, msg, vehicleParams);
                 xmlContents.add(saveGeneratedXmlDocument(docElectric, vehicle, xmlTemplate));
-
+            } else {
                 Document docFuel = buildXmlDocumentForFuelOil(vehicle, xmlTemplate, sysNotice, msg, vehicleParams);
                 xmlContents.add(saveGeneratedXmlDocument(docFuel, vehicle, xmlTemplate));
             }
@@ -1741,6 +1881,12 @@ public class XmlFileServiceImpl implements IXmlFileService {
             jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
         }
 
+        // Colour 值通过 sys_dict_data 的 value_connection 映射（与 IntendedCountryRegistration 同一套逻辑）
+        Object rawColourNovcOvc = vehicle.getColor();
+        if (rawColourNovcOvc != null && StringUtils.isNotBlank(rawColourNovcOvc.toString())) {
+            jsonMap.put("Colour", resolveColourDictValue(rawColourNovcOvc.toString()));
+        }
+
         // 3. 查询字典数据，构建 uuid -> SysDictData 映射
         List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
         Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 为 uuid
@@ -1921,6 +2067,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
         //   删除该 EnergySource 父节点的父节点的同级容器（EnergyConvertorGroup）下的
         //   EngineCapacity、NumberOfCylinders、ArrangementCylinders 三个标签
         removeEngineCapacityForElectricEnergySource(doc);
+
+        // 13d. Header 下若不存在 IntendedCountryRegistration 标签，
+        //   在 IviVersionDateTime 标签之后补充插入，值取 country 字段的字典映射
+        ensureIntendedCountryRegistration(doc, vehicle);
 
         return doc;
     }
@@ -1952,6 +2102,12 @@ public class XmlFileServiceImpl implements IXmlFileService {
             jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
         }
 
+        // Colour 值通过 sys_dict_data 的 value_connection 映射（与 IntendedCountryRegistration 同一套逻辑）
+        Object rawColourPureElectric = vehicle.getColor();
+        if (rawColourPureElectric != null && StringUtils.isNotBlank(rawColourPureElectric.toString())) {
+            jsonMap.put("Colour", resolveColourDictValue(rawColourPureElectric.toString()));
+        }
+
         // 3. 查询字典数据，构建 uuid -> SysDictData 映射
         List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
         Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 为 uuid
@@ -2132,6 +2288,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
         //   删除该 EnergySource 父节点的父节点的同级容器（EnergyConvertorGroup）下的
         //   EngineCapacity、NumberOfCylinders、ArrangementCylinders 三个标签
         removeEngineCapacityForElectricEnergySource(doc);
+
+        // 13d. Header 下若不存在 IntendedCountryRegistration 标签，
+        //   在 IviVersionDateTime 标签之后补充插入，值取 country 字段的字典映射
+        ensureIntendedCountryRegistration(doc, vehicle);
 
         return doc;
     }
@@ -2163,6 +2323,12 @@ public class XmlFileServiceImpl implements IXmlFileService {
             jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
         }
 
+        // Colour 值通过 sys_dict_data 的 value_connection 映射（与 IntendedCountryRegistration 同一套逻辑）
+        Object rawColourFuelOil = vehicle.getColor();
+        if (rawColourFuelOil != null && StringUtils.isNotBlank(rawColourFuelOil.toString())) {
+            jsonMap.put("Colour", resolveColourDictValue(rawColourFuelOil.toString()));
+        }
+
         // 3. 查询字典数据，构建 uuid -> SysDictData 映射
         List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
         Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 为 uuid
@@ -2344,23 +2510,18 @@ public class XmlFileServiceImpl implements IXmlFileService {
         //   EngineCapacity、NumberOfCylinders、ArrangementCylinders 三个标签
         removeEngineCapacityForElectricEnergySource(doc);
 
+        // 13d. Header 下若不存在 IntendedCountryRegistration 标签，
+        //   在 IviVersionDateTime 标签之后补充插入，值取 country 字段的字典映射
+        ensureIntendedCountryRegistration(doc, vehicle);
+
+        // 13e. 燃油类型专属：每个 GearRatioGroup 的 FinalDriveTable 下，
+        //   只保留 FinalDriveNumber 等于该 GearRatioGroup 的 GearNumber 的那一组 FinalDriveGroup，
+        //   其余 FinalDriveGroup 全部删除
+        restrictFinalDriveGroupByGearNumber(doc);
+
         return doc;
     }
 
-    /**
-     * 复用的XML保存逻辑（原步骤14~20）：将构建好的 Document 序列化为字符串、管理版本号、
-     * 上传文件、保存 XmlFile/XmlVersion 记录、触发自动校验、更新车辆状态、记录生命周期、
-     * 发送"成功"通知。NOVC/OVC、纯电、燃油 三条生成分支共用此方法；纯电/燃油拆分场景下
-     * 会被调用两次，各自独立生成一条 XmlFile 记录。内部使用方法内自建的 sysNotice / msg /
-     * vehicleLifecycle，互不干扰，可安全多次调用。
-     * <p>
-     * ★ 注意：本方法沿用了改造前完全相同的保存逻辑，未做任何调整 —— XmlFile 的 fileName
-     *   仍以 "vehicle_"+vin 命名，不区分纯电/燃油。也就是说拆分场景下纯电先保存、燃油后保存时，
-     *   两次调用会被当成"同一份文件的两次版本更新"：第二次（燃油）保存时 updateIsLatestToFalse
-     *   会把第一次（纯电）那条记录标记为非最新版本，版本号也会从 1.0 递增到 2.0，
-     *   而不是两份并存的"最新文档"。如果业务上需要纯电/燃油两份文档同时作为各自独立的最新版本存在，
-     *   后续需要给 fileName 增加区分后缀（例如 vin_BEV.xml / vin_FUEL.xml）；本次按你的要求暂未改动。
-     */
     private String saveGeneratedXmlDocument(Document doc, VehicleInfo vehicle, XmlTemplate xmlTemplate) throws Exception {
         VehicleLifecycle vehicleLifecycle = new VehicleLifecycle();
         SysNotice sysNotice = new SysNotice();
@@ -3033,7 +3194,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 Object raw = jsonMap.get(dict.getDictLabel());
                 String value = getValueOrDefault(raw, attr.getDefaultValue());
                 boolean required = attr.getIsRequired() != null && attr.getIsRequired() == 1;
-                addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value, required);
+                addElement(doc, parentElement, dict, value, required);
             }
         }
     }
@@ -3105,7 +3266,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 Object raw = jsonMap.get(dict.getDictLabel());
                 String value = getValueOrDefault(raw, sibling.getDefaultValue());
                 if (!value.contains(";")) {
-                    addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
+                    addElement(doc, parentElement, dict, value);
                 }
             }
         }
@@ -3167,7 +3328,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 if (StringUtils.isBlank(value)) {
                     value = StringUtils.isNotBlank(child.getDefaultValue()) ? child.getDefaultValue() : "";
                 }
-                addElement(doc, container, sanitizeXmlTagName(dict.getDictLabel()), value);
+                addElement(doc, container, dict, value);
             }
         }
     }
@@ -3302,7 +3463,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                             Object raw = jsonMap.get(ld.getDictLabel());
                             String val = raw != null ? raw.toString() : "";
                             if (!val.contains(";") && !hasChildElement(leafParent, sanitizeXmlTagName(ld.getDictLabel()))) {
-                                addElement(doc, leafParent, sanitizeXmlTagName(ld.getDictLabel()), val);
+                                addElement(doc, leafParent, ld, val);
                             }
                         }
                     } else {
@@ -3342,7 +3503,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 String value = getValueOrDefault(raw, sibling.getDefaultValue());
                 // ★ 已有同名子节点则跳过，防止 buildTreeUpToPath 已写过的字段重复输出
                 if (!value.contains(";") && !hasChildElement(parentElement, sanitizeXmlTagName(dict.getDictLabel()))) {
-                    addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
+                    addElement(doc, parentElement, dict, value);
                 }
             }
         }
@@ -3411,7 +3572,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (StringUtils.isBlank(value)) {
                 value = StringUtils.isNotBlank(leaf.getDefaultValue()) ? leaf.getDefaultValue() : "";
             }
-            addElement(doc, container, sanitizeXmlTagName(dict.getDictLabel()), value);
+            addElement(doc, container, dict, value);
         }
     }
 
@@ -3476,8 +3637,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 String value = getValueOrDefault(raw, attr.getDefaultValue());
                 // ★ 修复：加重复检查，防止后续 buildSiblingLevelLoop 遍历 directSiblings 时再次写入同名节点
                 if (!value.contains(";") && !hasChildElement(parentElement, sanitizeXmlTagName(dict.getDictLabel()))) {
-                    addElement(doc, parentElement,
-                            sanitizeXmlTagName(dict.getDictLabel()), value);
+                    addElement(doc, parentElement, dict, value);
                 }
             }
         }
@@ -3662,8 +3822,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                         attr.getDefaultValue(), rowIndex, totalRows, LAST_ROW_FORBIDDEN_LABELS);
                 boolean required = attr.getIsRequired() != null && attr.getIsRequired() == 1;
                 if (StringUtils.isNotBlank(value) || required) {
-                    addElement(doc, parentElement,
-                            sanitizeXmlTagName(dict.getDictLabel()), value, required);
+                    addElement(doc, parentElement, dict, value, required);
                 }
             }
         }
@@ -3862,7 +4021,7 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     value = child.getDefaultValue();
                 }
                 if (StringUtils.isNotBlank(value)) {
-                    addElement(doc, parentElement, sanitizeXmlTagName(dict.getDictLabel()), value);
+                    addElement(doc, parentElement, dict, value);
                 }
             }
         }
@@ -4017,6 +4176,193 @@ public class XmlFileServiceImpl implements IXmlFileService {
         if (!toRemove.isEmpty()) {
             log.info("=== removeEngineCapacityForElectricEnergySource 已删除 EngineCapacity/NumberOfCylinders/ArrangementCylinders 标签数={}", toRemove.size());
         }
+    }
+
+    /**
+     * 若生成后的 XML 中 Header 节点下不存在 IntendedCountryRegistration 标签，
+     * 则在 IviVersionDateTime 标签之后补充插入一个，值取车辆 country 字段
+     * 通过 sys_dict_data（dict_type=country）的 value_connection 映射后的结果
+     * （见 {@link #resolveCountryDictCode}）。
+     * <p>
+     * 若 Header 节点不存在、IntendedCountryRegistration 已存在（幂等）、
+     * 或 country 值在字典中找不到映射，均直接跳过，不影响主流程。
+     */
+    private void ensureIntendedCountryRegistration(Document doc, VehicleInfo vehicle) {
+        NodeList headerList = doc.getElementsByTagName("Header");
+        if (headerList.getLength() == 0) return;
+        Element header = (Element) headerList.item(0);
+
+        // 已存在则跳过，保证幂等
+        if (header.getElementsByTagName("IntendedCountryRegistration").getLength() > 0) return;
+
+        String countryCode = resolveCountryDictCode(vehicle.getCountry());
+        if (StringUtils.isBlank(countryCode)) {
+            log.warn("[ensureIntendedCountryRegistration] vin={} country 为空，跳过补充 IntendedCountryRegistration",
+                    vehicle.getVin());
+            return;
+        }
+
+        // 定位 IviVersionDateTime 节点，插入到其后；找不到则回退为追加到 Header 末尾
+        Node refNode = null;
+        NodeList iviList = header.getElementsByTagName("IviVersionDateTime");
+        if (iviList.getLength() > 0) {
+            refNode = iviList.item(0).getNextSibling();
+        }
+
+        Element intendedCountryEl = doc.createElement("IntendedCountryRegistration");
+        intendedCountryEl.setTextContent(countryCode);
+        header.insertBefore(intendedCountryEl, refNode);
+        log.info("[ensureIntendedCountryRegistration] vin={} 已补充 IntendedCountryRegistration={}", vehicle.getVin(), countryCode);
+    }
+
+    /**
+     * 燃油类型专属：每个 GearRatioGroup 下的 FinalDriveTable，只保留
+     * FinalDriveNumber 与该 GearRatioGroup 的 GearNumber 相等的那一组 FinalDriveGroup，
+     * 其余 FinalDriveGroup 全部删除。
+     * <p>
+     * 背景：建树阶段 FinalDriveTable 是按完整的 FinalDriveNumber/FinalDriveRatio 集合
+     * 展开的，每个 GearRatioGroup 下都会重复出现全部档位的 FinalDriveGroup；而实际只有
+     * FinalDriveNumber 与当前 GearNumber 一致的那一组才是该挡位真正对应的最终传动比，
+     * 其余是从原始数据共享复制过来的冗余项，需要按挡位过滤掉。
+     * <p>
+     * 找不到 GearNumber、找不到 FinalDriveTable，或 FinalDriveGroup 下没有
+     * FinalDriveNumber 子标签时，均跳过该 GearRatioGroup，不报错、不影响其余分组处理。
+     */
+    private void restrictFinalDriveGroupByGearNumber(Document doc) {
+        NodeList gearRatioGroups = doc.getElementsByTagName("GearRatioGroup");
+        int totalRemoved = 0;
+
+        for (int i = 0; i < gearRatioGroups.getLength(); i++) {
+            Node grNode = gearRatioGroups.item(i);
+            if (!(grNode instanceof Element)) continue;
+            Element gearRatioGroup = (Element) grNode;
+            NodeList children = gearRatioGroup.getChildNodes();
+
+            // 取该 GearRatioGroup 的直接子标签 GearNumber
+            String gearNumber = null;
+            Element finalDriveTable = null;
+            for (int j = 0; j < children.getLength(); j++) {
+                Node child = children.item(j);
+                if (child.getNodeType() != Node.ELEMENT_NODE) continue;
+                if ("GearNumber".equals(child.getNodeName())) {
+                    gearNumber = child.getTextContent() == null ? "" : child.getTextContent().trim();
+                } else if ("FinalDriveTable".equals(child.getNodeName())) {
+                    finalDriveTable = (Element) child;
+                }
+            }
+            if (StringUtils.isBlank(gearNumber) || finalDriveTable == null) continue;
+
+            // 删除 FinalDriveTable 下 FinalDriveNumber 不等于 gearNumber 的 FinalDriveGroup
+            NodeList fdGroupNodes = finalDriveTable.getChildNodes();
+            List<Node> toRemove = new ArrayList<>();
+            for (int j = 0; j < fdGroupNodes.getLength(); j++) {
+                Node fdNode = fdGroupNodes.item(j);
+                if (fdNode.getNodeType() != Node.ELEMENT_NODE || !"FinalDriveGroup".equals(fdNode.getNodeName())) continue;
+                Element fdGroup = (Element) fdNode;
+
+                String finalDriveNumber = null;
+                NodeList fdChildren = fdGroup.getChildNodes();
+                for (int k = 0; k < fdChildren.getLength(); k++) {
+                    Node fdChild = fdChildren.item(k);
+                    if (fdChild.getNodeType() == Node.ELEMENT_NODE && "FinalDriveNumber".equals(fdChild.getNodeName())) {
+                        finalDriveNumber = fdChild.getTextContent() == null ? "" : fdChild.getTextContent().trim();
+                        break;
+                    }
+                }
+                if (!gearNumber.equals(finalDriveNumber)) {
+                    toRemove.add(fdGroup);
+                }
+            }
+            for (Node n : toRemove) {
+                finalDriveTable.removeChild(n);
+            }
+            totalRemoved += toRemove.size();
+        }
+
+        if (totalRemoved > 0) {
+            log.info("[restrictFinalDriveGroupByGearNumber] 已按 GearNumber 过滤 FinalDriveGroup，共删除 {} 组", totalRemoved);
+        }
+    }
+
+    /**
+     * 通用的 sys_dict_data value_connection 值映射：
+     * 按 dictType 查出该字典类型下的全部记录，用 dictLabel（通常与目标 XML 标签名一致）
+     * 匹配到对应记录，取其 value_connection 字段，用 {@link ValueMappingParser#mergeValueConnection}
+     * 按 "MES_xx": {原始值: 目标值} 的结构合并为单层 Map，再直接按 rawValue 查出映射后的结果
+     * （不经过 {@link ValueMappingParser#convertWithDictMap}，原因见方法内注释）。
+     * <p>
+     * 查不到对应记录、value_connection 为空、或合并表中查不到映射结果时，
+     * 均原样返回传入的 rawValue 作为兜底，而不是 null，避免因字典配置缺失导致标签整体缺失。
+     *
+     * @param dictType  sys_dict_data 的字典类型（dict_type）
+     * @param dictLabel 用于匹配记录的字典标签（dict_label），通常与目标 XML 标签名一致
+     * @param rawValue  待映射的原始值
+     * @return 映射后的值；找不到映射时原样返回 rawValue；rawValue 本身为空时返回 null
+     */
+    private String resolveDictConnectionValue(String dictType, String dictLabel, String rawValue) {
+        if (StringUtils.isBlank(rawValue)) return null;
+        List<SysDictData> dictList = remoteDictService.getDictDataByType(dictType).getData();
+        if (dictList == null) return rawValue;
+
+        // 用标签名匹配 dict_label，定位对应的字典记录
+        SysDictData matched = dictList.stream()
+                .filter(d -> dictLabel.equals(d.getDictLabel()))
+                .findFirst()
+                .orElse(null);
+        if (matched == null || StringUtils.isBlank(matched.getValueConnection())) {
+            return rawValue;
+        }
+
+        // ★ 不走 ValueMappingParser.convertWithDictMap：该方法在 value_map 列为空、
+        //   或未配置为 "DICT_MAP" 时会直接原样返回 rawValue（见其源码：
+        //   `if (valueMap == null || isBlank(valueMap)) return rawValue;`）。
+        //   这里命中的字典记录的 value_map 列通常并未配置，导致映射逻辑被整体跳过——
+        //   这正是"没有走 value_connection 逻辑映射"的根因。
+        //   直接对合并后的 Map 做查找，不依赖 value_map 列的配置。
+        Map<String, String> mergedMap = ValueMappingParser.mergeValueConnection(matched.getValueConnection());
+        String converted = mergedMap.get(rawValue.trim());
+        return StringUtils.isNotBlank(converted) ? converted : rawValue;
+    }
+
+    /**
+     * country -> IntendedCountryRegistration 的值映射，委托给通用方法 {@link #resolveDictConnectionValue}。
+     *
+     * @param country 车辆信息中的原始 country 值（即 dict_value，如 "POL"）
+     * @return 映射后的值；找不到映射时原样返回 country；country 本身为空时返回 null
+     */
+    private String resolveCountryDictCode(String country) {
+        return resolveDictConnectionValue("vehicle_attribute", "IntendedCountryRegistration", country);
+    }
+
+    /**
+     * color -> Colour 的值映射，委托给通用方法 {@link #resolveDictConnectionValue}。
+     * 与 resolveCountryDictCode 同一套逻辑：用标签名 "Colour" 匹配 dict_label，
+     * 取其 value_connection 做映射，查不到映射时原样返回对应值。
+     * <p>
+     * 颜色可能是双色车的 "主色;副色" 两段式值（如 "Z3;CP"），此时按 ; 拆开后
+     * 逐段独立映射，再按原顺序和原分隔位置拼回（保留空段，如只有主色没有副色时
+     * 的尾部空段），不会把整个 "Z3;CP" 当成一个整体去查找（那样必然查不到）。
+     *
+     * @param color 车辆信息中的原始 color 值，单色或 ; 分隔的双色
+     * @return 映射后的值；找不到映射的段原样返回该段；color 本身为空时返回 null
+     */
+    private String resolveColourDictValue(String color) {
+        if (StringUtils.isBlank(color)) return null;
+        if (!color.contains(";")) {
+            return resolveDictConnectionValue("vehicle_attribute", "Colour", color);
+        }
+
+        // 双色：按 ; 拆开，逐段映射后按原顺序拼回，保留空段（不对空段做映射）
+        String[] segments = color.split(";", -1);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < segments.length; i++) {
+            if (i > 0) sb.append(";");
+            String seg = segments[i].trim();
+            if (StringUtils.isNotBlank(seg)) {
+                sb.append(resolveDictConnectionValue("vehicle_attribute", "Colour", seg));
+            }
+        }
+        return sb.toString();
     }
 
     /**
@@ -4397,12 +4743,27 @@ public class XmlFileServiceImpl implements IXmlFileService {
                             subMap, child.getAttrPath(), i);
                 }
             } else if (StringUtils.isNotBlank(dict.getDictLabel())) {
-                // 直接叶子节点（不常见，但容错处理）
-                String value = getValueByRow(jsonMap, dict.getDictLabel(),
-                        child.getDefaultValue(), -1);
+                // 直接叶子节点：本身不是循环节点（如 CombustionCycle 与 EnergySourceTable 同级），
+                // 但值可能仍带 | 或 ; 分隔（如 CombustionCycle="4ST|"，只有第一段是真实值，
+                // 其余段是占位空段，对应不适用该字段的能量源）。
+                // ★ 修复：不能再用 getValueByRow(rowIndex=-1) 直接判空丢弃整个值——
+                //   该写法会让任何含分隔符的直接叶子字段无论第几段有值都被清空，导致标签整体丢失。
+                //   改成：含分隔符时取第一个非空段；不含分隔符时按原逻辑取值。
+                Object rawLeaf = jsonMap.get(dict.getDictLabel());
+                String value;
+                if (rawLeaf != null && (rawLeaf.toString().contains("|") || rawLeaf.toString().contains(";"))) {
+                    String sep = rawLeaf.toString().contains("|") ? "\\|" : ";";
+                    String firstNonBlank = Arrays.stream(rawLeaf.toString().trim().split(sep, -1))
+                            .map(String::trim)
+                            .filter(StringUtils::isNotBlank)
+                            .findFirst()
+                            .orElse(null);
+                    value = StringUtils.isNotBlank(firstNonBlank) ? firstNonBlank : getValueOrDefault(null, child.getDefaultValue());
+                } else {
+                    value = getValueByRow(jsonMap, dict.getDictLabel(), child.getDefaultValue(), -1);
+                }
                 if (StringUtils.isNotBlank(value)) {
-                    addElement(doc, parentElement,
-                            sanitizeXmlTagName(dict.getDictLabel()), value);
+                    addElement(doc, parentElement, dict, value);
                 }
             }
         }
@@ -4750,6 +5111,76 @@ public class XmlFileServiceImpl implements IXmlFileService {
      */
     private void addElement(Document doc, Element parent, String tagName, String textContent) {
         addElement(doc, parent, tagName, textContent, false);
+    }
+
+    /**
+     * ★ 新增：按 SysDictData.dict_value（数据类型名）转换后再写入元素。
+     * tagName 由 dict.getDictLabel() 计算，与原先各调用点 sanitizeXmlTagName(dict.getDictLabel())
+     * 的写法保持一致；转换失败时原值穿透（不抛异常、不中断生成），失败信息记 warn 日志。
+     * <p>
+     * 与 {@link #isDataTypeValid} 用的是同一套类型判断标准（Short/Int/Decimal/DateTime/Date/
+     * Structure/NULL/String），保证"生成时按类型转换"和"校验时按类型校验"语义一致。
+     */
+    private void addElement(Document doc, Element parent, SysDictData dict, String textContent) {
+        addElement(doc, parent, dict, textContent, false);
+    }
+
+    private void addElement(Document doc, Element parent, SysDictData dict, String textContent, boolean required) {
+        String tagName = sanitizeXmlTagName(dict.getDictLabel());
+        String converted = convertValueByDataType(textContent, dict);
+        addElement(doc, parent, tagName, converted, required);
+    }
+
+    /**
+     * 按数据类型转换 value，转换失败（或类型本身不需要转换）时原值穿透：
+     *   String / Structure / NULL（含空白）/ 未识别类型 → 原样返回
+     *   Short   → Short.parseShort 后转回字符串
+     *   Int     → Integer.parseInt 后转回字符串
+     *   Decimal → new BigDecimal(...).toPlainString()（不使用科学计数法）
+     *   DateTime/ Date → 只校验"是否能转换为时间"，文本本身不重新格式化，原样返回
+     * 任何解析异常（NumberFormatException 等）一律捕获，记 warn 日志后返回原始 value，
+     * 不影响 XML 生成流程——这是"原值穿透"的字面含义：转换失败不等于生成失败。
+     */
+    private String convertValueByDataType(String value, SysDictData dict) {
+        if (StringUtils.isBlank(value) || dict == null) return value;
+        String dataType = dict.getDictValue();
+        if (StringUtils.isBlank(dataType)) return value;
+        String trimmed = value.trim();
+        if ("N/A".equalsIgnoreCase(trimmed)) return value; // 占位值交给 addElement 现有 N/A 处理逻辑
+
+        try {
+            switch (dataType.trim()) {
+                case "Short":
+                    short s = (short) Math.round(Double.parseDouble(trimmed));
+                    return String.valueOf(s);
+                case "Int":
+                    int n = (int) Math.round(Double.parseDouble(trimmed));
+                    return String.valueOf(n);
+                case "Decimal":
+                    return new BigDecimal(trimmed).toPlainString();
+                case "DateTime":
+                    if (!tryParseDateTime(trimmed)) {
+                        log.warn("数据类型转换失败（DateTime），原值穿透: field={}, value={}",
+                                dict.getDictLabel(), value);
+                    }
+                    return value;
+                case "Date":
+                    if (!tryParseDate(trimmed)) {
+                        log.warn("数据类型转换失败（Date），原值穿透: field={}, value={}",
+                                dict.getDictLabel(), value);
+                    }
+                    return value;
+                case "String":
+                case "Structure":
+                case "NULL":
+                default:
+                    return value;
+            }
+        } catch (NumberFormatException e) {
+            log.warn("数据类型转换失败，原值穿透: field={}, value={}, dataType={}, error={}",
+                    dict.getDictLabel(), value, dataType, e.getMessage());
+            return value;
+        }
     }
 
     private void addElement(Document doc, Element parent, String tagName, String textContent, boolean required) {

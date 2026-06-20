@@ -266,19 +266,21 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                     throw new RuntimeException("模板不存在，templateId=" + vehicleTemplateId);
                 }
 
-                String json = "";
+                String templateJson;
                 try {
                     JsonNode rootNode = objectMapper.readTree(template.getJson());
                     replaceFieldValues(rootNode, material);
-                    json = objectMapper.writeValueAsString(rootNode);
+                    templateJson = objectMapper.writeValueAsString(rootNode);
                 } catch (JsonProcessingException e) {
                     throw new RuntimeException("动态参数替换失败");
                 }
+                // 车辆自身 JSON（调用方传入的）与模版 JSON 取并集，标签重复时取车辆自身的值
+                String mergedJson = mergeVehicleJsonWithTemplate(vehicleInfo.getJson(), templateJson);
                 vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
                 vehicleInfo.setTvv(template.getTvv().replace(",", ""));
                 vehicleInfo.setWvtaNo(template.getWvtaCocNo());
                 vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
-                vehicleInfo.setJson(json);
+                vehicleInfo.setJson(mergedJson);
                 vehicleInfo.setVehicleModel(material.getVehicleModel());
                 vehicleInfo.setProjectName(material.getName());
                 vehicleInfo.setBrand(material.getBrand());
@@ -430,28 +432,60 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
     @Transactional(rollbackFor = Exception.class)
     public int updateVehicleInfo(VehicleInfo vehicleInfo, boolean needValid) {
         if (StringUtils.isNotBlank(vehicleInfo.getMaterialNo())) {
-            Material material = new Material();
-            material.setMaterialNo(vehicleInfo.getMaterialNo());
-            material.setStatus(0);
-            List<Material> materialList = materialMapper.selectMaterialList(material);
-            Long vehicleTemplateId;
+            Material materialQuery = new Material();
+            materialQuery.setMaterialNo(vehicleInfo.getMaterialNo());
+            materialQuery.setStatus(0);
+            List<Material> materialList = materialMapper.selectMaterialList(materialQuery);
+
             if (materialList.isEmpty()) {
-                throw new RuntimeException("该物料号、品牌、重量、销售名称、轮胎无对应的可用车辆模板");
+                // ★ 物料号查询不到对应物料信息时，不再直接报错中断更新，
+                // 跳过模版相关字段填充，保留车辆原有数据，等待回溯补齐
+                log.info("[updateVehicleInfo] 物料号 {} 未查询到对应物料信息，跳过模版字段填充",
+                        vehicleInfo.getMaterialNo());
             } else {
-                vehicleTemplateId = materialList.get(0).getVehicleTemplateId();
+                Material material = materialList.get(0);
+                Long vehicleTemplateId = material.getVehicleTemplateId();
+
+                if (vehicleTemplateId == null) {
+                    // 物料存在但还未关联模板，同样跳过模版字段填充，等待回溯补齐
+                    log.info("[updateVehicleInfo] 物料 {} 尚未关联模板，跳过模版字段填充，等待回溯",
+                            vehicleInfo.getMaterialNo());
+                } else {
+                    VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(vehicleTemplateId);
+                    if (template == null) {
+                        throw new RuntimeException("模板不存在，templateId=" + vehicleTemplateId);
+                    }
+
+                    String templateJson;
+                    try {
+                        JsonNode rootNode = objectMapper.readTree(template.getJson());
+                        replaceFieldValues(rootNode, material);
+                        templateJson = objectMapper.writeValueAsString(rootNode);
+                    } catch (JsonProcessingException e) {
+                        throw new RuntimeException("动态参数替换失败");
+                    }
+
+                    // 车辆自身 JSON 优先取调用方传入的值；若调用方未带 JSON，则取该车辆库内已有的 JSON，
+                    // 避免因调用方只传部分字段而丢失原有数据
+                    String ownJson = vehicleInfo.getJson();
+                    if (StringUtils.isBlank(ownJson) && vehicleInfo.getVehicleId() != null) {
+                        VehicleInfo existing = vehicleInfoMapper.selectVehicleInfoById(vehicleInfo.getVehicleId());
+                        if (existing != null) {
+                            ownJson = existing.getJson();
+                        }
+                    }
+                    // 车辆自身 JSON 与模版 JSON 取并集，标签重复时取车辆自身的值
+                    String mergedJson = mergeVehicleJsonWithTemplate(ownJson, templateJson);
+
+                    vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
+                    vehicleInfo.setTvv(template.getTvv().replace(",", ""));
+                    vehicleInfo.setWvtaNo(template.getWvtaCocNo());
+                    vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
+                    vehicleInfo.setJson(mergedJson);
+                    // 判断首台车原因并写入 affirmCause
+                    applyFirstVehicleAffirmOnUpdate(vehicleInfo, vehicleInfo.getMaterialNo(), String.valueOf(vehicleTemplateId));
+                }
             }
-            VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(vehicleTemplateId);
-            if (template == null) {
-                throw new RuntimeException("模板不存在，templateId=" + vehicleTemplateId);
-            }
-            vehicleInfo.setVehicleTemplateId(String.valueOf(vehicleTemplateId));
-            vehicleInfo.setTvv(template.getTvv().replace(",", ""));
-            vehicleInfo.setWvtaNo(template.getWvtaCocNo());
-            vehicleInfo.setCocTemplateNo(template.getCocTemplateNo());
-            // VehicleTemplate.json 已在导入阶段完成字段映射，直接使用，无需再次转换
-            vehicleInfo.setJson(template.getJson());
-            // 判断首台车原因并写入 affirmCause
-            applyFirstVehicleAffirmOnUpdate(vehicleInfo, vehicleInfo.getMaterialNo(), String.valueOf(vehicleTemplateId));
         }
         // 去掉这里强制重置，交给调用方自己决定
         vehicleInfo.setVin(null);
@@ -1832,6 +1866,38 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
         } catch (Exception e) {
             log.error("filterJsonByVehicleAttribute: JSON 过滤异常，返回原始 JSON", e);
             return json;
+        }
+    }
+
+    /**
+     * 车辆自身 JSON 与模版 JSON 取并集合并：
+     * - 以模版 JSON 的键顺序为基础；
+     * - 标签（key）重复时，取车辆自身 JSON 中的值（车辆自身数据优先于模版默认值）；
+     * - 车辆自身 JSON 中存在但模版没有的键，追加并入结果（保持并集语义，不丢字段）。
+     *
+     * @param ownJson      车辆自身 JSON（可能为 null/空，此时直接返回 templateJson）
+     * @param templateJson 模版 JSON（已完成物料动态字段替换）
+     * @return 合并后的 JSON 字符串；解析失败时降级返回 templateJson，避免影响主流程
+     */
+    private String mergeVehicleJsonWithTemplate(String ownJson, String templateJson) {
+        if (StringUtils.isBlank(ownJson)) {
+            return templateJson;
+        }
+        if (StringUtils.isBlank(templateJson)) {
+            return ownJson;
+        }
+        try {
+            // LinkedHashMap 保证：已存在的键被覆盖时位置不变，新增的键追加在末尾
+            Map<String, Object> merged = new LinkedHashMap<>(objectMapper.readValue(
+                    templateJson, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}));
+            Map<String, Object> ownMap = objectMapper.readValue(
+                    ownJson, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+            // 键重复时取车辆自身（own）的值；键不重复则并入结果，达到并集效果
+            merged.putAll(ownMap);
+            return objectMapper.writeValueAsString(merged);
+        } catch (Exception e) {
+            log.warn("[mergeVehicleJsonWithTemplate] JSON 合并失败，降级返回模版 JSON", e);
+            return templateJson;
         }
     }
 
