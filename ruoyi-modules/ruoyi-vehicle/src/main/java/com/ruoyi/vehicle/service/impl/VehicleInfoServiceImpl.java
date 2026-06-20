@@ -1340,10 +1340,16 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                     query.setIsLast(0);
                     List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectVehicleTemplateList(query);
                     Map<String, Object> versionMap = new LinkedHashMap<>();
+                    List<Map<String, Object>> versionList = new ArrayList<>();
                     for (VehicleTemplate vehicleTemplate : vehicleTemplateList) {
-                        versionMap.put(vehicleTemplate.getWvtaCocNo() + "(" + vehicleTemplate.getVersion() + ")", vehicleTemplate.getTemplateId());
+                        Map<String, Object> versionItem = new LinkedHashMap<>();
+                        versionItem.put("templateId",    vehicleTemplate.getTemplateId());
+                        versionItem.put("cocTemplateNo", vehicleTemplate.getCocTemplateNo());
+                        versionItem.put("wvtaCocNo",     vehicleTemplate.getWvtaCocNo());
+                        versionItem.put("version",       vehicleTemplate.getVersion());
+                        versionList.add(versionItem);
                     }
-                    map.put("versions", versionMap);
+                    map.put("versions", versionList);
                 }
             }
         }
