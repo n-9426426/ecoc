@@ -6,7 +6,9 @@ import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.web.controller.BaseController;
 import com.ruoyi.common.core.web.domain.AjaxResult;
+import com.ruoyi.common.core.web.page.PageDomain;
 import com.ruoyi.common.core.web.page.TableDataInfo;
+import com.ruoyi.common.core.web.page.TableSupport;
 import com.ruoyi.common.datascope.annotation.DataScope;
 import com.ruoyi.common.log.annotation.Log;
 import com.ruoyi.common.log.enums.BusinessType;
@@ -395,10 +397,15 @@ public class VehicleInfoController extends BaseController {
             vehicleInfo.setVinList(vinList);
             vehicleInfo.setVin(null);
         }
-        startPage();
-        // 不传 dimension，后端合并两个维度
-        List<VehicleInfo> list = vehicleInfoService.listFirstVehicleUnconfirmedAll(vehicleInfo);
-        return getDataTable(list);
+
+        // ★ 不用 startPage()：listFirstVehicleUnconfirmedAll 内部执行两条SQL（物料号+模版维度），
+        //   PageHelper 物理分页只拦截"紧跟着的下一条SQL"，会把两个维度的数据错误地分别截断/不截断。
+        //   改为：取出 pageNum/pageSize，查全量后在 Service 层手动合并分页。
+        PageDomain pageDomain = TableSupport.buildPageRequest();
+        int pageNum  = pageDomain.getPageNum()  != null ? pageDomain.getPageNum()  : 1;
+        int pageSize = pageDomain.getPageSize() != null ? pageDomain.getPageSize() : 10;
+
+        return vehicleInfoService.listFirstVehicleUnconfirmedAllPaged(vehicleInfo, pageNum, pageSize);
     }
     // ===================================================================
     //  确认

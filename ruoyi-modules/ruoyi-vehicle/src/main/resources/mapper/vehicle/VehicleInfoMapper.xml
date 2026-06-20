@@ -59,6 +59,10 @@
 		<result property="saleCompanyName"      column="sale_company_name"      />
 		<result property="modelNo"              column="model_no"               />
 		<result property="affirmCause"          column="affirm_cause"           />
+		<result property="hasGeneratedXml"      column="has_generated_xml"       />
+		<result property="xmlFileId"            column="xml_file_id"             />
+		<result property="xmlValidateResult"    column="xml_validate_result"     />
+		<result property="forceUploaded"        column="force_uploaded"          />
 	</resultMap>
 
 	<sql id="selectVehicleInfoVo">
@@ -72,8 +76,8 @@
 			   vi.first_template_flag, vi.material_confirmed_by, vi.material_confirmed_time, vi.template_confirmed_by, vi.template_confirmed_time,
 			   vi.generate_affirm_notice, vi.upload_affirm_notice, vi.sale_company_name, vi.model_no, vi.affirm_cause
 		from vehicle_info vi
-		left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
-		left join (select template_id, filepath, coc_template_no, is_last, version, model_no, tvv from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
+				 left join (select dict_code, dict_label from sys_dict_data where dict_type = 'vehicle_model') sdd on vi.vehicle_model = sdd.dict_code
+				 left join (select template_id, filepath, coc_template_no, is_last, version, model_no, tvv from vehicle_template) vt on vi.vehicle_template_id = vt.template_id
 	</sql>
 
 	<select id="selectVehicleInfoById" parameterType="Long" resultMap="VehicleInfoResult">
@@ -84,7 +88,7 @@
 	<select id="selectVehicleInfoList" parameterType="VehicleInfo" resultMap="VehicleInfoResult">
 		<include refid="selectVehicleInfoVo"/>
 		<where>
-            and 1 = 1
+			and 1 = 1
 			<if test="affirm != null">
 				<choose>
 					<when test="affirm == 1">
@@ -674,7 +678,28 @@
         其余字段复用 vehicleInfo 对象的查询条件，与 selectVehicleInfoList 保持一致
     -->
 	<select id="listFirstVehicleUnconfirmed" resultMap="VehicleInfoResult">
-		<include refid="selectVehicleInfoVo"/>
+		SELECT vi.vehicle_id, vi.vin, vi.factory_code, vi.factory_name, vi.material_no, vi.vehicle_model,
+		vi.upload_status, vi.validation_result, vi.status, vi.country, vi.color, vi.secondary_color, vi.temp_version,
+		vi.certificate_version, vi.wvta_no, vi.manufacture_date, vi.issue_date, vi.json, vi.xml_template_id,
+		vi.vehicle_template_id, vi.deleted, vi.create_by, vi.create_time, vi.update_by, vi.update_time, vi.remark,
+		vi.validation_report_json, vi.engine_number, vi.motor_number, vi.brand, vi.weight, vi.sale_name, vi.tire,
+		vi.battery_number, vi.tvv, vi.breakpoint_time, vi.generate_affirm, vi.upload_affirm, vi.project_name,
+		vi.customer_no, vi.tire_resistance_grade, vi.first_material_flag, vi.first_template_flag,
+		vi.material_confirmed_by, vi.material_confirmed_time, vi.template_confirmed_by, vi.template_confirmed_time,
+		vi.generate_affirm_notice, vi.upload_affirm_notice, vi.sale_company_name, vi.model_no, vi.affirm_cause,
+		sdd.dict_label AS vehicle_model_str,
+		vt.filepath AS vehicle_template_filepath, vt.coc_template_no AS coc_template_no, vt.version AS version,
+		IF(xf.id IS NOT NULL, TRUE, FALSE)  AS has_generated_xml,
+		xf.id                               AS xml_file_id,
+		xf.validate_result                  AS xml_validate_result,
+		xf.force_uploaded                   AS force_uploaded
+		FROM vehicle_info vi
+		LEFT JOIN (SELECT dict_code, dict_label FROM sys_dict_data WHERE dict_type = 'vehicle_model') sdd
+		ON vi.vehicle_model = sdd.dict_code
+		LEFT JOIN (SELECT template_id, filepath, coc_template_no, is_last, version, model_no, tvv FROM vehicle_template) vt
+		ON vi.vehicle_template_id = vt.template_id
+		LEFT JOIN xml_file xf
+		ON xf.vin = vi.vin AND xf.is_latest = 1 AND xf.deleted = 0
 		<where>
 			AND vi.deleted = 0
 			<if test="vehicleInfo.affirm != null">
@@ -893,7 +918,11 @@
 			   vi.first_material_flag, vi.first_template_flag, vi.material_confirmed_by, vi.material_confirmed_time,
 			   vi.template_confirmed_by, vi.template_confirmed_time, vi.generate_affirm_notice, vi.upload_affirm_notice,
 			   vi.sale_company_name, vi.model_no, vi.affirm_cause, sdd.dict_label AS vehicle_model_str,
-			   vt.filepath AS vehicle_template_filepath, vt.coc_template_no AS coc_template_no, vt.version AS version
+			   vt.filepath AS vehicle_template_filepath, vt.coc_template_no AS coc_template_no, vt.version AS version,
+			   IF(xf.id IS NOT NULL, TRUE, FALSE) AS has_generated_xml,
+			   xf.id                              AS xml_file_id,
+			   xf.validate_result                 AS xml_validate_result,
+			   xf.force_uploaded                  AS force_uploaded
 		FROM (
 				 SELECT *,
 						ROW_NUMBER() OVER (
@@ -909,6 +938,8 @@
 						   ON vi.vehicle_model = sdd.dict_code
 				 LEFT JOIN (SELECT template_id, filepath, coc_template_no, is_last, version, model_no, tvv FROM vehicle_template) vt
 						   ON vi.vehicle_template_id = vt.template_id
+				 LEFT JOIN xml_file xf
+						   ON xf.vin = vi.vin AND xf.is_latest = 1 AND xf.deleted = 0
 		WHERE vi.rn = 1
 	</select>
 
@@ -926,7 +957,11 @@
 			   vi.first_material_flag, vi.first_template_flag, vi.material_confirmed_by, vi.material_confirmed_time,
 			   vi.template_confirmed_by, vi.template_confirmed_time, vi.generate_affirm_notice, vi.upload_affirm_notice,
 			   vi.sale_company_name, vi.model_no, vi.affirm_cause, sdd.dict_label AS vehicle_model_str,
-			   vt.filepath AS vehicle_template_filepath, vt.coc_template_no AS coc_template_no, vt.version AS version
+			   vt.filepath AS vehicle_template_filepath, vt.coc_template_no AS coc_template_no, vt.version AS version,
+			   IF(xf.id IS NOT NULL, TRUE, FALSE) AS has_generated_xml,
+			   xf.id                              AS xml_file_id,
+			   xf.validate_result                 AS xml_validate_result,
+			   xf.force_uploaded                  AS force_uploaded
 		FROM (
 				 SELECT *,
 						ROW_NUMBER() OVER (
@@ -942,23 +977,25 @@
 						   ON vi.vehicle_model = sdd.dict_code
 				 LEFT JOIN (SELECT template_id, filepath, coc_template_no, is_last, version, model_no, tvv FROM vehicle_template) vt
 						   ON vi.vehicle_template_id = vt.template_id
+				 LEFT JOIN xml_file xf
+						   ON xf.vin = vi.vin AND xf.is_latest = 1 AND xf.deleted = 0
 		WHERE vi.rn = 1
 	</select>
 
 	<select id="checkVehicleInfoTimeoutGenerate" resultMap="VehicleInfoResult">
 		SELECT vi.*
 		FROM vehicle_info vi
-				 INNER JOIN (
-			SELECT *
-			FROM sys_dict_data
-			WHERE dict_type = 'reminder_time' AND status = '0' AND dict_sort = 5
+		INNER JOIN (
+		SELECT *
+		FROM sys_dict_data
+		WHERE dict_type = 'reminder_time' AND status = '0' AND dict_sort = 5
 		) sdd ON 1 = 1
 		WHERE vi.deleted = 0
-		  <if test="noticeStatus != null">
-			  and vi.generate_timeout_notice = #{noticeStatus}
-		  </if>
-		  AND vi.upload_status = 0
-		  AND TIMESTAMPDIFF(MICROSECOND, vi.create_time, NOW()) / 1000 &gt;= CAST(sdd.dict_value AS SIGNED)
+		<if test="noticeStatus != null">
+			and vi.generate_timeout_notice = #{noticeStatus}
+		</if>
+		AND vi.upload_status = 0
+		AND TIMESTAMPDIFF(MICROSECOND, vi.create_time, NOW()) / 1000 &gt;= CAST(sdd.dict_value AS SIGNED)
 	</select>
 	<select id="findMaterialNosByTemplateId" resultType="string">
 		SELECT DISTINCT material_no

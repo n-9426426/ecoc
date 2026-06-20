@@ -3,6 +3,7 @@ package com.ruoyi.vehicle.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.ruoyi.common.core.model.ValidationReport;
 import com.ruoyi.common.core.web.domain.AjaxResult;
+import com.ruoyi.common.core.web.page.TableDataInfo;
 import com.ruoyi.system.api.model.LoginUser;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.dto.VehicleDto;
@@ -127,4 +128,20 @@ public interface IVehicleInfoService {
     List<VehicleInfo> listAllFirstVehicleUnconfirmed();
 
     List<VehicleInfo> listFirstVehicleUnconfirmedAll(VehicleInfo vehicleInfo);
+
+    /**
+     * 首台车待确认列表（物料号维度 + 模版维度合并，手动分页）
+     * <p>因内部需合并两个独立SQL查询的结果，不能使用 PageHelper 物理分页，
+     *   故在查出完整合并结果后手动按 pageNum/pageSize 切分。
+     *
+     * @param vehicleInfo 查询条件（含 pageNum、pageSize）
+     * @return 分页结果
+     */
+    /**
+     * 首台车待确认列表（物料号维度 + 模版维度合并，手动分页）
+     * <p>因内部需合并两个独立SQL查询的结果，PageHelper 物理分页无法正确处理，
+     *   故查出完整合并结果后由本方法手动按 pageNum/pageSize 切分。
+     */
+    com.ruoyi.common.core.web.page.TableDataInfo listFirstVehicleUnconfirmedAllPaged(
+            VehicleInfo vehicleInfo, int pageNum, int pageSize);
 }

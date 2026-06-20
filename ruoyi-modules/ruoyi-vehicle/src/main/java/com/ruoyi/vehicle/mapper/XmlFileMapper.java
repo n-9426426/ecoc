@@ -75,4 +75,11 @@ public interface XmlFileMapper {
     int updateForceUploaded(Long id);
 
 
+    // XmlFileMapper.java 接口新增
+    /**
+     * 批量查询哪些VIN已存在最新版本的XML记录（is_latest=1 AND deleted=0）
+     * @param vinList VIN列表
+     * @return 已生成过XML的VIN集合
+     */
+    List<String> selectVinsWithGeneratedXml(@Param("vinList") List<String> vinList);
 }

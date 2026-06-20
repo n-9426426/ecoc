@@ -131,4 +131,7 @@ public class XmlFile extends BaseEntity {
     private Integer generateCount;
 
     private Boolean forceUploaded;
+
+    /** 是否首台车（模版维度，关联 vehicle_info.first_template_flag 回填，非数据库字段） */
+    private Integer firstTemplateFlag;
 }

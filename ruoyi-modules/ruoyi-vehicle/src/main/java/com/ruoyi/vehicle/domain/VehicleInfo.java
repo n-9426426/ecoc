@@ -221,4 +221,16 @@ public class VehicleInfo extends BaseEntity {
     private String affirmCause;
 
     private Integer affirm;
+
+    /** 该车辆是否已生成过XML（非数据库字段，关联 xml_file 表回填，用于首台车页面确认生成按钮显示） */
+    private transient Boolean hasGeneratedXml;
+
+    /** 最新XML文件ID（关联 xml_file.id，is_latest=1，用于首台车页面调上传/强制上传接口） */
+    private transient Long xmlFileId;
+
+    /** 最新XML文件的校验结果（关联 xml_file.validate_result，用于首台车页面上传按钮禁用判断） */
+    private transient Integer xmlValidateResult;
+
+    /** 最新XML是否曾强制上传（关联 xml_file.force_uploaded，用于首台车页面强制上传按钮显示判断） */
+    private transient Boolean forceUploaded;
 }

@@ -369,13 +369,17 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 log.warn("上传审批：XML记录不存在，id={}", xmlId);
                 continue;
             }
-            // 首台车未确认时拒绝
             VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoByVin(xmlFile.getVin());
-            if (vehicleInfo == null || !Integer.valueOf(1).equals(vehicleInfo.getUploadAffirm())) {
+            if (vehicleInfo == null) {
+                throw new ServiceException("找不到关联车辆信息，VIN=" + xmlFile.getVin());
+            }
+            // 首台车（firstTemplateFlag=1）无需确认即可上传；非首台车需要 uploadAffirm=1
+            boolean isFirstVehicle = Integer.valueOf(1).equals(vehicleInfo.getFirstTemplateFlag());
+            if (!isFirstVehicle && !Integer.valueOf(1).equals(vehicleInfo.getUploadAffirm())) {
                 throw new ServiceException("首台车尚未确认上传，VIN=" + xmlFile.getVin());
             }
             // TODO: 此处调用外部交通部接口；当前先直接标记为已上传
-            xmlFile.setUploadResult("4");           // 4=上传成功（按你的业务枚举调整）
+            xmlFile.setUploadResult("4");
             xmlFile.setUploadDate(new Date());
             xmlFile.setUpdateBy(SecurityUtils.getUsername());
             xmlFileMapper.updateXmlFile(xmlFile);
@@ -397,24 +401,28 @@ public class XmlFileServiceImpl implements IXmlFileService {
     }
 
     /**
-     * 强制上传：跳过校验失败拦截，但首台车未确认时仍然禁止。
-     * 成功后将该条 xml_file 记录标记为 force_uploaded=1，
-     * 后续普通上传判断时不再因校验失败而禁用。
+     * 强制上传：跳过校验失败拦截。
+     * 首台车（firstTemplateFlag=1）无需确认即可强制上传；非首台车需要 uploadAffirm=1。
+     * 成功后将该条 xml_file 记录标记为 force_uploaded=1，后续普通上传不再因校验失败被拦截。
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void forceUploadXml(Long id) {
         XmlFile xmlFile = xmlFileMapper.selectXmlFileById(id);
         if (xmlFile == null) {
-            log.warn("上传审批：XML记录不存在，id={}", id);
+            throw new ServiceException("XML记录不存在，id=" + id);
         }
-        // 首台车未确认时拒绝
         VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoByVin(xmlFile.getVin());
-        if (vehicleInfo == null || !Integer.valueOf(1).equals(vehicleInfo.getUploadAffirm())) {
+        if (vehicleInfo == null) {
+            throw new ServiceException("找不到关联车辆信息，VIN=" + xmlFile.getVin());
+        }
+        // 首台车（firstTemplateFlag=1）无需确认即可强制上传；非首台车需要 uploadAffirm=1
+        boolean isFirstVehicle = Integer.valueOf(1).equals(vehicleInfo.getFirstTemplateFlag());
+        if (!isFirstVehicle && !Integer.valueOf(1).equals(vehicleInfo.getUploadAffirm())) {
             throw new ServiceException("首台车尚未确认上传，VIN=" + xmlFile.getVin());
         }
         // TODO: 此处调用外部交通部接口；当前先直接标记为已上传
-        xmlFile.setUploadResult("4");           // 4=上传成功（按你的业务枚举调整）
+        xmlFile.setUploadResult("4");
         xmlFile.setUploadDate(new Date());
         xmlFile.setUpdateBy(SecurityUtils.getUsername());
         xmlFile.setForceUploaded(true);
@@ -431,7 +439,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
         lc.setOperate(VehicleLifecycleOperation.XML_UPLOAD.getOperation());
         lc.setResult(0);
         vehicleLifecycleMapper.insert(lc);
-
     }
 
     /**
@@ -5212,8 +5219,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
     /**
      * 校验车辆是否允许上传 XML
-     * 规则：该车辆关联模版的首台车必须已确认（upload_affirm=1），
-     *       或者该车辆本身就是首台车（first_template_flag=1）
+     * 首台车（firstTemplateFlag=1）：无需 uploadAffirm=1，直接放行
+     * 非首台车：需要该模版下首台车已确认（uploadAffirm=1）
      */
     private void checkUploadPermission(VehicleInfo vehicleInfo) {
         // 首台车本身始终允许操作

@@ -15,6 +15,7 @@ import com.ruoyi.common.core.utils.DateUtils;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.utils.bean.BeanUtils;
 import com.ruoyi.common.core.web.domain.AjaxResult;
+import com.ruoyi.common.core.web.page.TableDataInfo;
 import com.ruoyi.common.security.utils.SecurityUtils;
 import com.ruoyi.system.api.RemoteDictService;
 import com.ruoyi.system.api.RemoteNoticeService;
@@ -97,6 +98,9 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Autowired
     private MaterialBlacklistMapper materialBlacklistMapper;
+
+    @Autowired
+    private XmlFileMapper xmlFileMapper;   // 需确认类是否已被注入，若已有则不用重复加
 
     // @Lazy 打破循环依赖，同时保证拿到的是带事务代理的 self
     @Lazy
@@ -1321,36 +1325,44 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 .stream()
                 .map(m -> {
                     LinkedHashMap<String, Object> newMap = new LinkedHashMap<>(m);
-                    // 假设 vehicleId 可以从某个地方获取，比如根据 vin 查询
                     String vin = (String) m.get("vin");
-                    Long vehicleId = vinToVehicleInfo.get(vin).getVehicleId();
-                    newMap.put("vehicleId", vehicleId);
+                    VehicleInfo vi = vinToVehicleInfo.get(vin);
+                    // ★ 修复：该vin不在本次勾选的车辆范围内时，vi为null，跳过该条，避免NPE
+                    if (vi == null) {
+                        return null;
+                    }
+                    newMap.put("vehicleId", vi.getVehicleId());
                     return newMap;
                 })
+                .filter(Objects::nonNull)   // ★ 过滤掉上面返回的null
                 .collect(Collectors.toList());
 
         for (Map<String, Object> map : mapList) {
             String vin = (String) map.get("vin");
             VehicleInfo vehicleInfo = vinToVehicleInfo.get(vin);
-            if (vehicleInfo != null && vehicleInfo.getVehicleTemplateId() != null) {
-                VehicleTemplate template = vehicleTemplateMapper.selectVehicleTemplateById(Long.valueOf(vehicleInfo.getVehicleTemplateId()));
-                if (template != null) {
-                    VehicleTemplate query = new VehicleTemplate();
-                    query.setUuid(template.getUuid());
-                    query.setIsLast(0);
-                    List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectVehicleTemplateList(query);
-                    Map<String, Object> versionMap = new LinkedHashMap<>();
-                    List<Map<String, Object>> versionList = new ArrayList<>();
-                    for (VehicleTemplate vehicleTemplate : vehicleTemplateList) {
-                        Map<String, Object> versionItem = new LinkedHashMap<>();
-                        versionItem.put("templateId",    vehicleTemplate.getTemplateId());
-                        versionItem.put("cocTemplateNo", vehicleTemplate.getCocTemplateNo());
-                        versionItem.put("wvtaCocNo",     vehicleTemplate.getWvtaCocNo());
-                        versionItem.put("version",       vehicleTemplate.getVersion());
-                        versionList.add(versionItem);
-                    }
-                    map.put("versions", versionList);
+            if (vehicleInfo != null) {
+                // ★ 改用与物料详情页（MaterialServiceImpl.selectMaterialById）完全一致的
+                //   查询条件：按 brand/weight/saleName/tire/tvv 匹配，而不是按 uuid
+                //   因为模版每次升版会生成新 uuid，按 uuid 关联永远只能查到自己
+                List<VehicleTemplate> vehicleTemplateList = vehicleTemplateMapper.selectVehicleTemplateIdByCondition(
+                        null,
+                        vehicleInfo.getBrand(),
+                        vehicleInfo.getWeight(),
+                        vehicleInfo.getSaleName(),
+                        vehicleInfo.getTire(),
+                        vehicleInfo.getTvv()
+                );
+
+                List<Map<String, Object>> versionList = new ArrayList<>();
+                for (VehicleTemplate vehicleTemplate : vehicleTemplateList) {
+                    Map<String, Object> versionItem = new LinkedHashMap<>();
+                    versionItem.put("templateId",    vehicleTemplate.getTemplateId());
+                    versionItem.put("cocTemplateNo", vehicleTemplate.getCocTemplateNo());
+                    versionItem.put("wvtaCocNo",     vehicleTemplate.getWvtaCocNo());
+                    versionItem.put("version",       vehicleTemplate.getVersion());
+                    versionList.add(versionItem);
                 }
+                map.put("versions", versionList);
             }
         }
 
@@ -1407,18 +1419,27 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
 
     @Override
     public List<VehicleInfo> listFirstVehicleUnconfirmedAll(VehicleInfo vehicleInfo) {
-        // 物料号维度：first_material_flag=1 AND generate_affirm=0
         List<VehicleInfo> materialList = vehicleInfoMapper.listFirstVehicleUnconfirmed(vehicleInfo, "material");
-        // 模版维度：first_template_flag=1 AND upload_affirm=0
         List<VehicleInfo> templateList = vehicleInfoMapper.listFirstVehicleUnconfirmed(vehicleInfo, "template");
 
-        // 按 vehicle_id 合并去重，同一辆车只显示一次
         Map<Long, VehicleInfo> mergedMap = new LinkedHashMap<>();
         materialList.forEach(v -> mergedMap.put(v.getVehicleId(), v));
-        // 模版维度的车如果已在物料号维度里，不覆盖；如果不在，补充进来
         templateList.forEach(v -> mergedMap.putIfAbsent(v.getVehicleId(), v));
 
-        return new ArrayList<>(mergedMap.values());
+        List<VehicleInfo> result = new ArrayList<>(mergedMap.values());
+
+        // ★ 新增：批量查询哪些VIN已生成过XML，填充到 hasGeneratedXml
+        if (!result.isEmpty()) {
+            List<String> vinList = result.stream()
+                    .map(VehicleInfo::getVin)
+                    .filter(StringUtils::isNotBlank)
+                    .distinct()
+                    .collect(Collectors.toList());
+            Set<String> generatedVins = new HashSet<>(xmlFileMapper.selectVinsWithGeneratedXml(vinList));
+            result.forEach(v -> v.setHasGeneratedXml(generatedVins.contains(v.getVin())));
+        }
+
+        return result;
     }
     // ========== SSE 工具方法（与 VehicleTemplateServiceImpl 保持一致）==========
 
@@ -2043,5 +2064,31 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
             log.warn("[isTemplateModified] 检查模版是否修改失败，templateId={}", templateId, e);
             return false;
         }
+    }
+
+    @Override
+    public TableDataInfo listFirstVehicleUnconfirmedAllPaged(VehicleInfo vehicleInfo, int pageNum, int pageSize) {
+        // 1. 查出完整的合并去重结果（不分页，复用已有方法）
+        List<VehicleInfo> fullList = listFirstVehicleUnconfirmedAll(vehicleInfo);
+
+        int total = fullList.size();
+
+        // 2. 手动切分当前页数据
+        int fromIndex = (pageNum - 1) * pageSize;
+        List<VehicleInfo> pageList;
+        if (fromIndex >= total || fromIndex < 0) {
+            pageList = Collections.emptyList();
+        } else {
+            int toIndex = Math.min(fromIndex + pageSize, total);
+            pageList = fullList.subList(fromIndex, toIndex);
+        }
+
+        // 3. 组装 TableDataInfo，total 为合并去重后的真实总数
+        TableDataInfo rspData = new TableDataInfo();
+        rspData.setCode(200);
+        rspData.setMsg("查询成功");
+        rspData.setRows(pageList);
+        rspData.setTotal(total);
+        return rspData;
     }
 }
