@@ -8,6 +8,7 @@ import com.ruoyi.common.core.exception.ServiceException;
 import com.ruoyi.common.core.model.FieldValidationResult;
 import com.ruoyi.common.core.model.RuleViolation;
 import com.ruoyi.common.core.model.ValidationReport;
+import com.ruoyi.common.core.parser.ValueMappingParser;
 import com.ruoyi.common.core.utils.StringUtils;
 import com.ruoyi.common.core.web.domain.AjaxResult;
 import com.ruoyi.common.security.utils.SecurityUtils;
@@ -1871,6 +1872,12 @@ public class XmlFileServiceImpl implements IXmlFileService {
             jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
         }
 
+        // Colour 值通过 sys_dict_data 的 value_connection 映射（与 IntendedCountryRegistration 同一套逻辑）
+        Object rawColourNovcOvc = vehicle.getColor();
+        if (rawColourNovcOvc != null && StringUtils.isNotBlank(rawColourNovcOvc.toString())) {
+            jsonMap.put("Colour", resolveColourDictValue(rawColourNovcOvc.toString()));
+        }
+
         // 3. 查询字典数据，构建 uuid -> SysDictData 映射
         List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
         Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 为 uuid
@@ -2051,6 +2058,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
         //   删除该 EnergySource 父节点的父节点的同级容器（EnergyConvertorGroup）下的
         //   EngineCapacity、NumberOfCylinders、ArrangementCylinders 三个标签
         removeEngineCapacityForElectricEnergySource(doc);
+
+        // 13d. Header 下若不存在 IntendedCountryRegistration 标签，
+        //   在 IviVersionDateTime 标签之后补充插入，值取 country 字段的字典映射
+        ensureIntendedCountryRegistration(doc, vehicle);
 
         return doc;
     }
@@ -2082,6 +2093,12 @@ public class XmlFileServiceImpl implements IXmlFileService {
             jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
         }
 
+        // Colour 值通过 sys_dict_data 的 value_connection 映射（与 IntendedCountryRegistration 同一套逻辑）
+        Object rawColourPureElectric = vehicle.getColor();
+        if (rawColourPureElectric != null && StringUtils.isNotBlank(rawColourPureElectric.toString())) {
+            jsonMap.put("Colour", resolveColourDictValue(rawColourPureElectric.toString()));
+        }
+
         // 3. 查询字典数据，构建 uuid -> SysDictData 映射
         List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
         Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 为 uuid
@@ -2262,6 +2279,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
         //   删除该 EnergySource 父节点的父节点的同级容器（EnergyConvertorGroup）下的
         //   EngineCapacity、NumberOfCylinders、ArrangementCylinders 三个标签
         removeEngineCapacityForElectricEnergySource(doc);
+
+        // 13d. Header 下若不存在 IntendedCountryRegistration 标签，
+        //   在 IviVersionDateTime 标签之后补充插入，值取 country 字段的字典映射
+        ensureIntendedCountryRegistration(doc, vehicle);
 
         return doc;
     }
@@ -2293,6 +2314,12 @@ public class XmlFileServiceImpl implements IXmlFileService {
             jsonMap.put("SignatureDate", DateUtils.format(new Date(), "yyyy-MM-dd"));
         }
 
+        // Colour 值通过 sys_dict_data 的 value_connection 映射（与 IntendedCountryRegistration 同一套逻辑）
+        Object rawColourFuelOil = vehicle.getColor();
+        if (rawColourFuelOil != null && StringUtils.isNotBlank(rawColourFuelOil.toString())) {
+            jsonMap.put("Colour", resolveColourDictValue(rawColourFuelOil.toString()));
+        }
+
         // 3. 查询字典数据，构建 uuid -> SysDictData 映射
         List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
         Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 为 uuid
@@ -2473,6 +2500,15 @@ public class XmlFileServiceImpl implements IXmlFileService {
         //   删除该 EnergySource 父节点的父节点的同级容器（EnergyConvertorGroup）下的
         //   EngineCapacity、NumberOfCylinders、ArrangementCylinders 三个标签
         removeEngineCapacityForElectricEnergySource(doc);
+
+        // 13d. Header 下若不存在 IntendedCountryRegistration 标签，
+        //   在 IviVersionDateTime 标签之后补充插入，值取 country 字段的字典映射
+        ensureIntendedCountryRegistration(doc, vehicle);
+
+        // 13e. 燃油类型专属：每个 GearRatioGroup 的 FinalDriveTable 下，
+        //   只保留 FinalDriveNumber 等于该 GearRatioGroup 的 GearNumber 的那一组 FinalDriveGroup，
+        //   其余 FinalDriveGroup 全部删除
+        restrictFinalDriveGroupByGearNumber(doc);
 
         return doc;
     }
@@ -4148,6 +4184,193 @@ public class XmlFileServiceImpl implements IXmlFileService {
     }
 
     /**
+     * 若生成后的 XML 中 Header 节点下不存在 IntendedCountryRegistration 标签，
+     * 则在 IviVersionDateTime 标签之后补充插入一个，值取车辆 country 字段
+     * 通过 sys_dict_data（dict_type=country）的 value_connection 映射后的结果
+     * （见 {@link #resolveCountryDictCode}）。
+     * <p>
+     * 若 Header 节点不存在、IntendedCountryRegistration 已存在（幂等）、
+     * 或 country 值在字典中找不到映射，均直接跳过，不影响主流程。
+     */
+    private void ensureIntendedCountryRegistration(Document doc, VehicleInfo vehicle) {
+        NodeList headerList = doc.getElementsByTagName("Header");
+        if (headerList.getLength() == 0) return;
+        Element header = (Element) headerList.item(0);
+
+        // 已存在则跳过，保证幂等
+        if (header.getElementsByTagName("IntendedCountryRegistration").getLength() > 0) return;
+
+        String countryCode = resolveCountryDictCode(vehicle.getCountry());
+        if (StringUtils.isBlank(countryCode)) {
+            log.warn("[ensureIntendedCountryRegistration] vin={} country 为空，跳过补充 IntendedCountryRegistration",
+                    vehicle.getVin());
+            return;
+        }
+
+        // 定位 IviVersionDateTime 节点，插入到其后；找不到则回退为追加到 Header 末尾
+        Node refNode = null;
+        NodeList iviList = header.getElementsByTagName("IviVersionDateTime");
+        if (iviList.getLength() > 0) {
+            refNode = iviList.item(0).getNextSibling();
+        }
+
+        Element intendedCountryEl = doc.createElement("IntendedCountryRegistration");
+        intendedCountryEl.setTextContent(countryCode);
+        header.insertBefore(intendedCountryEl, refNode);
+        log.info("[ensureIntendedCountryRegistration] vin={} 已补充 IntendedCountryRegistration={}", vehicle.getVin(), countryCode);
+    }
+
+    /**
+     * 燃油类型专属：每个 GearRatioGroup 下的 FinalDriveTable，只保留
+     * FinalDriveNumber 与该 GearRatioGroup 的 GearNumber 相等的那一组 FinalDriveGroup，
+     * 其余 FinalDriveGroup 全部删除。
+     * <p>
+     * 背景：建树阶段 FinalDriveTable 是按完整的 FinalDriveNumber/FinalDriveRatio 集合
+     * 展开的，每个 GearRatioGroup 下都会重复出现全部档位的 FinalDriveGroup；而实际只有
+     * FinalDriveNumber 与当前 GearNumber 一致的那一组才是该挡位真正对应的最终传动比，
+     * 其余是从原始数据共享复制过来的冗余项，需要按挡位过滤掉。
+     * <p>
+     * 找不到 GearNumber、找不到 FinalDriveTable，或 FinalDriveGroup 下没有
+     * FinalDriveNumber 子标签时，均跳过该 GearRatioGroup，不报错、不影响其余分组处理。
+     */
+    private void restrictFinalDriveGroupByGearNumber(Document doc) {
+        NodeList gearRatioGroups = doc.getElementsByTagName("GearRatioGroup");
+        int totalRemoved = 0;
+
+        for (int i = 0; i < gearRatioGroups.getLength(); i++) {
+            Node grNode = gearRatioGroups.item(i);
+            if (!(grNode instanceof Element)) continue;
+            Element gearRatioGroup = (Element) grNode;
+            NodeList children = gearRatioGroup.getChildNodes();
+
+            // 取该 GearRatioGroup 的直接子标签 GearNumber
+            String gearNumber = null;
+            Element finalDriveTable = null;
+            for (int j = 0; j < children.getLength(); j++) {
+                Node child = children.item(j);
+                if (child.getNodeType() != Node.ELEMENT_NODE) continue;
+                if ("GearNumber".equals(child.getNodeName())) {
+                    gearNumber = child.getTextContent() == null ? "" : child.getTextContent().trim();
+                } else if ("FinalDriveTable".equals(child.getNodeName())) {
+                    finalDriveTable = (Element) child;
+                }
+            }
+            if (StringUtils.isBlank(gearNumber) || finalDriveTable == null) continue;
+
+            // 删除 FinalDriveTable 下 FinalDriveNumber 不等于 gearNumber 的 FinalDriveGroup
+            NodeList fdGroupNodes = finalDriveTable.getChildNodes();
+            List<Node> toRemove = new ArrayList<>();
+            for (int j = 0; j < fdGroupNodes.getLength(); j++) {
+                Node fdNode = fdGroupNodes.item(j);
+                if (fdNode.getNodeType() != Node.ELEMENT_NODE || !"FinalDriveGroup".equals(fdNode.getNodeName())) continue;
+                Element fdGroup = (Element) fdNode;
+
+                String finalDriveNumber = null;
+                NodeList fdChildren = fdGroup.getChildNodes();
+                for (int k = 0; k < fdChildren.getLength(); k++) {
+                    Node fdChild = fdChildren.item(k);
+                    if (fdChild.getNodeType() == Node.ELEMENT_NODE && "FinalDriveNumber".equals(fdChild.getNodeName())) {
+                        finalDriveNumber = fdChild.getTextContent() == null ? "" : fdChild.getTextContent().trim();
+                        break;
+                    }
+                }
+                if (!gearNumber.equals(finalDriveNumber)) {
+                    toRemove.add(fdGroup);
+                }
+            }
+            for (Node n : toRemove) {
+                finalDriveTable.removeChild(n);
+            }
+            totalRemoved += toRemove.size();
+        }
+
+        if (totalRemoved > 0) {
+            log.info("[restrictFinalDriveGroupByGearNumber] 已按 GearNumber 过滤 FinalDriveGroup，共删除 {} 组", totalRemoved);
+        }
+    }
+
+    /**
+     * 通用的 sys_dict_data value_connection 值映射：
+     * 按 dictType 查出该字典类型下的全部记录，用 dictLabel（通常与目标 XML 标签名一致）
+     * 匹配到对应记录，取其 value_connection 字段，用 {@link ValueMappingParser#mergeValueConnection}
+     * 按 "MES_xx": {原始值: 目标值} 的结构合并为单层 Map，再直接按 rawValue 查出映射后的结果
+     * （不经过 {@link ValueMappingParser#convertWithDictMap}，原因见方法内注释）。
+     * <p>
+     * 查不到对应记录、value_connection 为空、或合并表中查不到映射结果时，
+     * 均原样返回传入的 rawValue 作为兜底，而不是 null，避免因字典配置缺失导致标签整体缺失。
+     *
+     * @param dictType  sys_dict_data 的字典类型（dict_type）
+     * @param dictLabel 用于匹配记录的字典标签（dict_label），通常与目标 XML 标签名一致
+     * @param rawValue  待映射的原始值
+     * @return 映射后的值；找不到映射时原样返回 rawValue；rawValue 本身为空时返回 null
+     */
+    private String resolveDictConnectionValue(String dictType, String dictLabel, String rawValue) {
+        if (StringUtils.isBlank(rawValue)) return null;
+        List<SysDictData> dictList = remoteDictService.getDictDataByType(dictType).getData();
+        if (dictList == null) return rawValue;
+
+        // 用标签名匹配 dict_label，定位对应的字典记录
+        SysDictData matched = dictList.stream()
+                .filter(d -> dictLabel.equals(d.getDictLabel()))
+                .findFirst()
+                .orElse(null);
+        if (matched == null || StringUtils.isBlank(matched.getValueConnection())) {
+            return rawValue;
+        }
+
+        // ★ 不走 ValueMappingParser.convertWithDictMap：该方法在 value_map 列为空、
+        //   或未配置为 "DICT_MAP" 时会直接原样返回 rawValue（见其源码：
+        //   `if (valueMap == null || isBlank(valueMap)) return rawValue;`）。
+        //   这里命中的字典记录的 value_map 列通常并未配置，导致映射逻辑被整体跳过——
+        //   这正是"没有走 value_connection 逻辑映射"的根因。
+        //   直接对合并后的 Map 做查找，不依赖 value_map 列的配置。
+        Map<String, String> mergedMap = ValueMappingParser.mergeValueConnection(matched.getValueConnection());
+        String converted = mergedMap.get(rawValue.trim());
+        return StringUtils.isNotBlank(converted) ? converted : rawValue;
+    }
+
+    /**
+     * country -> IntendedCountryRegistration 的值映射，委托给通用方法 {@link #resolveDictConnectionValue}。
+     *
+     * @param country 车辆信息中的原始 country 值（即 dict_value，如 "POL"）
+     * @return 映射后的值；找不到映射时原样返回 country；country 本身为空时返回 null
+     */
+    private String resolveCountryDictCode(String country) {
+        return resolveDictConnectionValue("vehicle_attribute", "IntendedCountryRegistration", country);
+    }
+
+    /**
+     * color -> Colour 的值映射，委托给通用方法 {@link #resolveDictConnectionValue}。
+     * 与 resolveCountryDictCode 同一套逻辑：用标签名 "Colour" 匹配 dict_label，
+     * 取其 value_connection 做映射，查不到映射时原样返回对应值。
+     * <p>
+     * 颜色可能是双色车的 "主色;副色" 两段式值（如 "Z3;CP"），此时按 ; 拆开后
+     * 逐段独立映射，再按原顺序和原分隔位置拼回（保留空段，如只有主色没有副色时
+     * 的尾部空段），不会把整个 "Z3;CP" 当成一个整体去查找（那样必然查不到）。
+     *
+     * @param color 车辆信息中的原始 color 值，单色或 ; 分隔的双色
+     * @return 映射后的值；找不到映射的段原样返回该段；color 本身为空时返回 null
+     */
+    private String resolveColourDictValue(String color) {
+        if (StringUtils.isBlank(color)) return null;
+        if (!color.contains(";")) {
+            return resolveDictConnectionValue("vehicle_attribute", "Colour", color);
+        }
+
+        // 双色：按 ; 拆开，逐段映射后按原顺序拼回，保留空段（不对空段做映射）
+        String[] segments = color.split(";", -1);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < segments.length; i++) {
+            if (i > 0) sb.append(";");
+            String seg = segments[i].trim();
+            if (StringUtils.isNotBlank(seg)) {
+                sb.append(resolveDictConnectionValue("vehicle_attribute", "Colour", seg));
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
      * 将 | 分隔的多段字符串中各段解析为 BigDecimal 并累加，跳过空段和非数字段。如果没有 | 分隔符，则用 ; 分隔符
      * 返回 null 表示没有任何有效数值段。
      */
@@ -4525,9 +4748,25 @@ public class XmlFileServiceImpl implements IXmlFileService {
                             subMap, child.getAttrPath(), i);
                 }
             } else if (StringUtils.isNotBlank(dict.getDictLabel())) {
-                // 直接叶子节点（不常见，但容错处理）
-                String value = getValueByRow(jsonMap, dict.getDictLabel(),
-                        child.getDefaultValue(), -1);
+                // 直接叶子节点：本身不是循环节点（如 CombustionCycle 与 EnergySourceTable 同级），
+                // 但值可能仍带 | 或 ; 分隔（如 CombustionCycle="4ST|"，只有第一段是真实值，
+                // 其余段是占位空段，对应不适用该字段的能量源）。
+                // ★ 修复：不能再用 getValueByRow(rowIndex=-1) 直接判空丢弃整个值——
+                //   该写法会让任何含分隔符的直接叶子字段无论第几段有值都被清空，导致标签整体丢失。
+                //   改成：含分隔符时取第一个非空段；不含分隔符时按原逻辑取值。
+                Object rawLeaf = jsonMap.get(dict.getDictLabel());
+                String value;
+                if (rawLeaf != null && (rawLeaf.toString().contains("|") || rawLeaf.toString().contains(";"))) {
+                    String sep = rawLeaf.toString().contains("|") ? "\\|" : ";";
+                    String firstNonBlank = Arrays.stream(rawLeaf.toString().trim().split(sep, -1))
+                            .map(String::trim)
+                            .filter(StringUtils::isNotBlank)
+                            .findFirst()
+                            .orElse(null);
+                    value = StringUtils.isNotBlank(firstNonBlank) ? firstNonBlank : getValueOrDefault(null, child.getDefaultValue());
+                } else {
+                    value = getValueByRow(jsonMap, dict.getDictLabel(), child.getDefaultValue(), -1);
+                }
                 if (StringUtils.isNotBlank(value)) {
                     addElement(doc, parentElement, dict, value);
                 }
