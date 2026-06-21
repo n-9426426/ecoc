@@ -2326,6 +2326,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
         //   始终保留，哪怕为空。幂等，重复执行不会误删已合法保留的内容。
         removeEmptyStructNodes(root, attrList, dictCodeMap);
 
+        // 13z2. 纯电分支专属：MassInRunningOrder <= 2355kg 且 ExhaustEmissionLatestRegulationNumber
+        //   缺失/为空时，按模板位置补建空标签。必须放在上面 13z 最终兜底清理之后，
+        //   否则刚补建的空标签若对应 is_required=0，会被那一步当作非必填空节点删掉。
+        ensureExhaustEmissionLatestRegulationNumberForLightVehicle(doc, attrList, dictCodeMap);
+
         return doc;
     }
 
@@ -5440,6 +5445,131 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
         }
         parentElement.insertBefore(newChild, refNode);
+    }
+
+    /**
+     * 纯电分支专属规则：MassInRunningOrder（整备质量）有值且小于等于 2355（kg）时，若
+     * ExhaustEmissionLatestRegulationNumber（排放法规编号）标签不存在，或存在但值为空，
+     * 按模板中该标签的位置补建一个空标签（文本内容留空）。
+     * <p>
+     * 模板层级关系：CocDataGroup -&gt; ExhaustEmissionLatestRegulationNumber（直接子节点），
+     * CocDataGroup -&gt; MassGroup -&gt; MassInRunningOrder（隔了一层 MassGroup）。两者不是同级，
+     * 因此"对应位置"不能直接取 MassInRunningOrder 的 DOM 父节点（那是 MassGroup），而是要按
+     * 模板 attrPath 的层级差，从 MassInRunningOrder 往上多跳一层，定位到真正的 CocDataGroup
+     * 节点，再在它下面按 sort_order 找正确的插入位置。层级差按 attrPath 动态计算，不写死跳
+     * 几层，模板结构调整（如又插入一层中间节点）时仍然适用。
+     * <p>
+     * MassInRunningOrder 理论上只会出现一次，这里按文档中实际找到的每一处分别判断，避免遗漏。
+     * 模板中若没有定义 ExhaustEmissionLatestRegulationNumber 或 MassInRunningOrder，或两者按
+     * attrPath 推不出层级祖先关系（不是期望的结构），直接跳过，不做任何事，不瞎猜插入位置。
+     * <p>
+     * 需要在 buildXmlDocumentForPureElectric 最后一次 removeEmptyStructNodes（13z 兜底清理）
+     * 之后调用，否则刚补建的空标签如果对应 is_required=0，会被那一步当作"非必填空节点"
+     * 立即删掉。
+     */
+    private void ensureExhaustEmissionLatestRegulationNumberForLightVehicle(
+            Document doc, List<XmlTemplateAttribute> attrList, Map<String, SysDictData> dictCodeMap) {
+
+        NodeList massNodes = doc.getElementsByTagName("MassInRunningOrder");
+        if (massNodes.getLength() == 0) return;
+
+        // 在模板中定位 ExhaustEmissionLatestRegulationNumber 的 attrPath（其父节点即 CocDataGroup）
+        XmlTemplateAttribute exhaustAttr = attrList.stream()
+                .filter(a -> {
+                    String[] p = a.getAttrPath().split("\\.");
+                    SysDictData d = dictCodeMap.get(p[p.length - 1]);
+                    return d != null && "ExhaustEmissionLatestRegulationNumber".equals(d.getDictLabel());
+                })
+                .findFirst()
+                .orElse(null);
+        if (exhaustAttr == null) return;
+
+        String exhaustPath = exhaustAttr.getAttrPath();
+        int lastDot = exhaustPath.lastIndexOf('.');
+        String parentPath = lastDot >= 0 ? exhaustPath.substring(0, lastDot) : "";
+        int parentDepth = parentPath.isEmpty() ? 0 : parentPath.split("\\.").length;
+
+        // 在模板中定位 MassInRunningOrder 的 attrPath，用于算出它与 CocDataGroup 之间的层级差
+        XmlTemplateAttribute massAttr = attrList.stream()
+                .filter(a -> {
+                    String[] p = a.getAttrPath().split("\\.");
+                    SysDictData d = dictCodeMap.get(p[p.length - 1]);
+                    return d != null && "MassInRunningOrder".equals(d.getDictLabel());
+                })
+                .findFirst()
+                .orElse(null);
+        if (massAttr == null) return;
+
+        String massPath = massAttr.getAttrPath();
+        // MassInRunningOrder 必须确实在 CocDataGroup（ExhaustEmissionLatestRegulationNumber 的父
+        // 节点）子树下，否则两者的层级关系不是预期的样子，不强行处理
+        boolean isUnderSameAncestor = parentPath.isEmpty()
+                ? true
+                : massPath.equals(parentPath) || massPath.startsWith(parentPath + ".");
+        if (!isUnderSameAncestor) return;
+
+        int massDepth = massPath.split("\\.").length;
+        int levelsUp = massDepth - parentDepth; // MassInRunningOrder 比 CocDataGroup 深几层，就要往上跳几层
+        if (levelsUp < 1) return; // 理论上 MassInRunningOrder 至少比 CocDataGroup 深一层，异常情况直接跳过
+
+        // 该层级（ExhaustEmissionLatestRegulationNumber 所在层级，即 CocDataGroup 直接子节点）
+        // 的模板顺序，用于定位插入点
+        List<String> orderedTagNames = attrList.stream()
+                .filter(a -> {
+                    String p = a.getAttrPath();
+                    if (parentPath.isEmpty()) return p.split("\\.").length == 1;
+                    return p.startsWith(parentPath + ".") && p.split("\\.").length == parentDepth + 1;
+                })
+                .sorted(Comparator.comparingInt(a -> a.getSortOrder() != null ? a.getSortOrder() : 0))
+                .map(a -> {
+                    String[] p = a.getAttrPath().split("\\.");
+                    SysDictData d = dictCodeMap.get(p[p.length - 1]);
+                    return (d != null && StringUtils.isNotBlank(d.getDictLabel()))
+                            ? sanitizeXmlTagName(d.getDictLabel()) : null;
+                })
+                .collect(Collectors.toList());
+
+        String exhaustTagName = sanitizeXmlTagName(
+                dictCodeMap.get(exhaustPath.substring(exhaustPath.lastIndexOf('.') + 1)).getDictLabel());
+
+        for (int i = 0; i < massNodes.getLength(); i++) {
+            Node massNode = massNodes.item(i);
+            if (!(massNode instanceof Element)) continue;
+            Element massEl = (Element) massNode;
+            String massText = massEl.getTextContent() == null ? "" : massEl.getTextContent().trim();
+            if (StringUtils.isBlank(massText)) continue;
+
+            double massValue;
+            try {
+                massValue = Double.parseDouble(massText);
+            } catch (NumberFormatException e) {
+                continue; // 非数值，无法判断，跳过
+            }
+            if (massValue > 2355) continue;
+
+            // 从 MassInRunningOrder 往上跳 levelsUp 层，定位到真正的 CocDataGroup 节点
+            Node ancestor = massEl;
+            boolean reachedTop = false;
+            for (int up = 0; up < levelsUp; up++) {
+                ancestor = ancestor.getParentNode();
+                if (!(ancestor instanceof Element)) {
+                    reachedTop = true;
+                    break;
+                }
+            }
+            if (reachedTop || !(ancestor instanceof Element)) continue;
+            Element parentElement = (Element) ancestor;
+
+            List<Element> existing = getDirectChildren(parentElement, exhaustTagName);
+            if (!existing.isEmpty()) {
+                // 已存在：只有"存在但为空"才算满足条件，但既然标签已经在正确位置上，
+                // 已经是空标签，不需要再做任何事；非空则说明已有数据，按规则不应处理。
+                continue;
+            }
+
+            Element newEl = createElementWithDefault(doc, exhaustTagName, exhaustAttr.getDefaultValue());
+            insertAtTemplateOrder(parentElement, newEl, exhaustTagName, orderedTagNames);
+        }
     }
 
     /**
