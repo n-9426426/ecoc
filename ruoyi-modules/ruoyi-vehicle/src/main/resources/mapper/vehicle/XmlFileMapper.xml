@@ -56,12 +56,12 @@
                  left join sys_dict_data sdd on sdd.dict_value = xl.model_code
                  left join (
             SELECT vin,
-                   MAX(upload_affirm)        AS upload_affirm,
-                   MAX(generate_affirm)      AS generate_affirm,
-                   MAX(vehicle_id)           AS vehicle_id,
-                   MAX(first_template_flag)  AS first_template_flag
+                   upload_affirm,
+                   generate_affirm,
+                   vehicle_id,
+                   first_template_flag
             FROM vehicle_info
-            GROUP BY vin
+            WHERE deleted = 0
         ) vi on vi.vin = xl.vin
                  left join (
             SELECT vin, COUNT(*) AS generate_count

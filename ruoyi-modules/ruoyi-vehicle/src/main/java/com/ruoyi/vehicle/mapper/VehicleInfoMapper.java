@@ -262,4 +262,7 @@ public interface VehicleInfoMapper {
      */
     void updateUploadStatusByVin(@Param("vin") String vin,
                                  @Param("uploadStatus") int uploadStatus);
+
+    void resetUploadStatusByMaterialNo(@Param("materialNo") String materialNo);
+    void resetUploadStatusByTemplateId(@Param("templateId") String templateId);
 }

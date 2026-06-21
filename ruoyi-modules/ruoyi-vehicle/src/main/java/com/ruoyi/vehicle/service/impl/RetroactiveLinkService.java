@@ -3,12 +3,17 @@ package com.ruoyi.vehicle.service.impl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ruoyi.common.core.utils.StringUtils;
+import com.ruoyi.system.api.RemoteNoticeService;
 import com.ruoyi.vehicle.domain.Material;
 import com.ruoyi.vehicle.domain.VehicleInfo;
 import com.ruoyi.vehicle.domain.VehicleTemplate;
 import com.ruoyi.vehicle.mapper.MaterialMapper;
 import com.ruoyi.vehicle.mapper.VehicleInfoMapper;
 import com.ruoyi.vehicle.mapper.VehicleTemplateMapper;
+import com.ruoyi.vehicle.service.IFirstVehicleCheckService;
+import com.ruoyi.vehicle.service.IVehicleInfoService;
+import com.ruoyi.vehicle.service.IVehicleValidationService;
+import org.hibernate.validator.internal.util.stereotypes.Lazy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +51,17 @@ public class RetroactiveLinkService {
 
     @Autowired
     private VehicleTemplateMapper vehicleTemplateMapper;
+
+    @Lazy
+    @Autowired
+    private IVehicleInfoService vehicleInfoService;
+
+    @Autowired
+    private IFirstVehicleCheckService firstVehicleCheckService;
+
+    @Autowired
+    private RemoteNoticeService remoteNoticeService;
+
 
     // -----------------------------------------------------------------------
     // 入口1：导入 COC 模版后调用
@@ -186,6 +202,63 @@ public class RetroactiveLinkService {
 
         log.info("[回溯] 车辆 vehicleId={} vin={} 成功关联 templateId={}",
                 vehicle.getVehicleId(), vehicle.getVin(), template.getTemplateId());
+
+
+        try {
+            vehicleInfoService.validateVehicleInfo(
+                    java.util.Collections.singletonList(vehicle.getVehicleId()));
+        } catch (Exception e) {
+            log.warn("[回溯] 车辆 vehicleId={} 校验失败: {}", vehicle.getVehicleId(), e.getMessage());
+        }
+
+        try {
+            // 重新查一次，确保拿到回溯后带 templateId 的完整数据
+            VehicleInfo updated = vehicleInfoMapper.selectVehicleInfoById(vehicle.getVehicleId());
+            if (updated != null) {
+                firstVehicleCheckService.handleAfterInsert(
+                        java.util.Collections.singletonList(updated));
+                sendFirstVehicleNoticeIfNeeded(updated);
+            }
+        } catch (Exception e) {
+            log.warn("[回溯] 首台车打标/通知失败 vehicleId={}: {}", vehicle.getVehicleId(), e.getMessage());
+        }
+
+    }
+
+    /** 回溯场景下补发首台车通知（与 insertVehicleInfo 中逻辑对齐） */
+    private void sendFirstVehicleNoticeIfNeeded(VehicleInfo v) {
+        // affirmCause 由 handleAfterInsert → applyFirstVehicleAffirm 写入，这里再查一次
+        VehicleInfo latest = vehicleInfoMapper.selectVehicleInfoById(v.getVehicleId());
+        if (latest == null) return;
+
+        if (Integer.valueOf(0).equals(latest.getGenerateAffirm())) {
+            com.ruoyi.system.api.domain.SysNotice notice = new com.ruoyi.system.api.domain.SysNotice();
+            notice.setNoticeTitle("首台车生成待确认");
+            notice.setNoticeContent("物料号 " + latest.getMaterialNo()
+                    + " 生成待确认（回溯补关联触发）" + System.lineSeparator());
+            notice.setNoticeType("1");
+            notice.setStatus("0");
+            notice.setIsRead(false);
+            notice.setCreateBy("自动提醒");
+            notice.setCreateTime(new java.util.Date());
+            notice.setModel(com.ruoyi.system.api.enums.SysNoticeModel.FIRST_VEHICLE_GENERATE_AFFIRM.getModel());
+            notice.setSorts(java.util.Arrays.asList(18, 19));
+            remoteNoticeService.innerAdd(notice);
+        }
+        if (Integer.valueOf(0).equals(latest.getUploadAffirm())) {
+            com.ruoyi.system.api.domain.SysNotice notice = new com.ruoyi.system.api.domain.SysNotice();
+            notice.setNoticeTitle("首台车上传待确认");
+            notice.setNoticeContent("物料号 " + latest.getMaterialNo()
+                    + " 上传待确认（回溯补关联触发）" + System.lineSeparator());
+            notice.setNoticeType("1");
+            notice.setStatus("0");
+            notice.setIsRead(false);
+            notice.setCreateBy("自动提醒");
+            notice.setCreateTime(new java.util.Date());
+            notice.setModel(com.ruoyi.system.api.enums.SysNoticeModel.FIRST_VEHICLE_UPLOAD_AFFIRM.getModel());
+            notice.setSorts(java.util.Arrays.asList(20, 21));
+            remoteNoticeService.innerAdd(notice);
+        }
     }
 
     // -----------------------------------------------------------------------

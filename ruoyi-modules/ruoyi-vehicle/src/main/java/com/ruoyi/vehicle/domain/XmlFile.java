@@ -110,6 +110,7 @@ public class XmlFile extends BaseEntity {
     /** VIN批量查询列表 */
     private List<String> vinList;
 
+
     /** 车型代码批量查询列表 */
     private List<String> modelCodeList;
 

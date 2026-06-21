@@ -487,6 +487,14 @@ public class VehicleInfoServiceImpl implements IVehicleInfoService {
                 }
             }
         }
+
+        if (Integer.valueOf(0).equals(vehicleInfo.getGenerateAffirm())) {
+            // 查当前库中的 upload_status，只有已生成/已上传才重置，避免重复重置
+            VehicleInfo current = vehicleInfoMapper.selectVehicleInfoById(vehicleInfo.getVehicleId());
+            if (current != null && current.getUploadStatus() != null && current.getUploadStatus() > 0) {
+                vehicleInfo.setUploadStatus(0);
+            }
+        }
         // 去掉这里强制重置，交给调用方自己决定
         vehicleInfo.setVin(null);
         vehicleInfo.setUpdateTime(DateUtils.getNowDate());

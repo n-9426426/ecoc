@@ -377,7 +377,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             }
             // 首台车未确认时拒绝
             VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoByVin(xmlFile.getVin());
-            if (vehicleInfo == null || !Integer.valueOf(1).equals(vehicleInfo.getUploadAffirm())) {
+            if (vehicleInfo == null
+                    || (!Integer.valueOf(1).equals(vehicleInfo.getFirstTemplateFlag())
+                    && !Integer.valueOf(1).equals(vehicleInfo.getUploadAffirm()))) {
                 throw new ServiceException("首台车尚未确认上传，VIN=" + xmlFile.getVin());
             }
             // TODO: 此处调用外部交通部接口；当前先直接标记为已上传
@@ -416,7 +418,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
         }
         // 首台车未确认时拒绝
         VehicleInfo vehicleInfo = vehicleInfoMapper.selectVehicleInfoByVin(xmlFile.getVin());
-        if (vehicleInfo == null || !Integer.valueOf(1).equals(vehicleInfo.getUploadAffirm())) {
+        if (vehicleInfo == null
+                || (!Integer.valueOf(1).equals(vehicleInfo.getFirstTemplateFlag())
+                && !Integer.valueOf(1).equals(vehicleInfo.getUploadAffirm()))) {
             throw new ServiceException("首台车尚未确认上传，VIN=" + xmlFile.getVin());
         }
         // TODO: 此处调用外部交通部接口；当前先直接标记为已上传

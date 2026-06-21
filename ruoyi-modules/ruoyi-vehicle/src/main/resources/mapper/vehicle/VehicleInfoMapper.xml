@@ -612,17 +612,27 @@
 	</update>
 
 	<!-- 打物料号首台标识 -->
+	<!-- 打物料号首台标识，同时写入确认原因 -->
 	<update id="markMaterialFlag">
 		UPDATE vehicle_info
 		SET first_material_flag = #{flag},
+			affirm_cause        = CASE WHEN #{flag} = 1 THEN '物料号新增' ELSE affirm_cause END,
 			update_time         = SYSDATE()
 		WHERE vehicle_id = #{vehicleId}
 	</update>
 
-	<!-- 打模版首台标识 -->
+	<!-- 打模版首台标识，同时写入确认原因 -->
 	<update id="markTemplateFlag">
 		UPDATE vehicle_info
 		SET first_template_flag = #{flag},
+			affirm_cause        = CASE WHEN #{flag} = 1
+										   THEN CASE
+													WHEN affirm_cause IS NOT NULL AND affirm_cause != ''
+                                                THEN CONCAT(affirm_cause, '、模版新增')
+													ELSE '模版新增'
+					END
+									   ELSE affirm_cause
+				END,
 			update_time         = SYSDATE()
 		WHERE vehicle_id = #{vehicleId}
 	</update>
@@ -726,7 +736,7 @@
 			<if test="vehicleInfo.vinList != null and vehicleInfo.vinList.size() > 0">
 				AND (
 				<foreach collection="vehicleInfo.vinList" item="v" separator=" OR ">
-					vin LIKE CONCAT('%', #{v}, '%')
+					vi.vin LIKE CONCAT('%', #{v}, '%')
 				</foreach>
 				)
 			</if>
@@ -736,7 +746,7 @@
 			<if test="vehicleInfo.materialNoList != null and vehicleInfo.materialNoList.size() > 0">
 				AND (
 				<foreach collection="vehicleInfo.materialNoList" item="m" separator=" OR ">
-					material_no LIKE CONCAT('%', #{m}, '%')
+					vi.material_no LIKE CONCAT('%', #{m}, '%')
 				</foreach>
 				)
 			</if>
@@ -746,7 +756,7 @@
 			<if test="vehicleInfo.vehicleModelList != null and vehicleInfo.vehicleModelList.size() > 0">
 				AND (
 				<foreach collection="vehicleInfo.vehicleModelList" item="m" separator=" OR ">
-					vehicle_model LIKE CONCAT('%', #{m}, '%')
+					vi.vehicle_model LIKE CONCAT('%', #{m}, '%')
 				</foreach>
 				)
 			</if>
@@ -1056,5 +1066,27 @@
 			update_time   = NOW()
 		WHERE vin = #{vin}
 		  AND deleted = 0
+	</update>
+
+	<!-- 按物料号批量重置 upload_status（信息变更后需重新生成） -->
+	<update id="resetUploadStatusByMaterialNo">
+		UPDATE vehicle_info
+		SET upload_status = 0,
+			update_time   = SYSDATE()
+		WHERE material_no = #{materialNo}
+		  AND deleted = 0
+		  AND upload_status > 0
+		  AND generate_affirm = 0
+	</update>
+
+	<!-- 按模版ID批量重置 upload_status -->
+	<update id="resetUploadStatusByTemplateId">
+		UPDATE vehicle_info
+		SET upload_status = 0,
+			update_time   = SYSDATE()
+		WHERE vehicle_template_id = #{templateId}
+		  AND deleted = 0
+		  AND upload_status > 0
+		  AND upload_affirm = 0
 	</update>
 </mapper>

@@ -200,6 +200,10 @@ public class FirstVehicleCheckServiceImpl implements IFirstVehicleCheckService {
             vehicleInfoMapper.resetTemplateConfirm(templateId);
             log.info("[首台车] 模版修改 uuid={} templateId={} → 重置确认状态", uuid, templateId);
         });
+
+        templateIds.forEach(templateId ->
+                vehicleInfoMapper.resetUploadStatusByTemplateId(templateId));
+
         vehicleTemplateMapper.resetAffirmByUuid(uuid);
         //materialMapper.resetAffirmByTemplateUuid(uuid);
 
