@@ -1451,6 +1451,19 @@ public class VehicleTemplateServiceImpl implements IVehicleTemplateService {
             }
         }
 
+        // ── InterconnectionWithPoweredAxleConnection 映射后处理：若转换后的值不为空，
+        //    则该字段值拼接两遍（如 ABC → ABC;ABC，DD → DD;DD），
+        //    同时 InterconnectionWithPoweredAxleNumber 固定写为 "2;1"
+        //    （两轴互联场景：轴1 连轴2、轴2 连轴1）──
+        if (finalMap != null) {
+            Object connObj = finalMap.get("InterconnectionWithPoweredAxleConnection");
+            String connStr = connObj == null ? "" : String.valueOf(connObj);
+            if (StringUtils.isNotBlank(connStr)) {
+                finalMap.put("InterconnectionWithPoweredAxleConnection", connStr + ";" + connStr);
+                finalMap.put("InterconnectionWithPoweredAxleNumber", "2;1");
+            }
+        }
+
         try {
             return objectMapper.writeValueAsString(finalMap != null ? finalMap : new LinkedHashMap<>());
         } catch (Exception e) {

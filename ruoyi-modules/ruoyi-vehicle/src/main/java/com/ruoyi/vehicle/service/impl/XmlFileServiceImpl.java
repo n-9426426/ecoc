@@ -2043,6 +2043,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
         // 13. 移除空结构节点
         removeEmptyStructNodes(root, attrList, dictCodeMap);
 
+        // 13a0. 兜底补建：模板中 is_required=1 但生成后整个标签都缺失的，按对应层级位置补建空标签。
+        //   须放在 restrictHybridElectricEnergySourceGroup / removeEngineCapacityForElectricEnergySource
+        //   等业务规则性删除 **之前**，避免补建的标签被这些规则正常移除后又被误判为遗漏。
+        ensureRequiredTagsExist(doc, root, rootAttrPath, attrList, dictCodeMap);
+
         // 13a. 单段混动场景（appendEnergySourceSegmentIfHybrid 实际拼接出了合成的 95 段）
         //   或多段场景下除首段外全部为 95 且不止 1 个（如 "10|95|95|95"，多个电机共用
         //   同一能量类型代码 95，各自只有 1 个 PowerGroup）时，对应的 95 段 EnergySourceGroup
@@ -2264,6 +2269,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
         // 13. 移除空结构节点
         removeEmptyStructNodes(root, attrList, dictCodeMap);
 
+        // 13a0. 兜底补建：模板中 is_required=1 但生成后整个标签都缺失的，按对应层级位置补建空标签。
+        //   须放在 restrictHybridElectricEnergySourceGroup / removeEngineCapacityForElectricEnergySource
+        //   等业务规则性删除 **之前**，避免补建的标签被这些规则正常移除后又被误判为遗漏。
+        ensureRequiredTagsExist(doc, root, rootAttrPath, attrList, dictCodeMap);
+
         // 13a. 单段混动场景（appendEnergySourceSegmentIfHybrid 实际拼接出了合成的 95 段）
         //   或多段场景下除首段外全部为 95 且不止 1 个（如 "10|95|95|95"，多个电机共用
         //   同一能量类型代码 95，各自只有 1 个 PowerGroup）时，对应的 95 段 EnergySourceGroup
@@ -2484,6 +2494,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
         // 13. 移除空结构节点
         removeEmptyStructNodes(root, attrList, dictCodeMap);
+
+        // 13a0. 兜底补建：模板中 is_required=1 但生成后整个标签都缺失的，按对应层级位置补建空标签。
+        //   须放在 restrictHybridElectricEnergySourceGroup / removeEngineCapacityForElectricEnergySource
+        //   等业务规则性删除 **之前**，避免补建的标签被这些规则正常移除后又被误判为遗漏。
+        ensureRequiredTagsExist(doc, root, rootAttrPath, attrList, dictCodeMap);
 
         // 13a. 单段混动场景（appendEnergySourceSegmentIfHybrid 实际拼接出了合成的 95 段）
         //   或多段场景下除首段外全部为 95 且不止 1 个（如 "10|95|95|95"，多个电机共用
@@ -3265,8 +3280,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 // ★ 改动：使用 dictLabel 匹配 jsonMap；含分号 → 循环字段跳过；无分号 → 正常生成
                 Object raw = jsonMap.get(dict.getDictLabel());
                 String value = getValueOrDefault(raw, sibling.getDefaultValue());
+                boolean required = sibling.getIsRequired() != null && sibling.getIsRequired() == 1;
                 if (!value.contains(";")) {
-                    addElement(doc, parentElement, dict, value);
+                    addElement(doc, parentElement, dict, value, required);
                 }
             }
         }
@@ -3328,7 +3344,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 if (StringUtils.isBlank(value)) {
                     value = StringUtils.isNotBlank(child.getDefaultValue()) ? child.getDefaultValue() : "";
                 }
-                addElement(doc, container, dict, value);
+                boolean required = child.getIsRequired() != null && child.getIsRequired() == 1;
+                addElement(doc, container, dict, value, required);
             }
         }
     }
@@ -3462,8 +3479,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
                             if (leafParent == null) continue;
                             Object raw = jsonMap.get(ld.getDictLabel());
                             String val = raw != null ? raw.toString() : "";
+                            boolean leafRequired = leafAttr.getIsRequired() != null && leafAttr.getIsRequired() == 1;
                             if (!val.contains(";") && !hasChildElement(leafParent, sanitizeXmlTagName(ld.getDictLabel()))) {
-                                addElement(doc, leafParent, ld, val);
+                                addElement(doc, leafParent, ld, val, leafRequired);
                             }
                         }
                     } else {
@@ -3501,9 +3519,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
             } else if (StringUtils.isNotBlank(dict.getDictLabel()) && !isStructNode(dict)) {
                 Object raw = jsonMap.get(dict.getDictLabel());
                 String value = getValueOrDefault(raw, sibling.getDefaultValue());
+                boolean required = sibling.getIsRequired() != null && sibling.getIsRequired() == 1;
                 // ★ 已有同名子节点则跳过，防止 buildTreeUpToPath 已写过的字段重复输出
                 if (!value.contains(";") && !hasChildElement(parentElement, sanitizeXmlTagName(dict.getDictLabel()))) {
-                    addElement(doc, parentElement, dict, value);
+                    addElement(doc, parentElement, dict, value, required);
                 }
             }
         }
@@ -3572,7 +3591,8 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (StringUtils.isBlank(value)) {
                 value = StringUtils.isNotBlank(leaf.getDefaultValue()) ? leaf.getDefaultValue() : "";
             }
-            addElement(doc, container, dict, value);
+            boolean required = leaf.getIsRequired() != null && leaf.getIsRequired() == 1;
+            addElement(doc, container, dict, value, required);
         }
     }
 
@@ -3635,9 +3655,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
             } else if (StringUtils.isNotBlank(dict.getDictLabel())) {
                 Object raw = jsonMap.get(dict.getDictLabel());
                 String value = getValueOrDefault(raw, attr.getDefaultValue());
+                boolean required = attr.getIsRequired() != null && attr.getIsRequired() == 1;
                 // ★ 修复：加重复检查，防止后续 buildSiblingLevelLoop 遍历 directSiblings 时再次写入同名节点
                 if (!value.contains(";") && !hasChildElement(parentElement, sanitizeXmlTagName(dict.getDictLabel()))) {
-                    addElement(doc, parentElement, dict, value);
+                    addElement(doc, parentElement, dict, value, required);
                 }
             }
         }
@@ -4020,8 +4041,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 if (StringUtils.isBlank(value) && StringUtils.isNotBlank(child.getDefaultValue())) {
                     value = child.getDefaultValue();
                 }
-                if (StringUtils.isNotBlank(value)) {
-                    addElement(doc, parentElement, dict, value);
+                boolean required = child.getIsRequired() != null && child.getIsRequired() == 1;
+                if (StringUtils.isNotBlank(value) || required) {
+                    addElement(doc, parentElement, dict, value, required);
                 }
             }
         }
@@ -4762,8 +4784,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 } else {
                     value = getValueByRow(jsonMap, dict.getDictLabel(), child.getDefaultValue(), -1);
                 }
-                if (StringUtils.isNotBlank(value)) {
-                    addElement(doc, parentElement, dict, value);
+                boolean required = child.getIsRequired() != null && child.getIsRequired() == 1;
+                if (StringUtils.isNotBlank(value) || required) {
+                    addElement(doc, parentElement, dict, value, required);
                 }
             }
         }
@@ -5304,9 +5327,141 @@ public class XmlFileServiceImpl implements IXmlFileService {
     }
 
     /**
+     * 生成结束后的兜底校验：模板中 is_required=1 的标签（自身必填，或结构节点的子孙含必填项），
+     * 若在最终 XML 对应层级中完全不存在该标签，则补建一个空标签（文本内容留空），插入到
+     * 按模板 sort_order 排序后的正确位置；结构节点本身缺失时，同步补建容器并递归补建其下
+     * 必填子项，非必填的兄弟节点不做任何补建（与 addElement / removeEmptyStructNodesInternal
+     * 的 is_required 语义保持一致：required=1 的标签必须存在，哪怕值为空）。
+     * <p>
+     * 仅按 tagName 在父节点下逐层匹配模板路径（与全文 buildTagRequiredMap 的约定一致），
+     * 不感知具体业务分支。调用方应在 restrictHybridElectricEnergySourceGroup、
+     * removeEngineCapacityForElectricEnergySource 等"按业务规则有意删除特定标签"的
+     * 后置处理 **之前** 调用本方法，避免补建的标签被业务规则正常移除后又造成误判。
+     * <p>
+     * 循环容器（如多个 AxleGroup）：父节点下该 tagName 已存在至少一个实例时，对每个
+     * 已存在实例分别递归校验其必填子项；一个实例都不存在时，只补建 1 个占位实例
+     * （不臆测应有的循环行数）。幂等：重复调用不会产生重复标签。
+     */
+    private void ensureRequiredTagsExist(Document doc, Element root, String rootAttrPath,
+                                         List<XmlTemplateAttribute> attrList,
+                                         Map<String, SysDictData> dictCodeMap) {
+        ensureRequiredTagsExistRecursive(doc, root, rootAttrPath, attrList, dictCodeMap);
+    }
+
+    private void ensureRequiredTagsExistRecursive(Document doc, Element parentElement, String parentPath,
+                                                  List<XmlTemplateAttribute> attrList,
+                                                  Map<String, SysDictData> dictCodeMap) {
+        int parentDepth = parentPath.split("\\.").length;
+        List<XmlTemplateAttribute> directChildren = attrList.stream()
+                .filter(a -> {
+                    String p = a.getAttrPath();
+                    return p.startsWith(parentPath + ".") && p.split("\\.").length == parentDepth + 1;
+                })
+                .sorted(Comparator.comparingInt(a -> a.getSortOrder() != null ? a.getSortOrder() : 0))
+                .collect(Collectors.toList());
+        if (directChildren.isEmpty()) return;
+
+        // 该层级模板顺序（用于补建标签时定位插入点，与 directChildren 顺序一致）
+        List<String> orderedTagNames = directChildren.stream()
+                .map(a -> {
+                    String[] p = a.getAttrPath().split("\\.");
+                    SysDictData d = dictCodeMap.get(p[p.length - 1]);
+                    return (d != null && StringUtils.isNotBlank(d.getDictLabel()))
+                            ? sanitizeXmlTagName(d.getDictLabel()) : null;
+                })
+                .collect(Collectors.toList());
+
+        for (XmlTemplateAttribute childAttr : directChildren) {
+            String[] parts = childAttr.getAttrPath().split("\\.");
+            SysDictData dict = dictCodeMap.get(parts[parts.length - 1]);
+            if (dict == null || StringUtils.isBlank(dict.getDictLabel())) continue;
+            String tagName = sanitizeXmlTagName(dict.getDictLabel());
+
+            List<Element> existingInstances = getDirectChildren(parentElement, tagName);
+
+            if (isStructNode(dict)) {
+                if (!existingInstances.isEmpty()) {
+                    // 已有实例（循环场景可能有多个）：逐一递归校验其下必填子项
+                    for (Element instance : existingInstances) {
+                        ensureRequiredTagsExistRecursive(doc, instance, childAttr.getAttrPath(), attrList, dictCodeMap);
+                    }
+                } else if (subtreeHasRequiredAttr(childAttr.getAttrPath(), attrList, dictCodeMap)) {
+                    // 整个结构标签缺失，且其自身或子孙含必填字段 → 补建占位容器，再递归补建必填子项
+                    Element newStruct = createElementWithDefault(doc, tagName, childAttr.getDefaultValue());
+                    insertAtTemplateOrder(parentElement, newStruct, tagName, orderedTagNames);
+                    ensureRequiredTagsExistRecursive(doc, newStruct, childAttr.getAttrPath(), attrList, dictCodeMap);
+                }
+                // 非必填且缺失：不补建，维持"无值不生成"的既有约定
+            } else {
+                boolean required = childAttr.getIsRequired() != null && childAttr.getIsRequired() == 1;
+                if (existingInstances.isEmpty() && required) {
+                    Element leaf = createElementWithDefault(doc, tagName, null);
+                    insertAtTemplateOrder(parentElement, leaf, tagName, orderedTagNames);
+                }
+            }
+        }
+    }
+
+    /**
+     * 判断模板路径 path 本身或其任意子孙节点是否含 is_required=1（且该路径在字典中
+     * 确有对应标签定义，dictLabel 非空）。
+     */
+    private boolean subtreeHasRequiredAttr(String path, List<XmlTemplateAttribute> attrList,
+                                           Map<String, SysDictData> dictCodeMap) {
+        return attrList.stream().anyMatch(a -> {
+            String p = a.getAttrPath();
+            if (!p.equals(path) && !p.startsWith(path + ".")) return false;
+            if (a.getIsRequired() == null || a.getIsRequired() != 1) return false;
+            String[] parts = p.split("\\.");
+            SysDictData d = dictCodeMap.get(parts[parts.length - 1]);
+            return d != null && StringUtils.isNotBlank(d.getDictLabel());
+        });
+    }
+
+    /**
+     * 取父节点下所有 tagName 匹配的直接子元素，保留 DOM 中的原始顺序。
+     */
+    private List<Element> getDirectChildren(Element parent, String tagName) {
+        List<Element> result = new ArrayList<>();
+        NodeList children = parent.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node n = children.item(i);
+            if (n instanceof Element && tagName.equals(((Element) n).getTagName())) {
+                result.add((Element) n);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 按模板定义顺序（orderedTagNames）将新建标签插入父节点下的正确位置：
+     * 找到第一个"模板顺序排在 newChild 之后"的已存在兄弟节点，插入到它之前；
+     * 找不到（newChild 在模板顺序中最靠后，或没有任何可比较的兄弟）则追加到末尾。
+     */
+    private void insertAtTemplateOrder(Element parentElement, Element newChild, String tagName,
+                                       List<String> orderedTagNames) {
+        int targetIndex = orderedTagNames.indexOf(tagName);
+        Node refNode = null;
+        if (targetIndex >= 0) {
+            NodeList existingChildren = parentElement.getChildNodes();
+            for (int i = 0; i < existingChildren.getLength(); i++) {
+                Node n = existingChildren.item(i);
+                if (!(n instanceof Element)) continue;
+                int idx = orderedTagNames.indexOf(((Element) n).getTagName());
+                if (idx > targetIndex) {
+                    refNode = n;
+                    break;
+                }
+            }
+        }
+        parentElement.insertBefore(newChild, refNode);
+    }
+
+    /**
      * 清洗字符串为合法 XML tag 名
      */
     /**
+
      * 判断字典项是否为容器节点（结构节点）。
      * dictValue 为 "NULL"、null 或空字符串时均视为容器节点，不含实际值。
      */
