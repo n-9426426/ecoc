@@ -1880,6 +1880,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
             jsonMap.put("Colour", resolveColourDictValue(rawColourNovcOvc.toString()));
         }
 
+        // VehicleIdentificationNumber 直接取车辆的 VIN，覆盖 jsonMap 中原有的同名数据（如果有）
+        if (StringUtils.isNotBlank(vehicle.getVin())) {
+            jsonMap.put("VehicleIdentificationNumber", vehicle.getVin());
+        }
+
         // 3. 查询字典数据，构建 uuid -> SysDictData 映射
         List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
         Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 为 uuid
@@ -2114,6 +2119,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
             jsonMap.put("Colour", resolveColourDictValue(rawColourPureElectric.toString()));
         }
 
+        // VehicleIdentificationNumber 直接取车辆的 VIN，覆盖 jsonMap 中原有的同名数据（如果有）
+        if (StringUtils.isNotBlank(vehicle.getVin())) {
+            jsonMap.put("VehicleIdentificationNumber", vehicle.getVin());
+        }
+
         // 3. 查询字典数据，构建 uuid -> SysDictData 映射
         List<SysDictData> dictDataList = remoteDictService.getDictDataByType("vehicle_attribute").getData();
         Map<String, SysDictData> dictCodeMap = new HashMap<>(); // key 为 uuid
@@ -2346,6 +2356,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
         Object rawColourFuelOil = vehicle.getColor();
         if (rawColourFuelOil != null && StringUtils.isNotBlank(rawColourFuelOil.toString())) {
             jsonMap.put("Colour", resolveColourDictValue(rawColourFuelOil.toString()));
+        }
+
+        // VehicleIdentificationNumber 直接取车辆的 VIN，覆盖 jsonMap 中原有的同名数据（如果有）
+        if (StringUtils.isNotBlank(vehicle.getVin())) {
+            jsonMap.put("VehicleIdentificationNumber", vehicle.getVin());
         }
 
         // 3. 查询字典数据，构建 uuid -> SysDictData 映射
@@ -2746,11 +2761,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     Element structEl = createElementWithDefault(doc,
                             sanitizeXmlTagName(dict.getDictLabel()), child.getDefaultValue());
 
-                    log.info("=== buildUnprocessedNodes CREATE tag={} childPath末段={} parentTag={}",
-                            dict.getDictLabel(),
-                            childPath.substring(childPath.lastIndexOf('.')+1),
-                            currentElement.getTagName());
-
                     // ★ 按 sort_order 找正确插入位置
                     int childSortOrder = child.getSortOrder() != null ? child.getSortOrder() : 0;
                     Node insertBeforeNode = null;
@@ -2789,10 +2799,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                 childPath, pipeRows);
                     } else if (hasSemi) {
                         // ★ 含 ; 的子树（如 TestFamilyIdentifiersTable）也用 expandPipeLoop
-                        log.info("=== buildUnprocessedNodes childPath末段={} hasPipe={} hasSemi={}",
-                                childPath.substring(childPath.lastIndexOf('.')+1,
-                                        Math.min(childPath.lastIndexOf('.')+9, childPath.length())),
-                                hasPipe, hasSemi);
                         int semiRows = detectSemicolonRows(subAttrs, dictCodeMap, jsonMap, childPath);
                         expandPipeLoop(doc, structEl, subAttrs, dictCodeMap, jsonMap,
                                 buildSubPathNodeMap(pathNodeMap, childPath, structEl),
@@ -2837,10 +2843,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     // 已在 pathNodeMap，检查对应 DOM 节点是否由循环生成
                     // 若是 loopGenerated 节点，其子孙已由 fillStructByIndex 处理，不再 BFS
                     Element existingEl = pathNodeMap.get(childPath);
-                    log.info("=== buildUnprocessedNodes ALREADY_IN_MAP tag={} childPath末段={} loopGenerated={}",
-                            dict.getDictLabel(),
-                            childPath.substring(childPath.lastIndexOf('.')+1),
-                            Boolean.TRUE.equals(existingEl != null ? existingEl.getUserData("loopGenerated") : null));
                     if (existingEl != null
                             && Boolean.TRUE.equals(existingEl.getUserData("loopGenerated"))) {
                         continue;
@@ -3205,9 +3207,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     Object raw = jsonMap.get(d.getDictLabel());
                     return raw != null && raw.toString().contains(";") && !raw.toString().contains("|");
                 });
-
-                log.info("=== buildNormalTree struct subHasPipe={} subHasSemi={} label={}",
-                        subHasPipe, subHasSemi, dict.getDictLabel());
                 if (subHasPipe) {
                     int pipeRows = detectPipeRows(subAttrs, dictCodeMap, jsonMap, attrPath);
                     Map<String, Element> subMap = buildSubPathNodeMap(pathNodeMap, attrPath, structElement);
@@ -3243,10 +3242,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
                                       Map<String, SysDictData> dictCodeMap, Map<String, Object> jsonMap,
                                       Map<String, Element> pathNodeMap, Set<String> structNodePaths,
                                       LoopDetectionResult loopResult, String rootAttrPath) {
-
-        log.info("=== loopContainerPath: {}, groupKeys: {}",
-                loopResult.getLoopContainerPath(), loopResult.getGroupKeys());
-
         String loopContainerPath = loopResult.getLoopContainerPath();
 
         // 1. 构建到循环容器父节点为止
@@ -3387,11 +3382,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
         String parentOfContainerPath = getParentPath(loopContainerPath);
         Element parentElement = pathNodeMap.getOrDefault(parentOfContainerPath, root);
 
-        log.info("=== buildSiblingLevelLoop START loopContainerPath末段={} parentOfContainerPath末段={} maxRows={}",
-                loopContainerPath.substring(loopContainerPath.lastIndexOf('.')+1),
-                parentOfContainerPath.isEmpty() ? "ROOT" : parentOfContainerPath.substring(parentOfContainerPath.lastIndexOf('.')+1),
-                loopResult.getMaxRows());
-
         // 3. 按 sort_order 顺序遍历父节点的所有直接子节点
         int loopDepth = loopContainerPath.split("\\.").length;
         List<XmlTemplateAttribute> directSiblings = attrList.stream()
@@ -3437,11 +3427,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
             } else if (isStructNode(dict)) {
                 // 结构节点
-                log.info("=== buildSiblingLevelLoop STRUCT sibling末段={} tag={} inPathNodeMap={} isAncestorOfLoop={}",
-                        sibling.getAttrPath().substring(sibling.getAttrPath().lastIndexOf('.')+1),
-                        dict.getDictLabel(),
-                        pathNodeMap.containsKey(sibling.getAttrPath()),
-                        loopContainerPath != null && loopContainerPath.startsWith(sibling.getAttrPath() + "."));
                 // ★ 修复：同时检查 pathNodeMap（逻辑层）和 DOM（物理层），防止 buildTreeUpToPath 已写入后再重复创建
                 if (!pathNodeMap.containsKey(sibling.getAttrPath())
                         && !hasChildElement(parentElement, sanitizeXmlTagName(dict.getDictLabel()))) {
@@ -3518,10 +3503,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
                         });
                         if (hasSemi) {
                             int semiRows = detectSemicolonRows(subAttrs, dictCodeMap, jsonMap, sibling.getAttrPath());
-                            log.info("=== buildSiblingLevelLoop hasSemi: sibling末段={} semiRows={} tag={}",
-                                    sibling.getAttrPath().substring(sibling.getAttrPath().lastIndexOf('.')+1),
-                                    semiRows,
-                                    dict.getDictLabel());
                             Map<String, Element> subMap = buildSubPathNodeMap(pathNodeMap, sibling.getAttrPath(), structElement);
                             expandPipeLoop(doc, structElement, subAttrs, dictCodeMap, jsonMap,
                                     subMap, sibling.getAttrPath(), semiRows);
@@ -3733,10 +3714,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
             if (parentElement == null) continue;
 
             if (isStructNode(dict)) {
-                log.info("=== buildSubTree STRUCT attrPath末段={} tag={} rowIndex={}",
-                        attrPath.substring(attrPath.lastIndexOf('.')+1),
-                        dict.getDictLabel(), rowIndex);
-
                 List<XmlTemplateAttribute> subAttrs = attrList.stream()
                         .filter(a -> a.getAttrPath().startsWith(attrPath + "."))
                         .collect(Collectors.toList());
@@ -3886,14 +3863,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
             Object raw = jsonMap.get(dict.getDictLabel());
             if (raw == null) continue;
             String val = raw.toString();
-            log.info("=== detectSemicolonRows check label={} val={}", dict.getDictLabel(), val);
             if (val.contains(";") && !val.contains("|")) {
                 int rows = countNonTrailingEmpty(val.split(";", -1));
                 maxRows = Math.max(maxRows, rows);
             }
         }
-        log.info("=== detectSemicolonRows result rootAttrPath末段={} maxRows={}",
-                rootAttrPath.substring(rootAttrPath.lastIndexOf('.')+1), maxRows);
         return maxRows;
     }
 
@@ -4236,8 +4210,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
 
         String countryCode = resolveCountryDictCode(vehicle.getCountry());
         if (StringUtils.isBlank(countryCode)) {
-            log.warn("[ensureIntendedCountryRegistration] vin={} country 为空，跳过补充 IntendedCountryRegistration",
-                    vehicle.getVin());
             return;
         }
 
@@ -4251,7 +4223,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
         Element intendedCountryEl = doc.createElement("IntendedCountryRegistration");
         intendedCountryEl.setTextContent(countryCode);
         header.insertBefore(intendedCountryEl, refNode);
-        log.info("[ensureIntendedCountryRegistration] vin={} 已补充 IntendedCountryRegistration={}", vehicle.getVin(), countryCode);
     }
 
     /**
@@ -4454,12 +4425,10 @@ public class XmlFileServiceImpl implements IXmlFileService {
     private boolean appendEnergySourceSegmentIfHybrid(Map<String, Object> jsonMap) {
         Object energySourceObj = jsonMap.get("EnergySource");
         if (energySourceObj == null) {
-            log.info("=== appendEnergySourceSegmentIfHybrid skip: EnergySource为null");
             return false;
         }
         String energySource = energySourceObj.toString().trim();
         if (StringUtils.isBlank(energySource) || energySource.contains("|")) {
-            log.info("=== appendEnergySourceSegmentIfHybrid skip: EnergySource={}（空值或已是多段）", energySource);
             return false; // 空值或已是多段，不处理
         }
 
@@ -4467,14 +4436,11 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 "Maximum30MinutesPower", "MaximumNetPowerElectric")) {
             Object raw = jsonMap.get(fieldName);
             if (raw == null || StringUtils.isBlank(raw.toString())) {
-                log.info("=== appendEnergySourceSegmentIfHybrid skip: EnergySource={}，字段{}无值（raw={}）",
-                        energySource, fieldName, raw);
                 return false; // 四个字段任一为空，不是单段混动场景，保持原样
             }
         }
 
         jsonMap.put("EnergySource", energySource + "|95");
-        log.info("=== appendEnergySourceSegmentIfHybrid 拼接成功，EnergySource变为: {}", jsonMap.get("EnergySource"));
         return true;
     }
 
@@ -4915,8 +4881,6 @@ public class XmlFileServiceImpl implements IXmlFileService {
                 && rowIndex == totalRows - 1
                 && lastRowForbiddenLabels != null
                 && lastRowForbiddenLabels.contains(dictLabel)) {
-            log.debug("=== getValueByRow LAST_ROW_FORBIDDEN label={} rowIndex={} totalRows={}",
-                    dictLabel, rowIndex, totalRows);
             return "";
         }
 

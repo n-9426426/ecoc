@@ -130,7 +130,6 @@ public class VehicleFieldParser {
                             SysDictData::getKeyMap,
                             d -> d,
                             (existing, duplicate) -> {
-                                log.warn("存在重复 keyMap: {}", existing.getKeyMap());
                                 return existing; // 保留第一个
                             }
                     ));
@@ -154,7 +153,6 @@ public class VehicleFieldParser {
         if (dictData != null && dictData.getDictLabel() != null) {
             return dictData.getDictLabel();
         }
-        log.warn("未找到 keyMap 对应字典数据，使用原始 key 兜底: {}", key);
         return key;
     }
 }
