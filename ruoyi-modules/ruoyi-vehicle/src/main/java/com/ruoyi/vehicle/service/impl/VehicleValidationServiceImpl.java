@@ -186,6 +186,10 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
         List<RuleViolation> mergedViolations = new ArrayList<>();
         for (String part : parts) {
             String trimmedPart = part.trim();
+            // 原值非空，但分隔后该段为空（如 "BRK|UNB|" 的末尾空段），跳过不校验
+            if (trimmedPart.isEmpty()) {
+                continue;
+            }
             FieldValidationResult partResult = FinalRuleExecutor.execute(jsonKey, trimmedPart, rules, context);
             if (partResult != null) {
                 if (!partResult.isValid()) {
@@ -262,6 +266,10 @@ public class VehicleValidationServiceImpl implements IVehicleValidationService {
         List<RuleViolation> violations = new ArrayList<>();
         for (String part : parts) {
             String trimmed = part.trim();
+            // 原值非空，但分隔后该段为空（如 "BRK|UNB|" 的末尾空段），跳过不校验
+            if (trimmed.isEmpty()) {
+                continue;
+            }
             if (!allowedValues.contains(trimmed)) {
                 String suffix = parts.length > 1
                         ? " [子值='" + trimmed + "'，原始值='" + rawStr + "']"

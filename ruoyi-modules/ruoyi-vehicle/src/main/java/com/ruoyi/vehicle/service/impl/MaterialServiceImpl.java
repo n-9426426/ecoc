@@ -381,7 +381,7 @@ public class MaterialServiceImpl implements IMaterialService {
 
                 if (StringUtils.isBlank(material.getMaterialNo()))  missingFields.add("Material No");
                 if (StringUtils.isBlank(material.getTvv()))         missingFields.add("tvv");
-                if (StringUtils.isBlank(material.getFactoryCode())) missingFields.add("Factory Code");
+//                if (StringUtils.isBlank(material.getFactoryCode())) missingFields.add("Factory Code");
 
                 if (!missingFields.isEmpty()) {
                     skipCount++;

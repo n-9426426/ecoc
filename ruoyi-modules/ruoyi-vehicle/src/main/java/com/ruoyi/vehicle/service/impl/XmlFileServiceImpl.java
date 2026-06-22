@@ -1634,8 +1634,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
             ValidationReport mergedReport = null;
             if (!baseJsonMap.isEmpty()) {
                 String jsonStr = new ObjectMapper().writeValueAsString(baseJsonMap);
+                // XML 字段值可能含 | 或 ; 分隔的多值（如 BRK|UNB），必须拆分后逐段校验
                 ValidationReport report = vehicleValidationService.validate(
-                        jsonStr, vehicleCategory, stageOfCompletion, isFullyElectric, false);
+                        jsonStr, vehicleCategory, stageOfCompletion, isFullyElectric, true);
                 mergedReport = enrichAndMerge(mergedReport, report, keyMapMeta);
             }
 
@@ -1660,8 +1661,9 @@ public class XmlFileServiceImpl implements IXmlFileService {
                     singleJsonMap.put(dict.getKeyMap(), value);
 
                     String jsonStr = new ObjectMapper().writeValueAsString(singleJsonMap);
+                    // XML 循环节点同样可能含多值分隔符，拆分后逐段校验
                     ValidationReport report = vehicleValidationService.validate(
-                            jsonStr, vehicleCategory, stageOfCompletion, isFullyElectric, false);
+                            jsonStr, vehicleCategory, stageOfCompletion, isFullyElectric, true);
 
                     if (report != null && report.getFieldResults() != null) {
                         final int index = j + 1;
@@ -4214,15 +4216,19 @@ public class XmlFileServiceImpl implements IXmlFileService {
         if (headerList.getLength() == 0) return;
         Element header = (Element) headerList.item(0);
 
-        // 已存在则跳过，保证幂等
-        if (header.getElementsByTagName("IntendedCountryRegistration").getLength() > 0) return;
-
         String countryCode = resolveCountryDictCode(vehicle.getCountry());
         if (StringUtils.isBlank(countryCode)) {
             return;
         }
 
-        // 定位 IviVersionDateTime 节点，插入到其后；找不到则回退为追加到 Header 末尾
+        // 若已存在，直接覆盖其文本内容（无论来源，始终以 country 映射值为准）
+        NodeList existing = header.getElementsByTagName("IntendedCountryRegistration");
+        if (existing.getLength() > 0) {
+            existing.item(0).setTextContent(countryCode);
+            return;
+        }
+
+        // 不存在则在 IviVersionDateTime 之后插入；找不到则追加到 Header 末尾
         Node refNode = null;
         NodeList iviList = header.getElementsByTagName("IviVersionDateTime");
         if (iviList.getLength() > 0) {
