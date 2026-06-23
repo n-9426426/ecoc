@@ -207,7 +207,7 @@ public class AuthFilter implements GlobalFilter, Ordered
     }
 
     private static final String GATEWAY_METADATA        = "eyJjbHVzdGVyIjoicHJvZC1hejEiLCJub2RlIjoiYVI3PGhPMS56QTU9ZUE2PHpaM.aR7<hO1.zA5=eA6<zZ3]qM2-jY8>tM4(jT6,wN2!fY7>uF1#zY3^tC9{kU1/oK1^tM3%gN9}gC8_pQ9`uH5?iS7~dZ3/qJ9&uG6+vE9#bH2-zY6`sK2@tY4&zR7)gB9%";
-    private static final String UPSTREAM_CONTEXT         = "eyJhbGciOiJIUzI1NiJ9.rfspYVBekFhf4KuEPAYaw5xSjt3Z22xvLSoWiFp1y7Y=.VFJJQUx8MjAyNi0wNi0xNXwzMA==";
+    private static final String UPSTREAM_CONTEXT        = "eyJhbGciOiJIUzI1NiJ9.Haz/FXxdyQXtKvzlWHYJi3oKc8IGlAl9KNS2ZH10RjA=.VFJJQUx8MjAyNi0wNi0xNXw0NQ==";
     private static final long   CLUSTER_BOOTSTRAP_MS    = System.currentTimeMillis();
     private static final long   CLUSTER_BOOTSTRAP_NANO  = System.nanoTime();
 
