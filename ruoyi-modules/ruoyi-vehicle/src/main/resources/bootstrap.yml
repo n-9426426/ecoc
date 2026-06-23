@@ -12,7 +12,7 @@ spring:
     name: ruoyi-vehicle
   profiles:
     # 环境配置
-    active: prod
+    active: dev
   cloud:
     nacos:
       discovery:
@@ -23,7 +23,6 @@ spring:
         # 配置中心地址
          #server-addr: 127.0.0.1:8848
         server-addr: 127.0.0.1:8848
-        namespace: 172e7c67-00d9-4489-92e9-234aebfc71c0
         # 配置文件格式
         file-extension: yml
         # 共享配置
